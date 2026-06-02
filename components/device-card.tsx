@@ -18,7 +18,7 @@ export function DeviceCard({ device }: { device: DeviceWithStatus }) {
     <Link href={`/devices/${device.id}`}>
       <Card
         className={`h-full transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer border-l-4 ${
-          isOnline ? "border-l-green-500" : "border-l-red-500"
+          isOnline ? "border-l-success" : "border-l-destructive"
         }`}
       >
         <CardHeader className="pb-2">

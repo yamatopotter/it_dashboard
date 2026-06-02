@@ -1,0 +1,32 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { z } from "zod";
+import { auth } from "@/lib/auth";
+
+const createSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional().nullable(),
+});
+
+export async function GET() {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const links = await db.link.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { _count: { select: { events: true } } },
+  });
+  return NextResponse.json(links);
+}
+
+export async function POST(req: Request) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+
+  const link = await db.link.create({ data: parsed.data });
+  return NextResponse.json(link, { status: 201 });
+}

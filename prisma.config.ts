@@ -1,7 +1,8 @@
+import "dotenv/config";
 import { defineConfig } from "prisma/config";
-import path from "node:path";
 
-const dbUrl = process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), "prisma/dev.db")}`;
+const dbUrl = process.env.DATABASE_URL;
+if (!dbUrl) throw new Error("DATABASE_URL não está definida. Configure o arquivo .env");
 
 export default defineConfig({
   schema: "prisma/schema.prisma",

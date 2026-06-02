@@ -80,17 +80,13 @@ export default function OverviewPage() {
 
       {/* Stats */}
       <div className="flex gap-3">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-green-50 dark:bg-green-950">
-          <Wifi className="h-4 w-4 text-green-600" />
-          <span className="text-sm font-medium text-green-700 dark:text-green-400">
-            {online} online
-          </span>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-success/10 border border-success/20">
+          <Wifi className="h-4 w-4 text-success" />
+          <span className="text-sm font-medium text-success">{online} online</span>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-red-50 dark:bg-red-950">
-          <WifiOff className="h-4 w-4 text-red-600" />
-          <span className="text-sm font-medium text-red-700 dark:text-red-400">
-            {offline} offline
-          </span>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-destructive/10 border border-destructive/20">
+          <WifiOff className="h-4 w-4 text-destructive" />
+          <span className="text-sm font-medium text-destructive">{offline} offline</span>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted">
           <span className="text-sm text-muted-foreground">{devices.length} total</span>

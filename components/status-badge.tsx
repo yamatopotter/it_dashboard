@@ -14,8 +14,8 @@ export function StatusBadge({ isOnline, className }: StatusBadgeProps) {
     >
       <span
         className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          isOnline ? "bg-green-300 animate-pulse" : "bg-red-300"
+          "h-1.5 w-1.5 rounded-full bg-current opacity-70",
+          isOnline && "animate-pulse"
         )}
       />
       {isOnline ? "Online" : "Offline"}

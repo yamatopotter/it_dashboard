@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { db } from "../lib/db";
 import bcrypt from "bcryptjs";
 import readline from "readline";

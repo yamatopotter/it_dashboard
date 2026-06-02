@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Monitor, LayoutDashboard, Server, LogOut } from "lucide-react";
+import { Monitor, LayoutDashboard, Server, LogOut, StickyNote, Network } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/devices", label: "Dispositivos", icon: Server },
+  { href: "/links", label: "Links de Internet", icon: Network },
+  { href: "/notes", label: "Notas & Segurança", icon: StickyNote },
 ];
 
 export function Sidebar() {

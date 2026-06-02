@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { startScheduler } from "./scheduler";
 
 process.on("uncaughtException", (err) => {

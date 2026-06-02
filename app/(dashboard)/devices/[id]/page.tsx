@@ -144,14 +144,14 @@ export default function DeviceDetailPage({
           icon={Wifi}
           label="Ping"
           value={formatResponseTime(status?.pingMs)}
-          color="text-blue-500"
+          color="text-[var(--chart-1)]"
         />
         {status?.uptime != null && (
           <MetricCard
             icon={Clock}
             label="Uptime"
             value={formatUptime(status.uptime)}
-            color="text-green-500"
+            color="text-success"
           />
         )}
         {status?.cpuLoad != null && (
@@ -159,7 +159,7 @@ export default function DeviceDetailPage({
             icon={Cpu}
             label="CPU"
             value={formatPercent(status.cpuLoad)}
-            color="text-orange-500"
+            color="text-warning"
           />
         )}
         {status?.memoryUsed != null && (
@@ -167,7 +167,7 @@ export default function DeviceDetailPage({
             icon={MemoryStick}
             label="Memória"
             value={formatPercent(status.memoryUsed)}
-            color="text-purple-500"
+            color="text-[var(--chart-4)]"
           />
         )}
         {status?.httpOk != null && (
@@ -175,7 +175,7 @@ export default function DeviceDetailPage({
             icon={Globe}
             label="HTTP"
             value={status.httpOk ? "OK" : "Falha"}
-            color={status.httpOk ? "text-green-500" : "text-red-500"}
+            color={status.httpOk ? "text-success" : "text-destructive"}
           />
         )}
       </div>
@@ -200,19 +200,19 @@ export default function DeviceDetailPage({
           <div className={`grid gap-4 ${hasMikrotikMetrics ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1 max-w-xl"}`}>
             <Card>
               <CardContent className="pt-4">
-                <MetricsChart history={history} metric="pingMs" label="Latência (ms)" color="#3b82f6" unit="ms" />
+                <MetricsChart history={history} metric="pingMs" label="Latência (ms)" color="var(--chart-1)" unit="ms" />
               </CardContent>
             </Card>
             {hasMikrotikMetrics && (
               <>
                 <Card>
                   <CardContent className="pt-4">
-                    <MetricsChart history={history} metric="cpuLoad" label="CPU (%)" color="#f97316" unit="%" />
+                    <MetricsChart history={history} metric="cpuLoad" label="CPU (%)" color="var(--chart-3)" unit="%" />
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
-                    <MetricsChart history={history} metric="memoryUsed" label="Memória (%)" color="#a855f7" unit="%" />
+                    <MetricsChart history={history} metric="memoryUsed" label="Memória (%)" color="var(--chart-4)" unit="%" />
                   </CardContent>
                 </Card>
               </>
