@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Workflow
+
+**Always follow this flow for every change (fix, feature, refactor, etc.):**
+
+1. Create a branch before starting: `git checkout -b type/short-description` (e.g. `fix/login-csrf`, `feat/link-monitoring`)
+2. Implement the changes
+3. **Wait for user validation before committing**
+4. After user confirms, commit on the branch
+5. Merge into main: `git checkout main && git merge --no-ff branch-name && git branch -d branch-name`
+
+Never commit directly to `main`. Never merge without explicit user approval.
+
 ## Common Commands
 
 ```bash
