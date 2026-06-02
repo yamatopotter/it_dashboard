@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum DeviceType {
+  MIKROTIK
+  DVR
+  CAMERA
+  OTHER
+}
+
+model Device {
+  id       String     @id @default(cuid())
+  name     String
+  ip       String
+  type     DeviceType
+  location String?
+  notes    String?
+
+  pingEnabled     Boolean @default(true)
+  httpEnabled     Boolean @default(false)
+  httpPort        Int?
+  httpPath        String  @default("/")
+  snmpEnabled     Boolean @default(false)
+  snmpCommunity   String  @default("public")
+  snmpPort        Int     @default(161)
+  routerosEnabled Boolean @default(false)
+  routerosUser    String?
+  routerosPass    String?
+  routerosPort    Int     @default(8728)
+
+  checkInterval Int @default(60)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  currentStatus DeviceStatus?
+  history       StatusHistory[]
+}
+
+model DeviceStatus {
+  id       String @id @default(cuid())
+  deviceId String @unique
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  isOnline   Boolean  @default(false)
+  pingMs     Int?
+  httpOk     Boolean?
+  uptime     BigInt?
+  cpuLoad    Float?
+  memoryUsed Float?
+
+  checkedAt DateTime @default(now())
+}
+
+model StatusHistory {
+  id       String @id @default(cuid())
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  isOnline   Boolean
+  pingMs     Int?
+  cpuLoad    Float?
+  memoryUsed Float?
+
+  timestamp DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+}
+
+model User {
+  id       String @id @default(cuid())
+  username String @unique
+  password String
+}

@@ -1,0 +1,160 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { DeviceCard } from "@/components/device-card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { RefreshCw, Plus, Wifi, WifiOff, Server } from "lucide-react";
+import Link from "next/link";
+import type { Device, DeviceStatus, DeviceType } from "@prisma/client";
+
+type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
+
+const TYPE_LABELS: Record<DeviceType | "ALL", string> = {
+  ALL: "Todos",
+  MIKROTIK: "Mikrotik",
+  DVR: "DVR",
+  CAMERA: "Câmera",
+  OTHER: "Outro",
+};
+
+export default function OverviewPage() {
+  const [devices, setDevices] = useState<DeviceWithStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<DeviceType | "ALL">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "ONLINE" | "OFFLINE">("ALL");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  async function load() {
+    const res = await fetch("/api/devices");
+    if (res.ok) {
+      const data = await res.json();
+      setDevices(data);
+      setLastUpdated(new Date());
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const online = devices.filter((d) => d.currentStatus?.isOnline).length;
+  const offline = devices.length - online;
+
+  const filtered = devices.filter((d) => {
+    const typeMatch = filter === "ALL" || d.type === filter;
+    const statusMatch =
+      statusFilter === "ALL" ||
+      (statusFilter === "ONLINE" && d.currentStatus?.isOnline) ||
+      (statusFilter === "OFFLINE" && !d.currentStatus?.isOnline);
+    return typeMatch && statusMatch;
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Overview</h1>
+          {lastUpdated && (
+            <p className="text-xs text-muted-foreground">
+              Atualizado às {lastUpdated.toLocaleTimeString("pt-BR")}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={load}>
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Atualizar
+          </Button>
+          <Link href="/devices/new" className={buttonVariants({ size: "sm" })}>
+            <Plus className="h-4 w-4 mr-1" />
+            Novo dispositivo
+          </Link>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="flex gap-3">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-green-50 dark:bg-green-950">
+          <Wifi className="h-4 w-4 text-green-600" />
+          <span className="text-sm font-medium text-green-700 dark:text-green-400">
+            {online} online
+          </span>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-red-50 dark:bg-red-950">
+          <WifiOff className="h-4 w-4 text-red-600" />
+          <span className="text-sm font-medium text-red-700 dark:text-red-400">
+            {offline} offline
+          </span>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted">
+          <span className="text-sm text-muted-foreground">{devices.length} total</span>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2">
+        {(["ALL", "ONLINE", "OFFLINE"] as const).map((s) => (
+          <Button
+            key={s}
+            variant={statusFilter === s ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(s)}
+          >
+            {s === "ALL" ? "Todos os status" : s === "ONLINE" ? "Online" : "Offline"}
+          </Button>
+        ))}
+        <div className="w-px bg-border mx-1" />
+        {(["ALL", "MIKROTIK", "DVR", "CAMERA", "OTHER"] as const).map((t) => (
+          <Button
+            key={t}
+            variant={filter === t ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setFilter(t)}
+          >
+            {TYPE_LABELS[t]}
+            {t !== "ALL" && (
+              <Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">
+                {devices.filter((d) => d.type === t).length}
+              </Badge>
+            )}
+          </Button>
+        ))}
+      </div>
+
+      {/* Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-44 rounded-lg" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          {devices.length === 0 ? (
+            <>
+              <Server className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p>Nenhum dispositivo cadastrado.</p>
+              <Link href="/devices/new" className={`mt-4 inline-flex ${buttonVariants({})}`}>
+                Cadastrar primeiro dispositivo
+              </Link>
+            </>
+          ) : (
+            <p>Nenhum dispositivo encontrado para os filtros selecionados.</p>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.map((device) => (
+            <DeviceCard key={device.id} device={device} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

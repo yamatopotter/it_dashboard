@@ -1,0 +1,102 @@
+import { db } from "../lib/db";
+import { checkPing } from "./monitors/ping";
+import { checkHttp } from "./monitors/http";
+import { checkSnmp } from "./monitors/snmp";
+import { checkRouterOS } from "./monitors/routeros";
+import type { Device } from "@prisma/client";
+
+const timers = new Map<string, ReturnType<typeof setInterval>>();
+
+async function runChecks(device: Device) {
+  const results = await Promise.allSettled([
+    device.pingEnabled ? checkPing(device.ip) : Promise.resolve(null),
+    device.httpEnabled
+      ? checkHttp(device.ip, device.httpPort ?? 80, device.httpPath)
+      : Promise.resolve(null),
+    device.snmpEnabled
+      ? checkSnmp(device.ip, device.snmpCommunity, device.snmpPort)
+      : Promise.resolve(null),
+    device.routerosEnabled && device.routerosUser && device.routerosPass
+      ? checkRouterOS(device.ip, device.routerosUser, device.routerosPass, device.routerosPort)
+      : Promise.resolve(null),
+  ]);
+
+  const pingResult = results[0].status === "fulfilled" ? results[0].value : null;
+  const httpResult = results[1].status === "fulfilled" ? results[1].value : null;
+  const snmpResult = results[2].status === "fulfilled" ? results[2].value : null;
+  const rosResult = results[3].status === "fulfilled" ? results[3].value : null;
+
+  const isOnline = pingResult?.alive ?? httpResult?.ok ?? false;
+  const pingMs = pingResult?.alive ? pingResult.responseMs : null;
+  const httpOk = httpResult?.ok ?? null;
+
+  const uptime = rosResult?.uptime ?? snmpResult?.uptime ?? null;
+  const cpuLoad = rosResult?.cpuLoad ?? snmpResult?.cpuLoad ?? null;
+  const memoryUsed = rosResult?.memoryUsed ?? snmpResult?.memoryUsed ?? null;
+
+  const now = new Date();
+
+  await db.$transaction([
+    db.deviceStatus.upsert({
+      where: { deviceId: device.id },
+      update: { isOnline, pingMs, httpOk, uptime, cpuLoad, memoryUsed, checkedAt: now },
+      create: { deviceId: device.id, isOnline, pingMs, httpOk, uptime, cpuLoad, memoryUsed, checkedAt: now },
+    }),
+    db.statusHistory.create({
+      data: { deviceId: device.id, isOnline, pingMs, cpuLoad, memoryUsed, timestamp: now },
+    }),
+  ]);
+
+  const status = isOnline ? "✓" : "✗";
+  console.log(`[${now.toLocaleTimeString("pt-BR")}] ${status} ${device.name} (${device.ip}) — ping: ${pingMs ?? "—"}ms`);
+}
+
+function scheduleDevice(device: Device) {
+  if (timers.has(device.id)) clearInterval(timers.get(device.id)!);
+
+  const intervalMs = (device.checkInterval ?? 60) * 1000;
+
+  runChecks(device).catch(() => {});
+
+  const timer = setInterval(() => runChecks(device).catch(() => {}), intervalMs);
+  timers.set(device.id, timer);
+}
+
+function unscheduleDevice(deviceId: string) {
+  const timer = timers.get(deviceId);
+  if (timer) {
+    clearInterval(timer);
+    timers.delete(deviceId);
+  }
+}
+
+export async function startScheduler() {
+  console.log("Worker iniciado. Carregando dispositivos...");
+
+  const devices = await db.device.findMany();
+  devices.forEach(scheduleDevice);
+  console.log(`${devices.length} dispositivo(s) agendado(s).`);
+
+  // Poll for device changes every 30s
+  setInterval(async () => {
+    const current = await db.device.findMany();
+    const currentIds = new Set(current.map((d) => d.id));
+
+    // Remove devices that were deleted
+    for (const id of timers.keys()) {
+      if (!currentIds.has(id)) {
+        unscheduleDevice(id);
+        console.log(`Dispositivo ${id} removido do agendador.`);
+      }
+    }
+
+    // Add/update devices
+    for (const device of current) {
+      const existing = timers.get(device.id);
+      if (!existing) {
+        scheduleDevice(device);
+        console.log(`Novo dispositivo adicionado: ${device.name}`);
+      }
+    }
+  }, 30_000);
+}
