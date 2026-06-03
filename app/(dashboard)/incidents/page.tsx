@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { Topbar } from "@/components/topbar";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -107,11 +107,11 @@ function groupByDay(incidents: Incident[]) {
 }
 
 export default function IncidentsPage() {
-  const router = useRouter();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [window, setWindow] = useState<Window>(168);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "RESOLVED">("ALL");
+  const [drawerDeviceId, setDrawerDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -220,7 +220,7 @@ export default function IncidentsPage() {
             {Array.from(grouped.entries()).map(([day, items]) => (
               <div key={day} className="space-y-2">
                 {/* Day label */}
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-0.5 capitalize">
+                <p className="text-xs font-semibold text-muted-foreground tracking-wide px-0.5 first-letter:uppercase">
                   {day}
                 </p>
 
@@ -234,7 +234,7 @@ export default function IncidentsPage() {
                     return (
                       <div
                         key={inc.id}
-                        onClick={() => router.push(`/devices/${inc.deviceId}`)}
+                        onClick={() => setDrawerDeviceId(inc.deviceId)}
                         className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer group"
                       >
                         {/* Status indicator */}
@@ -301,6 +301,8 @@ export default function IncidentsPage() {
           </div>
         )}
       </div>
+
+      <DeviceDetailDrawer deviceId={drawerDeviceId} onClose={() => setDrawerDeviceId(null)} />
     </>
   );
 }

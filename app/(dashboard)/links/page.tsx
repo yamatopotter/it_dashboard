@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { LinkDetailDrawer } from "@/components/link-detail-drawer";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -104,13 +104,13 @@ function FilterChip({ active, onClick, children, color = "default" }: FilterChip
 }
 
 export default function LinksPage() {
-  const router = useRouter();
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ONLINE" | "OFFLINE">("ALL");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LinkItem | null>(null);
   const [origin, setOrigin] = useState("");
+  const [drawerLinkId, setDrawerLinkId] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -275,7 +275,7 @@ export default function LinksPage() {
                 {filtered.map((link) => (
                   <tr
                     key={link.id}
-                    onClick={() => router.push(`/links/${link.id}`)}
+                    onClick={() => setDrawerLinkId(link.id)}
                     className="hover:bg-muted/30 transition-colors cursor-pointer group"
                   >
                     {/* Link */}
@@ -414,6 +414,8 @@ export default function LinksPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <LinkDetailDrawer linkId={drawerLinkId} onClose={() => setDrawerLinkId(null)} />
     </>
   );
 }

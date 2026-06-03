@@ -1,29 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
-import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { buttonVariants } from "@/components/ui/button";
-import { formatUptime, formatResponseTime, formatPercent } from "@/lib/format";
+import { formatUptime } from "@/lib/format";
 import {
-  Router,
-  HardDrive,
-  Camera,
-  Box,
-  Pencil,
-  ExternalLink,
-  Wifi,
-  Cpu,
-  MemoryStick,
-  Clock,
-  MapPin,
+  Router, HardDrive, Camera, Box, MapPin,
+  History, Zap, X,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -36,96 +23,79 @@ import type { Device, DeviceStatus, StatusHistory, DeviceType } from "@prisma/cl
 type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
 
 const TYPE_ICON: Record<DeviceType, React.ElementType> = {
-  MIKROTIK: Router,
-  DVR: HardDrive,
-  CAMERA: Camera,
-  OTHER: Box,
+  MIKROTIK: Router, DVR: HardDrive, CAMERA: Camera, OTHER: Box,
 };
-
+const TYPE_ICON_BG: Record<DeviceType, string> = {
+  MIKROTIK: "bg-primary/10 text-primary",
+  DVR:      "bg-warning/10 text-warning",
+  CAMERA:   "bg-destructive/10 text-destructive",
+  OTHER:    "bg-muted text-muted-foreground",
+};
 const TYPE_LABEL: Record<DeviceType, string> = {
-  MIKROTIK: "Mikrotik",
-  DVR: "DVR",
-  CAMERA: "Câmera",
-  OTHER: "Outro",
+  MIKROTIK: "Mikrotik", DVR: "DVR", CAMERA: "Câmera", OTHER: "Outro",
 };
 
-function pingColor(ms: number | null | undefined) {
-  if (ms == null) return "text-muted-foreground";
-  if (ms < 50) return "text-success";
-  if (ms < 150) return "text-warning";
-  return "text-destructive";
-}
+// ─── Uptime segments ─────────────────────────────────────────────────────────
 
-function UptimeBar({ history }: { history: StatusHistory[] }) {
+type Seg = "online" | "offline" | "degraded" | "empty";
+
+const SEG_COLOR: Record<Seg, string> = {
+  online: "bg-success", offline: "bg-destructive", degraded: "bg-warning", empty: "bg-muted/60",
+};
+
+function buildSegments(history: StatusHistory[]): Seg[] {
   const now = Date.now();
-  const segments = Array.from({ length: 24 }, (_, i) => {
-    const segEnd = now - i * 3_600_000;
-    const segStart = segEnd - 3_600_000;
+  return Array.from({ length: 48 }, (_, i) => {
+    const segEnd = now - i * 1_800_000;          // 30-min slots
+    const segStart = segEnd - 1_800_000;
     const checks = history.filter((h) => {
       const t = new Date(h.timestamp).getTime();
       return t >= segStart && t < segEnd;
     });
     if (checks.length === 0) return "empty";
-    const onlinePct = checks.filter((h) => h.isOnline).length / checks.length;
-    if (onlinePct > 0.8) return "online";
-    if (onlinePct > 0.2) return "degraded";
+    const pct = checks.filter((h) => h.isOnline).length / checks.length;
+    if (pct > 0.8) return "online";
+    if (pct > 0.2) return "degraded";
     return "offline";
   }).reverse();
-
-  const colorMap: Record<string, string> = {
-    online: "bg-success",
-    degraded: "bg-warning",
-    offline: "bg-destructive",
-    empty: "bg-muted",
-  };
-
-  const onlineSegments = segments.filter((s) => s === "online").length;
-  const totalWithData = segments.filter((s) => s !== "empty").length;
-  const uptimePct = totalWithData > 0 ? (onlineSegments / totalWithData) * 100 : null;
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>24h atrás</span>
-        {uptimePct !== null && (
-          <span className="font-semibold text-foreground">{uptimePct.toFixed(1)}% uptime</span>
-        )}
-        <span>Agora</span>
-      </div>
-      <div className="flex gap-[2px]">
-        {segments.map((state, i) => (
-          <div
-            key={i}
-            title={`${24 - i}h atrás`}
-            className={`flex-1 h-4 rounded-[3px] ${colorMap[state]}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
 }
 
-function MetricTile({
-  icon: Icon,
-  label,
-  value,
-  colorClass,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  colorClass: string;
+// ─── Metric tile ─────────────────────────────────────────────────────────────
+
+function MetricTile({ label, value, unit, loading }: {
+  label: string; value: string | number | null; unit?: string; loading?: boolean;
 }) {
   return (
-    <div className="rounded-xl bg-muted/50 border border-border/60 p-3 space-y-1">
-      <div className={`flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide ${colorClass}`}>
-        <Icon className="h-3 w-3" />
+    <div className="rounded-xl border border-border bg-muted/30 p-3.5">
+      <p className="text-[9.5px] font-bold uppercase tracking-[.1em] text-muted-foreground mb-2">
         {label}
-      </div>
-      <p className="text-lg font-bold font-mono leading-none">{value}</p>
+      </p>
+      {loading ? <Skeleton className="h-7 w-16" /> : (
+        <div className="flex items-baseline gap-1">
+          <span className="text-[1.6rem] font-extrabold leading-none tabular-nums text-foreground">
+            {value ?? "—"}
+          </span>
+          {unit && value != null && (
+            <span className="text-sm font-semibold text-muted-foreground">{unit}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+// ─── Info row ────────────────────────────────────────────────────────────────
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-border/60 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-semibold text-foreground text-right">{value}</span>
+    </div>
+  );
+}
+
+// ─── Drawer ───────────────────────────────────────────────────────────────────
 
 interface Props {
   deviceId: string | null;
@@ -135,235 +105,236 @@ interface Props {
 export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
   const [device, setDevice] = useState<DeviceWithStatus | null>(null);
   const [history, setHistory] = useState<StatusHistory[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const fetchData = useCallback(async (id: string) => {
+    setLoading(true);
+    const [dev, hist] = await Promise.all([
+      fetch(`/api/devices/${id}`).then((r) => r.json()),
+      fetch(`/api/status/${id}?hours=24`).then((r) => r.json()),
+    ]);
+    setDevice(dev);
+    setHistory(Array.isArray(hist) ? hist : []);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    if (!deviceId) {
-      setDevice(null);
-      setHistory([]);
-      return;
-    }
-    setLoadingData(true);
-    Promise.all([
-      fetch(`/api/devices/${deviceId}`).then((r) => r.json()),
-      fetch(`/api/status/${deviceId}?hours=24`).then((r) => r.json()),
-    ]).then(([dev, hist]) => {
-      setDevice(dev);
-      setHistory(Array.isArray(hist) ? hist : []);
-      setLoadingData(false);
-    });
-  }, [deviceId]);
+    if (!deviceId) { setDevice(null); setHistory([]); return; }
+    fetchData(deviceId);
+  }, [deviceId, fetchData]);
 
-  const chartData = history
-    .filter((h) => h.pingMs != null)
-    .map((h) => ({
-      time: new Date(h.timestamp).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      ping: h.pingMs,
-    }));
+  async function handleTest() {
+    if (!deviceId) return;
+    setTesting(true);
+    await fetchData(deviceId);
+    setTesting(false);
+  }
+
+  // ── Computed metrics ────────────────────────────────────────────────────────
+  const pings = history.map((h) => h.pingMs).filter((v): v is number => v != null);
+  const pingAvg = pings.length > 0 ? Math.round(pings.reduce((s, v) => s + v, 0) / pings.length) : null;
+  const pingPeak = pings.length > 0 ? Math.max(...pings) : null;
+  const packetLoss = history.length > 0
+    ? Math.round((history.filter((h) => !h.isOnline).length / history.length) * 100)
+    : 0;
+  const onlineChecks = history.filter((h) => h.isOnline).length;
+  const uptime24h = history.length > 0
+    ? ((onlineChecks / history.length) * 100).toFixed(1)
+    : null;
 
   const status = device?.currentStatus;
   const TypeIcon = device ? TYPE_ICON[device.type] : Box;
+
+  // Chart data
+  const chartData = history
+    .filter((h) => h.pingMs != null)
+    .map((h) => ({
+      time: new Date(h.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+      ping: h.pingMs,
+    }));
+
+  const segments = buildSegments(history);
 
   return (
     <Sheet open={deviceId !== null} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="sm:max-w-md w-full flex flex-col gap-0 p-0 overflow-y-auto"
+        showCloseButton={false}
+        className="sm:max-w-[420px] w-full p-0 flex flex-col gap-0 overflow-y-auto"
       >
-        {/* Header */}
-        <SheetHeader className="px-5 pt-5 pb-4 border-b border-border shrink-0">
-          {loadingData || !device ? (
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-3 w-24" />
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <div className="px-5 pt-5 pb-4 border-b border-border shrink-0">
+          {loading || !device ? (
+            <div className="space-y-2 pr-8">
+              <div className="flex items-center gap-3">
+                <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
+                <div className="space-y-1.5 flex-1">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-28" />
+                </div>
+              </div>
+              <Skeleton className="h-5 w-14" />
             </div>
           ) : (
-            <div className="flex items-start gap-3 pr-7">
-              <div className="w-10 h-10 rounded-[10px] bg-accent flex items-center justify-center text-primary shrink-0">
-                <TypeIcon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <SheetTitle className="text-base font-bold leading-tight">
-                    {device.name}
-                  </SheetTitle>
-                  <StatusBadge isOnline={status?.isOnline ?? false} />
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${TYPE_ICON_BG[device.type]}`}>
+                  <TypeIcon className="h-5 w-5" />
                 </div>
-                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                  <span className="text-xs text-muted-foreground font-mono">{device.ip}</span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-accent text-primary text-[10px] font-medium">
-                    {TYPE_LABEL[device.type]}
-                  </span>
-                  {device.location && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                      <MapPin className="h-2.5 w-2.5" />
-                      {device.location}
+                <div className="min-w-0">
+                  <p className="font-bold text-[15px] leading-tight truncate">{device.name}</p>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                    <span className="font-mono">{device.ip}</span>
+                    {device.location && (
+                      <>
+                        <span className="opacity-40">·</span>
+                        <MapPin className="h-3 w-3 shrink-0" />
+                        <span>{device.location}</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                      status?.isOnline
+                        ? "bg-success/10 text-success border-success/20"
+                        : "bg-destructive/10 text-destructive border-destructive/20"
+                    }`}>
+                      {status?.isOnline ? "Online" : "Offline"}
                     </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </SheetHeader>
-
-        {/* Body */}
-        <div className="flex-1 px-5 py-4 space-y-5">
-          {loadingData || !device ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 rounded-xl" />
-                ))}
-              </div>
-              <Skeleton className="h-8 w-full rounded-lg" />
-              <Skeleton className="h-28 w-full rounded-lg" />
-            </div>
-          ) : (
-            <>
-              {/* Metrics grid */}
-              <div className="grid grid-cols-2 gap-2">
-                <MetricTile
-                  icon={Wifi}
-                  label="Ping"
-                  value={formatResponseTime(status?.pingMs)}
-                  colorClass={pingColor(status?.pingMs)}
-                />
-                {status?.uptime != null ? (
-                  <MetricTile
-                    icon={Clock}
-                    label="Uptime"
-                    value={formatUptime(status.uptime)}
-                    colorClass="text-success"
-                  />
-                ) : (
-                  <MetricTile
-                    icon={Clock}
-                    label="Uptime"
-                    value="—"
-                    colorClass="text-muted-foreground"
-                  />
-                )}
-                {status?.cpuLoad != null && (
-                  <MetricTile
-                    icon={Cpu}
-                    label="CPU"
-                    value={formatPercent(status.cpuLoad)}
-                    colorClass={
-                      status.cpuLoad < 60
-                        ? "text-success"
-                        : status.cpuLoad < 85
-                        ? "text-warning"
-                        : "text-destructive"
-                    }
-                  />
-                )}
-                {status?.memoryUsed != null && (
-                  <MetricTile
-                    icon={MemoryStick}
-                    label="Memória"
-                    value={formatPercent(status.memoryUsed)}
-                    colorClass={
-                      status.memoryUsed < 70
-                        ? "text-primary"
-                        : status.memoryUsed < 90
-                        ? "text-warning"
-                        : "text-destructive"
-                    }
-                  />
-                )}
-              </div>
-
-              {/* Uptime bar */}
-              {history.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Disponibilidade 24h
-                  </p>
-                  <UptimeBar history={history} />
-                </div>
-              )}
-
-              {/* Sparkline */}
-              {chartData.length > 1 && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Latência 24h
-                  </p>
-                  <div className="h-24 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={chartData}
-                        margin={{ top: 2, right: 2, bottom: 0, left: 2 }}
-                      >
-                        <defs>
-                          <linearGradient id="drawerPingGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <Tooltip
-                          content={({ active, payload }) => {
-                            if (!active || !payload?.length) return null;
-                            return (
-                              <div className="bg-popover border rounded-md px-2 py-1.5 text-xs shadow-md">
-                                <p className="font-mono font-medium text-primary">
-                                  {payload[0].value}ms
-                                </p>
-                                <p className="text-muted-foreground">{payload[0].payload.time}</p>
-                              </div>
-                            );
-                          }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="ping"
-                          stroke="var(--primary)"
-                          strokeWidth={1.5}
-                          fill="url(#drawerPingGrad)"
-                          dot={false}
-                          isAnimationActive={false}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
                   </div>
                 </div>
-              )}
-
-              {/* Notes */}
-              {device.notes && (
-                <div className="space-y-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Observações
-                  </p>
-                  <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                    {device.notes}
-                  </p>
-                </div>
-              )}
-            </>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Footer actions */}
+        {/* ── Body ───────────────────────────────────────────────────────── */}
+        <div className="flex-1 px-5 py-5 space-y-5">
+
+          {/* Metrics 2×2 */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <MetricTile label="Ping atual"       value={status?.pingMs ?? null} unit="ms" loading={loading} />
+            <MetricTile label="Ping médio"        value={pingAvg}               unit="ms" loading={loading} />
+            <MetricTile label="Pico"              value={pingPeak}              unit="ms" loading={loading} />
+            <MetricTile label="Perda de pacote"   value={`${packetLoss}%`}      loading={loading} />
+          </div>
+
+          {/* Latency chart */}
+          {(loading || chartData.length > 1) && (
+            <div className="space-y-2">
+              <p className="text-[9.5px] font-bold uppercase tracking-[.1em] text-muted-foreground">
+                Latência — Últimas leituras
+              </p>
+              {loading ? (
+                <Skeleton className="h-28 w-full rounded-xl" />
+              ) : (
+                <div className="h-28 w-full rounded-xl overflow-hidden border border-border bg-muted/20 p-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+                      <defs>
+                        <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor="var(--success)" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="var(--success)" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          return (
+                            <div className="bg-popover border rounded-md px-2 py-1.5 text-xs shadow-md">
+                              <p className="font-mono font-semibold text-success">{payload[0].value}ms</p>
+                              <p className="text-muted-foreground">{payload[0].payload.time}</p>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Area type="monotone" dataKey="ping"
+                        stroke="var(--success)" strokeWidth={2}
+                        fill="url(#ddGrad)" dot={false} isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Availability bar */}
+          <div className="space-y-2">
+            <p className="text-[9.5px] font-bold uppercase tracking-[.1em] text-muted-foreground">
+              Disponibilidade (24h)
+            </p>
+            {loading ? (
+              <Skeleton className="h-5 w-full rounded" />
+            ) : (
+              <div className="flex gap-[2px]">
+                {segments.map((s, i) => (
+                  <div key={i} className={`flex-1 h-5 rounded-[3px] ${SEG_COLOR[s]}`} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Device info table */}
+          <div className="space-y-0.5">
+            <p className="text-[9.5px] font-bold uppercase tracking-[.1em] text-muted-foreground mb-1">
+              Informações do dispositivo
+            </p>
+            {loading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex justify-between py-2">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                ))}
+              </div>
+            ) : device ? (
+              <div>
+                <InfoRow label="Tipo"              value={TYPE_LABEL[device.type]} />
+                <InfoRow label="Endereço IP"       value={device.ip} />
+                {status?.uptime != null && (
+                  <InfoRow label="Uptime"          value={formatUptime(status.uptime)} />
+                )}
+                {uptime24h && (
+                  <InfoRow label="Disponibilidade 24h" value={`${uptime24h}%`} />
+                )}
+                {status?.checkedAt && (
+                  <InfoRow
+                    label="Última verificação"
+                    value={new Date(status.checkedAt).toLocaleTimeString("pt-BR")}
+                  />
+                )}
+              </div>
+            ) : null}
+          </div>
+
+        </div>
+
+        {/* ── Footer ─────────────────────────────────────────────────────── */}
         {device && (
-          <div className="px-5 py-4 border-t border-border flex items-center gap-2 shrink-0">
+          <div className="px-5 py-4 border-t border-border flex gap-2.5 shrink-0">
+            <button
+              onClick={handleTest}
+              disabled={testing || loading}
+              className="flex-1 inline-flex items-center justify-center gap-2 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              <Zap className="h-4 w-4" />
+              {testing ? "Testando..." : "Testar agora"}
+            </button>
             <Link
               href={`/devices/${device.id}`}
-              className={buttonVariants({ size: "sm", className: "flex-1" })}
               onClick={onClose}
+              className="flex-1 inline-flex items-center justify-center gap-2 h-10 rounded-xl border border-border bg-background text-foreground text-sm font-semibold hover:bg-muted transition-colors"
             >
-              <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-              Ver detalhes completos
-            </Link>
-            <Link
-              href={`/devices/${device.id}/edit`}
-              className={buttonVariants({ variant: "outline", size: "sm" })}
-              onClick={onClose}
-            >
-              <Pencil className="h-3.5 w-3.5" />
+              <History className="h-4 w-4" />
+              Histórico
             </Link>
           </div>
         )}
