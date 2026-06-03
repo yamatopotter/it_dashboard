@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { buttonVariants } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,11 +93,11 @@ function FilterChip({ active, onClick, children, color = "default" }: FilterChip
 }
 
 export default function DevicesPage() {
-  const router = useRouter();
   const [devices, setDevices] = useState<DeviceWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ONLINE" | "OFFLINE">("ALL");
   const [typeFilter, setTypeFilter] = useState<DeviceType | "ALL">("ALL");
+  const [drawerDeviceId, setDrawerDeviceId] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch("/api/devices");
@@ -232,7 +232,7 @@ export default function DevicesPage() {
                   return (
                     <tr
                       key={device.id}
-                      onClick={() => router.push(`/devices/${device.id}`)}
+                      onClick={() => setDrawerDeviceId(device.id)}
                       className="hover:bg-muted/30 transition-colors cursor-pointer group"
                     >
                       {/* Dispositivo */}
@@ -336,6 +336,11 @@ export default function DevicesPage() {
           </div>
         )}
       </div>
+
+      <DeviceDetailDrawer
+        deviceId={drawerDeviceId}
+        onClose={() => setDrawerDeviceId(null)}
+      />
     </>
   );
 }
