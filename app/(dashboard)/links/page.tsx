@@ -19,6 +19,11 @@ import {
   Activity,
   MapPin,
   Router,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  ArrowDown,
+  ArrowUp,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import Link from "next/link";
@@ -137,6 +142,14 @@ export default function LinksPage() {
   const [origin, setOrigin] = useState("");
   const [drawerLinkId, setDrawerLinkId] = useState<string | null>(null);
 
+  type TrafficTest =
+    | { state: "idle" }
+    | { state: "testing" }
+    | { state: "ok"; downloadBps: number; uploadBps: number }
+    | { state: "error"; message: string };
+
+  const [trafficTest, setTrafficTest] = useState<TrafficTest>({ state: "idle" });
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { name: "", description: "", location: "", mikrotikDeviceId: "", mikrotikInterface: "" },
@@ -167,6 +180,7 @@ export default function LinksPage() {
 
   function openCreate() {
     setEditing(null);
+    setTrafficTest({ state: "idle" });
     form.reset({ name: "", description: "", location: "", mikrotikDeviceId: "", mikrotikInterface: "" });
     setDialogOpen(true);
   }
@@ -174,6 +188,7 @@ export default function LinksPage() {
   function openEdit(e: React.MouseEvent, link: LinkItem) {
     e.stopPropagation();
     setEditing(link);
+    setTrafficTest({ state: "idle" });
     form.reset({
       name: link.name,
       description: link.description ?? "",
@@ -184,7 +199,44 @@ export default function LinksPage() {
     setDialogOpen(true);
   }
 
+  async function testTraffic(deviceId?: string, iface?: string): Promise<TrafficTest> {
+    const mikrotikDeviceId = deviceId ?? form.getValues("mikrotikDeviceId");
+    const mikrotikInterface = iface ?? form.getValues("mikrotikInterface");
+    if (!mikrotikDeviceId || !mikrotikInterface) {
+      const result: TrafficTest = { state: "error", message: "Selecione o Mikrotik e informe a interface antes de testar." };
+      setTrafficTest(result);
+      return result;
+    }
+    setTrafficTest({ state: "testing" });
+    try {
+      const res = await fetch("/api/links/test-traffic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mikrotikDeviceId, mikrotikInterface }),
+      });
+      const data = await res.json();
+      const result: TrafficTest = res.ok
+        ? { state: "ok", downloadBps: data.downloadBps, uploadBps: data.uploadBps }
+        : { state: "error", message: data.error ?? "Erro desconhecido" };
+      setTrafficTest(result);
+      return result;
+    } catch {
+      const result: TrafficTest = { state: "error", message: "Erro de rede ao testar conexão" };
+      setTrafficTest(result);
+      return result;
+    }
+  }
+
   async function onSubmit(values: FormValues) {
+    // If RouterOS config is set, require a passing test before saving
+    if (values.mikrotikDeviceId && values.mikrotikInterface) {
+      const current = trafficTest;
+      if (current.state !== "ok") {
+        const result = await testTraffic(values.mikrotikDeviceId, values.mikrotikInterface);
+        if (result.state !== "ok") return; // block save; error already shown in form
+      }
+    }
+
     try {
       const url = editing ? `/api/links/${editing.id}` : "/api/links";
       const method = editing ? "PUT" : "POST";
@@ -455,6 +507,7 @@ export default function LinksPage() {
                   <select
                     id="mikrotikDeviceId"
                     {...form.register("mikrotikDeviceId")}
+                    onChange={(e) => { form.setValue("mikrotikDeviceId", e.target.value); setTrafficTest({ state: "idle" }); }}
                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
                     <option value="">Não configurado</option>
@@ -465,21 +518,78 @@ export default function LinksPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="mikrotikInterface">Interface</Label>
-                  <Input
-                    id="mikrotikInterface"
-                    {...form.register("mikrotikInterface")}
-                    placeholder="ether1, sfp1..."
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="mikrotikInterface"
+                      {...form.register("mikrotikInterface")}
+                      onChange={(e) => { form.setValue("mikrotikInterface", e.target.value); setTrafficTest({ state: "idle" }); }}
+                      placeholder="ether1, sfp1..."
+                      className={trafficTest.state === "error" ? "border-destructive focus-visible:ring-destructive" : trafficTest.state === "ok" ? "border-success focus-visible:ring-success" : ""}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 px-3"
+                      disabled={trafficTest.state === "testing"}
+                      onClick={() => testTraffic()}
+                    >
+                      {trafficTest.state === "testing" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        "Testar"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                O worker consultará o RouterOS a cada 60s para capturar Download/Upload da interface.
-              </p>
+
+              {/* Test feedback */}
+              {trafficTest.state === "ok" && (
+                <div className="flex items-center gap-2 rounded-lg bg-success/10 border border-success/20 px-3 py-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-success">Conexão OK — interface respondendo</p>
+                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                      ↓ {formatBps(trafficTest.downloadBps)} · ↑ {formatBps(trafficTest.uploadBps)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] text-success font-semibold flex items-center gap-1">
+                      <ArrowDown className="h-3 w-3" />{formatBps(trafficTest.downloadBps)}
+                    </span>
+                    <span className="text-[11px] text-primary font-semibold flex items-center gap-1">
+                      <ArrowUp className="h-3 w-3" />{formatBps(trafficTest.uploadBps)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {trafficTest.state === "error" && (
+                <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2.5">
+                  <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                  <p className="text-xs text-destructive leading-relaxed">{trafficTest.message}</p>
+                </div>
+              )}
+              {trafficTest.state === "idle" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Configure o Mikrotik e a interface, depois clique em <strong>Testar</strong> para validar antes de salvar.
+                </p>
+              )}
+              {trafficTest.state === "testing" && (
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 animate-spin" />Conectando ao RouterOS…
+                </p>
+              )}
             </div>
 
             <DialogFooter showCloseButton>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Salvando..." : editing ? "Salvar" : "Criar"}
+              <Button
+                type="submit"
+                disabled={form.formState.isSubmitting || trafficTest.state === "testing"}
+              >
+                {form.formState.isSubmitting || trafficTest.state === "testing" ? (
+                  <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />{trafficTest.state === "testing" ? "Validando…" : "Salvando…"}</>
+                ) : editing ? "Salvar" : "Criar"}
               </Button>
             </DialogFooter>
           </form>
