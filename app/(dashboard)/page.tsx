@@ -33,6 +33,8 @@ interface LinkItem {
   lastEventAt: string | null;
   downloadBps: number | null;
   uploadBps: number | null;
+  contractedDownloadBps: number | null;
+  contractedUploadBps: number | null;
   latencyMs: number | null;
   _count: { events: number };
 }
@@ -236,6 +238,30 @@ function formatBps(bps: number | null): string {
   if (bps >= 1_000_000)     return `${(bps / 1_000_000).toFixed(1)} Mbps`;
   if (bps >= 1_000)         return `${(bps / 1_000).toFixed(0)} Kbps`;
   return `${bps} bps`;
+}
+
+function BandwidthCell({ current, contracted, color }: {
+  current: number | null;
+  contracted: number | null;
+  color: "success" | "primary";
+}) {
+  if (current == null) return <span className="text-muted-foreground/50 text-xs font-normal">sem dados</span>;
+  const pct = contracted && contracted > 0 ? Math.min((current / contracted) * 100, 100) : null;
+  const barColor = pct == null ? "" : pct >= 90 ? "bg-destructive" : pct >= 70 ? "bg-warning" : color === "success" ? "bg-success" : "bg-primary";
+  const textColor = color === "success" ? "text-success" : "text-primary";
+  return (
+    <div className="inline-flex flex-col items-end gap-0.5 min-w-18">
+      <span className={`font-mono text-xs font-semibold ${textColor}`}>{formatBps(current)}</span>
+      {contracted != null && (
+        <>
+          <span className="text-[10px] text-muted-foreground font-mono">/ {formatBps(contracted)}</span>
+          <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
+            <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 // ─── Device overview card ─────────────────────────────────────────────────────
@@ -647,11 +673,11 @@ export default function OverviewPage() {
                               <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{link.location}</span>
                             ) : <span className="opacity-40">—</span>}
                           </td>
-                          <td className="hidden sm:table-cell px-4 py-3 text-right font-mono text-xs font-semibold text-success">
-                            {link.downloadBps != null ? formatBps(link.downloadBps) : <span className="text-muted-foreground/50 font-normal">sem dados</span>}
+                          <td className="hidden sm:table-cell px-4 py-3 text-right">
+                            <BandwidthCell current={link.downloadBps} contracted={link.contractedDownloadBps} color="success" />
                           </td>
-                          <td className="hidden sm:table-cell px-4 py-3 text-right font-mono text-xs font-semibold text-primary">
-                            {link.uploadBps != null ? formatBps(link.uploadBps) : <span className="text-muted-foreground/50 font-normal">—</span>}
+                          <td className="hidden sm:table-cell px-4 py-3 text-right">
+                            <BandwidthCell current={link.uploadBps} contracted={link.contractedUploadBps} color="primary" />
                           </td>
                           <td className="hidden lg:table-cell px-4 py-3 min-w-44">
                             {segs ? (
