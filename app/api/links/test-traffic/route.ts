@@ -50,8 +50,8 @@ export async function POST(req: Request) {
       message = `Não foi possível conectar ao Mikrotik ${device.ip}:${device.routerosPort} — verifique IP, porta e se a API RouterOS está habilitada`;
     } else if (/auth|login|password|user/i.test(raw)) {
       message = `Credenciais inválidas para ${device.name} — verifique usuário e senha do RouterOS`;
-    } else if (/no such interface|interface.*not found|invalid value/i.test(raw)) {
-      message = `Interface "${mikrotikInterface}" não encontrada em ${device.name} — verifique o nome exato (ex: ether1, sfp-sfpplus1)`;
+    } else if (/não encontrada|not found|no such interface|invalid value/i.test(raw)) {
+      message = `Interface "${mikrotikInterface}" não encontrada em ${device.name} — verifique o nome exato (ex: ether1, sfp-sfpplus1, bridge)`;
     }
 
     return NextResponse.json({ error: message }, { status: 422 });
