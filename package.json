@@ -17,7 +17,8 @@
     "test": "jest --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --forceExit",
-    "seed:security": "tsx scripts/seed-security-notes.ts"
+    "seed:security": "tsx scripts/seed-security-notes.ts",
+    "migrate:credentials": "tsx scripts/migrate-credentials.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

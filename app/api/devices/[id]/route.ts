@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deviceConfigSchema } from "@/lib/schemas/device";
+import { encrypt, resolveRouterosCredentials } from "@/lib/crypto";
+import type { Device } from "@prisma/client";
 
 const updateSchema = deviceConfigSchema.partial();
+
+function sanitizeDevice(device: Device) {
+  const { routerosUser, routerosPass, routerosUserEnc, routerosPassEnc, ...rest } = device;
+  return {
+    ...rest,
+    hasRouterosCredentials: !!(resolveRouterosCredentials({ routerosUser, routerosPass, routerosUserEnc, routerosPassEnc })),
+  };
+}
 
 export async function GET(
   _req: NextRequest,
@@ -20,7 +30,7 @@ export async function GET(
 
   if (!device) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json(device);
+  return NextResponse.json(sanitizeDevice(device));
 }
 
 export async function PUT(
@@ -38,9 +48,23 @@ export async function PUT(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const device = await db.device.update({ where: { id }, data: parsed.data });
+  const { routerosUser, routerosPass, ...rest } = parsed.data;
 
-  return NextResponse.json(device);
+  // Only update credentials if new non-empty values are provided
+  const credentialUpdate: { routerosUserEnc?: string | null; routerosPassEnc?: string | null } = {};
+  if (routerosUser !== undefined) {
+    credentialUpdate.routerosUserEnc = routerosUser ? encrypt(routerosUser) : null;
+  }
+  if (routerosPass !== undefined) {
+    credentialUpdate.routerosPassEnc = routerosPass ? encrypt(routerosPass) : null;
+  }
+
+  const device = await db.device.update({
+    where: { id },
+    data: { ...rest, ...credentialUpdate },
+  });
+
+  return NextResponse.json(sanitizeDevice(device));
 }
 
 export async function DELETE(

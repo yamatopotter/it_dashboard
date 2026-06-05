@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { bulkDeviceSchema } from "@/lib/schemas/device";
+import { encrypt } from "@/lib/crypto";
 
 function ipToInt(ip: string): number | null {
   const parts = ip.split(".").map(Number);
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { ipStart, ipEnd, name, ...config } = parsed.data;
+  const { ipStart, ipEnd, name, routerosUser, routerosPass, ...config } = parsed.data;
 
   const startInt = ipToInt(ipStart);
   const endInt = ipToInt(ipEnd);
@@ -55,6 +56,8 @@ export async function POST(req: NextRequest) {
       ...config,
       ip,
       name: `${name} ${ip.split(".").pop()}`,
+      routerosUserEnc: routerosUser ? encrypt(routerosUser) : null,
+      routerosPassEnc: routerosPass ? encrypt(routerosPass) : null,
     })),
     skipDuplicates: true,
   });

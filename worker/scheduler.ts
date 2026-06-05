@@ -4,6 +4,7 @@ import { checkHttp } from "./monitors/http";
 import { checkSnmp } from "./monitors/snmp";
 import { checkRouterOS } from "./monitors/routeros";
 import { checkLinkTraffic } from "./monitors/link-traffic";
+import { resolveRouterosCredentials } from "../lib/crypto";
 import type { Device, Link } from "@prisma/client";
 
 const RETENTION_DAYS = 30;
@@ -20,9 +21,11 @@ async function runChecks(device: Device) {
     device.snmpEnabled
       ? checkSnmp(device.ip, device.snmpCommunity, device.snmpPort)
       : Promise.resolve(null),
-    device.routerosEnabled && device.routerosUser && device.routerosPass
-      ? checkRouterOS(device.ip, device.routerosUser, device.routerosPass, device.routerosPort)
-      : Promise.resolve(null),
+    (() => {
+      if (!device.routerosEnabled) return Promise.resolve(null);
+      const creds = resolveRouterosCredentials(device);
+      return creds ? checkRouterOS(device.ip, creds.user, creds.pass, device.routerosPort) : Promise.resolve(null);
+    })(),
   ]);
 
   const pingResult     = results[0].status === "fulfilled" ? results[0].value : null;
@@ -86,13 +89,14 @@ async function runLinkChecks(link: Link & { mikrotikDevice: Device | null }) {
   if (!link.mikrotikDevice || !link.mikrotikInterface) return;
 
   const dev = link.mikrotikDevice;
-  if (!dev.routerosUser || !dev.routerosPass) return;
+  const creds = resolveRouterosCredentials(dev);
+  if (!creds) return;
 
   try {
     const result = await checkLinkTraffic(
       dev.ip,
-      dev.routerosUser,
-      dev.routerosPass,
+      creds.user,
+      creds.pass,
       dev.routerosPort,
       link.mikrotikInterface,
     );

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { checkLinkTraffic } from "@/worker/monitors/link-traffic";
+import { resolveRouterosCredentials } from "@/lib/crypto";
 
 const schema = z.object({
   mikrotikDeviceId: z.string().min(1),
@@ -25,7 +26,8 @@ export async function POST(req: Request) {
   if (!device) {
     return NextResponse.json({ error: "Dispositivo não encontrado" }, { status: 404 });
   }
-  if (!device.routerosEnabled || !device.routerosUser || !device.routerosPass) {
+  const creds = resolveRouterosCredentials(device);
+  if (!device.routerosEnabled || !creds) {
     return NextResponse.json(
       { error: `Dispositivo "${device.name}" não tem RouterOS API habilitado ou credenciais configuradas` },
       { status: 422 },
@@ -35,8 +37,8 @@ export async function POST(req: Request) {
   try {
     const result = await checkLinkTraffic(
       device.ip,
-      device.routerosUser,
-      device.routerosPass,
+      creds.user,
+      creds.pass,
       device.routerosPort,
       mikrotikInterface,
     );
