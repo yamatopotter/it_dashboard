@@ -43,8 +43,9 @@ export async function middleware(req: NextRequest) {
   }
 
   // Session enforcement for all other protected routes
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (auth as any)(req);
+  // Cast needed: NextAuth's `auth` expects NextAuthRequest, not NextRequest.
+  // The runtime contract is compatible; only the static types diverge.
+  return (auth as unknown as (req: NextRequest) => ReturnType<typeof auth>)(req);
 }
 
 export const config = {
