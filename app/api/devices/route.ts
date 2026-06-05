@@ -3,8 +3,18 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
 import { deviceConfigSchema } from "@/lib/schemas/device";
+import { encrypt, resolveRouterosCredentials } from "@/lib/crypto";
+import type { Device } from "@prisma/client";
 
 const deviceTypeSchema = z.enum(["MIKROTIK", "DVR", "CAMERA", "OTHER"]);
+
+function sanitizeDevice(device: Device) {
+  const { routerosUser, routerosPass, routerosUserEnc, routerosPassEnc, ...rest } = device;
+  return {
+    ...rest,
+    hasRouterosCredentials: !!(resolveRouterosCredentials({ routerosUser, routerosPass, routerosUserEnc, routerosPassEnc })),
+  };
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -26,7 +36,7 @@ export async function GET(req: NextRequest) {
     orderBy: { name: "asc" },
   });
 
-  return NextResponse.json(devices);
+  return NextResponse.json(devices.map(sanitizeDevice));
 }
 
 export async function POST(req: NextRequest) {
@@ -40,7 +50,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const device = await db.device.create({ data: parsed.data });
+  const { routerosUser, routerosPass, ...rest } = parsed.data;
 
-  return NextResponse.json(device, { status: 201 });
+  const device = await db.device.create({
+    data: {
+      ...rest,
+      routerosUserEnc: routerosUser ? encrypt(routerosUser) : null,
+      routerosPassEnc: routerosPass ? encrypt(routerosPass) : null,
+    },
+  });
+
+  return NextResponse.json(sanitizeDevice(device), { status: 201 });
 }

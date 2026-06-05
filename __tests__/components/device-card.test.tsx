@@ -30,6 +30,8 @@ const baseDevice = {
   routerosEnabled: false,
   routerosUser: null,
   routerosPass: null,
+  routerosUserEnc: null,
+  routerosPassEnc: null,
   routerosPort: 8728,
   checkInterval: 60,
   createdAt: new Date("2026-01-01"),
