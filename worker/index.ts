@@ -1,5 +1,9 @@
 import "dotenv/config";
+import { validateKey } from "../lib/crypto";
 import { startScheduler } from "./scheduler";
+
+// Fail fast if required secrets are missing before any polling starts
+validateKey();
 
 process.on("uncaughtException", (err) => {
   console.error("[worker] Uncaught exception:", err.message);

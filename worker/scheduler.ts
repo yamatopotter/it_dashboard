@@ -5,6 +5,7 @@ import { checkSnmp } from "./monitors/snmp";
 import { checkRouterOS } from "./monitors/routeros";
 import { checkLinkTraffic } from "./monitors/link-traffic";
 import { resolveRouterosCredentials } from "../lib/crypto";
+import { log } from "../lib/logger";
 import type { Device, Link } from "@prisma/client";
 
 const RETENTION_DAYS = 30;
@@ -12,7 +13,7 @@ const RETENTION_DAYS = 30;
 const timers = new Map<string, ReturnType<typeof setInterval>>();
 const deviceSnapshots = new Map<string, Date>(); // deviceId -> last known updatedAt
 
-async function runChecks(device: Device) {
+export async function runChecks(device: Device) {
   const results = await Promise.allSettled([
     device.pingEnabled ? checkPing(device.ip) : Promise.resolve(null),
     device.httpEnabled
@@ -34,10 +35,16 @@ async function runChecks(device: Device) {
   const routerosResult = results[3].status === "fulfilled" ? results[3].value : null;
 
   if (results[2].status === "rejected" && device.snmpEnabled) {
-    console.error(`[SNMP] ${device.name} (${device.ip}):`, results[2].reason?.message ?? results[2].reason);
+    log("error", "[SNMP] monitor falhou", {
+      device: device.name, ip: device.ip,
+      error: results[2].reason?.message ?? String(results[2].reason),
+    });
   }
   if (results[3].status === "rejected" && device.routerosEnabled) {
-    console.error(`[RouterOS] ${device.name} (${device.ip}):`, results[3].reason?.message ?? results[3].reason);
+    log("error", "[RouterOS] monitor falhou", {
+      device: device.name, ip: device.ip,
+      error: results[3].reason?.message ?? String(results[3].reason),
+    });
   }
 
   const isOnline = pingResult?.alive ?? httpResult?.ok ?? false;
@@ -113,8 +120,10 @@ async function runLinkChecks(link: Link & { mikrotikDevice: Device | null }) {
       `[Link] ${link.name} — ↓ ${(result.downloadBps / 1_000_000).toFixed(1)} Mbps  ↑ ${(result.uploadBps / 1_000_000).toFixed(1)} Mbps`,
     );
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Link] ${link.name} (${dev.ip}/${link.mikrotikInterface}):`, msg);
+    log("error", "[Link] tráfego falhou", {
+      link: link.name, ip: dev.ip, iface: link.mikrotikInterface,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -134,10 +143,21 @@ export async function startScheduler() {
   void pruneHistory();
   setInterval(pruneHistory, 24 * 3_600_000);
 
+  // Heartbeat: lets /api/health detect if the worker has stopped
+  const updateHeartbeat = () =>
+    db.workerHeartbeat
+      .upsert({ where: { id: 1 }, update: {}, create: { id: 1, seenAt: new Date() } })
+      .catch(() => {});
+  void updateHeartbeat();
+  setInterval(updateHeartbeat, 60_000);
+
   // Reconcile device list every 30s: add new, remove deleted, reschedule updated
+  // Uses a lean select for change detection; fetches full device only when needed.
   setInterval(async () => {
-    const current = await db.device.findMany();
-    const currentIds = new Set(current.map((d) => d.id));
+    const snapshots = await db.device.findMany({
+      select: { id: true, name: true, updatedAt: true },
+    });
+    const currentIds = new Set(snapshots.map((d) => d.id));
 
     for (const id of timers.keys()) {
       if (!currentIds.has(id)) {
@@ -146,12 +166,14 @@ export async function startScheduler() {
       }
     }
 
-    for (const device of current) {
-      const isNew = !timers.has(device.id);
-      const lastUpdatedAt = deviceSnapshots.get(device.id);
-      const configChanged = !!lastUpdatedAt && lastUpdatedAt.getTime() !== device.updatedAt.getTime();
+    for (const snap of snapshots) {
+      const isNew = !timers.has(snap.id);
+      const lastUpdatedAt = deviceSnapshots.get(snap.id);
+      const configChanged = !!lastUpdatedAt && lastUpdatedAt.getTime() !== snap.updatedAt.getTime();
 
       if (isNew || configChanged) {
+        const device = await db.device.findUnique({ where: { id: snap.id } });
+        if (!device) continue;
         scheduleDevice(device);
         deviceSnapshots.set(device.id, device.updatedAt);
         console.log(
@@ -166,7 +188,7 @@ export async function startScheduler() {
   setInterval(pollLinks, 60_000);
 }
 
-async function pollLinks() {
+export async function pollLinks() {
   const links = await db.link.findMany({
     where: { mikrotikDeviceId: { not: null }, mikrotikInterface: { not: null } },
     include: { mikrotikDevice: true },
@@ -175,7 +197,7 @@ async function pollLinks() {
   await Promise.allSettled(links.map(runLinkChecks));
 }
 
-async function pruneHistory() {
+export async function pruneHistory() {
   const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 3_600_000);
   const [statusResult, eventResult] = await Promise.all([
     db.statusHistory.deleteMany({ where: { timestamp: { lt: cutoff } } }),

@@ -10,6 +10,10 @@ function getKey(): Buffer {
   return Buffer.from(hex, "hex");
 }
 
+export function validateKey(): void {
+  getKey(); // throws if ENCRYPTION_KEY is missing or malformed
+}
+
 export function encrypt(plain: string): string {
   const key = getKey();
   const iv = randomBytes(12);

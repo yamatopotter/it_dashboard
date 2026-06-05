@@ -1,8 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
-const secret = process.env.WEBHOOK_SECRET;
-
 export function generateWebhookToken(linkId: string): string {
+  const secret = process.env.WEBHOOK_SECRET;
   if (!secret) {
     throw new Error("WEBHOOK_SECRET não está definido.");
   }
@@ -10,6 +9,7 @@ export function generateWebhookToken(linkId: string): string {
 }
 
 export function verifyWebhookToken(linkId: string, token: string): boolean {
+  const secret = process.env.WEBHOOK_SECRET;
   if (!secret) return false;
   try {
     const expected = createHmac("sha256", secret).update(linkId).digest("hex");

@@ -145,6 +145,11 @@ enum NoteStatus {
   RESOLVED
 }
 
+model WorkerHeartbeat {
+  id     Int      @id @default(1) // singleton — only one row ever
+  seenAt DateTime @updatedAt
+}
+
 model Note {
   id         String       @id @default(cuid())
   title      String
