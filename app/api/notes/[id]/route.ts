@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
 const updateNoteSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -59,13 +60,19 @@ export async function PUT(
     }
   }
 
-  const note = await db.note.update({
-    where: { id },
-    data,
-    include: { device: { select: { id: true, name: true, ip: true } } },
-  });
-
-  return NextResponse.json(note);
+  try {
+    const note = await db.note.update({
+      where: { id },
+      data,
+      include: { device: { select: { id: true, name: true, ip: true } } },
+    });
+    return NextResponse.json(note);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    throw err;
+  }
 }
 
 export async function DELETE(
@@ -76,7 +83,13 @@ export async function DELETE(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  await db.note.delete({ where: { id } });
-
-  return new NextResponse(null, { status: 204 });
+  try {
+    await db.note.delete({ where: { id } });
+    return new NextResponse(null, { status: 204 });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    throw err;
+  }
 }
