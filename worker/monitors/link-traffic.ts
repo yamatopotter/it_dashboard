@@ -27,7 +27,7 @@ export async function checkLinkTraffic(
       ]) as Row[];
       const row = rows.find((r) => r.name === iface);
       if (!row) throw new Error(`Interface "${iface}" não encontrada no dispositivo`);
-      return { rx: Number(row["rx-byte"]), tx: Number(row["tx-byte"]) };
+      return { rx: Number(row["rx-byte"]) || 0, tx: Number(row["tx-byte"]) || 0 };
     };
 
     const before = await readCounters();

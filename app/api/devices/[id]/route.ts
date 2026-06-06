@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deviceConfigSchema } from "@/lib/schemas/device";
 import { encrypt, resolveRouterosCredentials } from "@/lib/crypto";
+import { Prisma } from "@prisma/client";
 import type { Device } from "@prisma/client";
 
 const updateSchema = deviceConfigSchema.partial();
@@ -59,12 +60,18 @@ export async function PUT(
     credentialUpdate.routerosPassEnc = routerosPass ? encrypt(routerosPass) : null;
   }
 
-  const device = await db.device.update({
-    where: { id },
-    data: { ...rest, ...credentialUpdate },
-  });
-
-  return NextResponse.json(sanitizeDevice(device));
+  try {
+    const device = await db.device.update({
+      where: { id },
+      data: { ...rest, ...credentialUpdate },
+    });
+    return NextResponse.json(sanitizeDevice(device));
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    throw err;
+  }
 }
 
 export async function DELETE(
@@ -75,7 +82,13 @@ export async function DELETE(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  await db.device.delete({ where: { id } });
-
-  return new NextResponse(null, { status: 204 });
+  try {
+    await db.device.delete({ where: { id } });
+    return new NextResponse(null, { status: 204 });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    throw err;
+  }
 }

@@ -8,7 +8,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { id } = await params;
   const { searchParams } = new URL(req.url);
-  const hours = Math.min(Number(searchParams.get("hours") ?? 24), 720);
+  const hours = Math.min(parseInt(searchParams.get("hours") ?? "") || 24, 720);
   const since = new Date(Date.now() - hours * 3600 * 1000);
 
   const [link, events] = await Promise.all([

@@ -17,7 +17,7 @@ export async function GET() {
   const since24h = new Date(now - 24 * 3_600_000);
   const since6h  = new Date(now - 6  * 3_600_000);
 
-  const [pingHistory, links, linkEvents] = await Promise.all([
+  const [pingHistory, links, linkEvents, lastEventsBefore] = await Promise.all([
     db.statusHistory.findMany({
       where: { timestamp: { gte: since6h } },
       orderBy: { timestamp: "asc" },
@@ -28,6 +28,13 @@ export async function GET() {
       where: { timestamp: { gte: since24h } },
       orderBy: { timestamp: "asc" },
       select: { linkId: true, type: true, timestamp: true },
+    }),
+    // Last event before the window per link — determines true initial state for each bar
+    db.linkEvent.findMany({
+      where: { timestamp: { lt: since24h } },
+      orderBy: { timestamp: "desc" },
+      distinct: ["linkId"],
+      select: { linkId: true, type: true },
     }),
   ]);
 
@@ -40,6 +47,11 @@ export async function GET() {
   for (const id of Object.keys(sparklines)) {
     sparklines[id] = sparklines[id].slice(-60);
   }
+
+  // True state of each link just before the 24h window (based on last recorded event)
+  const stateBeforeWindow = new Map(
+    lastEventsBefore.map((e) => [e.linkId, e.type === "UP" ? "online" as const : "offline" as const])
+  );
 
   // Pre-group events by linkId — O(events) once, avoids repeated .filter() inside the segment loop
   const eventsByLink = new Map<string, typeof linkEvents>();
@@ -57,8 +69,10 @@ export async function GET() {
     const events = eventsByLink.get(link.id) ?? [];
     const segments: SegmentState[] = [];
     let eventIdx = 0;
-    // Initial state: use current link state as fallback when no events precede the window
-    let stateBeforeSeg: "online" | "offline" = link.isOnline ? "online" : "offline";
+    // Use last pre-window event to determine true historical initial state.
+    // Fall back to current isOnline only when no events exist at all (link never changed state).
+    let stateBeforeSeg: "online" | "offline" =
+      stateBeforeWindow.get(link.id) ?? (link.isOnline ? "online" : "offline");
 
     for (let i = 0; i < 24; i++) {
       const segStart = now - (24 - i) * 3_600_000;

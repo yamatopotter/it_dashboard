@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
+import { Prisma } from "@prisma/client";
 
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -32,8 +33,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const link = await db.link.update({ where: { id }, data: parsed.data });
-  return NextResponse.json(link);
+  try {
+    const link = await db.link.update({ where: { id }, data: parsed.data });
+    return NextResponse.json(link);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    throw err;
+  }
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -41,6 +49,13 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  await db.link.delete({ where: { id } });
-  return new NextResponse(null, { status: 204 });
+  try {
+    await db.link.delete({ where: { id } });
+    return new NextResponse(null, { status: 204 });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    throw err;
+  }
 }
