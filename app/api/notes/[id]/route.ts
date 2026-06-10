@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
-import { parseBody } from "@/lib/parse-body";
+import { parseAndValidate } from "@/lib/parse-body";
+import { notFoundOnP2025 } from "@/lib/prisma-error";
 
 const updateNoteSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -15,13 +15,10 @@ const updateNoteSchema = z.object({
   resolvedAt: z.string().datetime().optional().nullable(),
 });
 
-export async function GET(
+export const GET = withAuth(async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+) => {
   const { id } = await params;
   const note = await db.note.findUnique({
     where: { id },
@@ -31,33 +28,23 @@ export async function GET(
   if (!note) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   return NextResponse.json(note);
-}
+});
 
-export async function PUT(
+export const PUT = withAuth(async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+) => {
   const { id } = await params;
-  const raw = await parseBody(req);
-  if (!raw.ok) return raw.response;
-  const parsed = updateNoteSchema.safeParse(raw.data);
+  const body = await parseAndValidate(req, updateNoteSchema);
+  if (!body.ok) return body.response;
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
+  const data: Record<string, unknown> = { ...body.data };
 
-  const data: Record<string, unknown> = { ...parsed.data };
-
-  // Auto-set resolvedAt when status changes to RESOLVED
-  if (parsed.data.status === "RESOLVED" && parsed.data.resolvedAt === undefined) {
+  if (body.data.status === "RESOLVED" && body.data.resolvedAt === undefined) {
     data.resolvedAt = new Date().toISOString();
   }
-  // Clear resolvedAt when reopening
-  if (parsed.data.status === "OPEN" || parsed.data.status === "IN_PROGRESS") {
-    if (parsed.data.resolvedAt === undefined) {
+  if (body.data.status === "OPEN" || body.data.status === "IN_PROGRESS") {
+    if (body.data.resolvedAt === undefined) {
       data.resolvedAt = null;
     }
   }
@@ -70,28 +57,19 @@ export async function PUT(
     });
     return NextResponse.json(note);
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    throw err;
+    return notFoundOnP2025(err) ?? (() => { throw err; })();
   }
-}
+});
 
-export async function DELETE(
+export const DELETE = withAuth(async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+) => {
   const { id } = await params;
   try {
     await db.note.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    throw err;
+    return notFoundOnP2025(err) ?? (() => { throw err; })();
   }
-}
+});

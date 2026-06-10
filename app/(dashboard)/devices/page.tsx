@@ -1,52 +1,27 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 import Link from "next/link";
 import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { buttonVariants } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonList } from "@/components/skeleton-list";
+import { EmptyState } from "@/components/empty-state";
 import { PingSparkline } from "@/components/ping-sparkline";
 import {
-  Plus,
-  Layers,
-  Pencil,
-  MapPin,
-  Server,
-  Router,
-  HardDrive,
-  Camera,
-  Box,
-  Wifi,
-  WifiOff,
-  ChevronsUpDown,
-  ChevronUp,
-  ChevronDown,
-  LayoutGrid,
-  List,
+  Plus, Layers, Pencil, MapPin, Server, Wifi,
+  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { formatResponseTime, formatUptime, formatPercent } from "@/lib/format";
+import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL, DEVICE_TYPE_ICON_BG } from "@/lib/device-constants";
+import { FilterChip } from "@/components/filter-chip";
 import type { Device, DeviceStatus, DeviceType } from "@prisma/client";
 import type { OverviewData } from "@/app/api/overview/route";
 
 type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
-
-const TYPE_ICON: Record<DeviceType, React.ElementType> = {
-  MIKROTIK: Router,
-  DVR: HardDrive,
-  CAMERA: Camera,
-  OTHER: Box,
-  UNIFI_AP: Wifi,
-};
-
-const TYPE_LABEL: Record<DeviceType, string> = {
-  MIKROTIK: "Mikrotik",
-  DVR: "DVR",
-  CAMERA: "Câmera",
-  OTHER: "Outro",
-  UNIFI_AP: "UniFi AP",
-};
 
 function pingColor(ms: number | null | undefined) {
   if (ms == null) return "text-muted-foreground";
@@ -75,14 +50,6 @@ function MiniBar({ value, colorClass }: { value: number; colorClass: string }) {
 
 // ─── Compact device card (card view) ─────────────────────────────────────────
 
-const TYPE_ICON_BG: Record<DeviceType, string> = {
-  MIKROTIK: "bg-primary/10 text-primary",
-  DVR:      "bg-warning/10 text-warning",
-  CAMERA:   "bg-destructive/10 text-destructive",
-  OTHER:    "bg-muted text-muted-foreground",
-  UNIFI_AP: "bg-sky-500/10 text-sky-500",
-};
-
 function DeviceCard({
   device,
   sparkline,
@@ -96,7 +63,7 @@ function DeviceCard({
   const isOnline = status?.isOnline ?? false;
   const ping = status?.pingMs;
   const isInstavel = isOnline && (ping ?? 0) > 150;
-  const TypeIcon = TYPE_ICON[device.type];
+  const TypeIcon = DEVICE_TYPE_ICON[device.type];
 
   const borderColor = isInstavel
     ? "border-l-warning"
@@ -119,7 +86,7 @@ function DeviceCard({
         {/* Header */}
         <div className="flex items-start justify-between gap-1.5">
           <div className="flex items-center gap-2 min-w-0">
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${TYPE_ICON_BG[device.type]}`}>
+            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${DEVICE_TYPE_ICON_BG[device.type]}`}>
               <TypeIcon className="h-3.5 w-3.5" />
             </div>
             <div className="min-w-0">
@@ -174,13 +141,6 @@ function DeviceCard({
   );
 }
 
-interface FilterChipProps {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  color?: "default" | "success" | "destructive";
-}
-
 type SortField = "name" | "ip" | "status" | "ping" | "location";
 type SortDir = "asc" | "desc";
 
@@ -225,28 +185,6 @@ function SortableHeader({
   );
 }
 
-function FilterChip({ active, onClick, children, color = "default" }: FilterChipProps) {
-  const activeClass =
-    color === "success"
-      ? "bg-success text-white border-success"
-      : color === "destructive"
-      ? "bg-destructive text-white border-destructive"
-      : "bg-primary text-primary-foreground border-primary";
-
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all select-none whitespace-nowrap ${
-        active
-          ? activeClass
-          : "bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 export default function DevicesPage() {
   const [devices, setDevices] = useState<DeviceWithStatus[]>([]);
   const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
@@ -277,11 +215,7 @@ export default function DevicesPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
-  }, [load]);
+  usePolling(load, 30_000);
 
   const filtered = devices
     .filter((d) => {
@@ -396,7 +330,7 @@ export default function DevicesPage() {
               active={typeFilter === t}
               onClick={() => setTypeFilter(t)}
             >
-              {t === "ALL" ? "Todos os tipos" : TYPE_LABEL[t]}
+              {t === "ALL" ? "Todos os tipos" : DEVICE_TYPE_LABEL[t]}
               {t !== "ALL" && (
                 <span
                   className={`inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[10px] font-semibold tabular-nums ${
@@ -419,26 +353,18 @@ export default function DevicesPage() {
               ))}
             </div>
           ) : (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 rounded-lg" />
-              ))}
-            </div>
+            <SkeletonList count={5} />
           )
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            {devices.length === 0 ? (
-              <>
-                <Server className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p>Nenhum dispositivo cadastrado.</p>
-                <Link href="/devices/new" className={`mt-4 inline-flex ${buttonVariants({})}`}>
-                  Cadastrar primeiro dispositivo
-                </Link>
-              </>
-            ) : (
-              <p>Nenhum dispositivo encontrado para os filtros selecionados.</p>
-            )}
-          </div>
+          devices.length === 0 ? (
+            <EmptyState
+              icon={Server}
+              title="Nenhum dispositivo cadastrado."
+              action={<Link href="/devices/new" className={buttonVariants({})}>Cadastrar primeiro dispositivo</Link>}
+            />
+          ) : (
+            <EmptyState title="Nenhum dispositivo encontrado para os filtros selecionados." />
+          )
         ) : viewMode === "cards" ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filtered.map((device) => (
@@ -491,7 +417,7 @@ export default function DevicesPage() {
               </thead>
               <tbody className="divide-y">
                 {filtered.map((device) => {
-                  const TypeIcon = TYPE_ICON[device.type];
+                  const TypeIcon = DEVICE_TYPE_ICON[device.type];
                   const status = device.currentStatus;
 
                   return (
@@ -511,7 +437,7 @@ export default function DevicesPage() {
                               {device.name}
                             </p>
                             <p className="text-[10px] text-muted-foreground">
-                              {TYPE_LABEL[device.type]}
+                              {DEVICE_TYPE_LABEL[device.type]}
                             </p>
                           </div>
                         </div>

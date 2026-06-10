@@ -1,28 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
 import { deviceConfigSchema } from "@/lib/schemas/device";
-import { encrypt, resolveRouterosCredentials, resolveUnifiApiKey, resolveUnifiCredentials } from "@/lib/crypto";
-import { parseBody } from "@/lib/parse-body";
-import type { Device } from "@prisma/client";
+import { encrypt } from "@/lib/crypto";
+import { parseAndValidate } from "@/lib/parse-body";
+import { sanitizeDevice } from "@/lib/device-utils";
 
 const deviceTypeSchema = z.enum(["MIKROTIK", "DVR", "CAMERA", "OTHER", "UNIFI_AP"]);
 
-function sanitizeDevice(device: Device) {
-  const { routerosUser, routerosPass, routerosUserEnc, routerosPassEnc, unifiApiKeyEnc, unifiUserEnc, unifiPassEnc, ...rest } = device;
-  return {
-    ...rest,
-    hasRouterosCredentials: !!(resolveRouterosCredentials({ routerosUser, routerosPass, routerosUserEnc, routerosPassEnc })),
-    hasUnifiApiKey: !!(resolveUnifiApiKey({ unifiApiKeyEnc })),
-    hasUnifiCredentials: !!(resolveUnifiCredentials({ unifiUserEnc, unifiPassEnc })),
-  };
-}
-
-export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const rawType = searchParams.get("type");
 
@@ -40,21 +27,13 @@ export async function GET(req: NextRequest) {
   });
 
   return NextResponse.json(devices.map(sanitizeDevice));
-}
+});
 
-export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = withAuth(async (req: NextRequest) => {
+  const body = await parseAndValidate(req, deviceConfigSchema);
+  if (!body.ok) return body.response;
 
-  const raw = await parseBody(req);
-  if (!raw.ok) return raw.response;
-  const parsed = deviceConfigSchema.safeParse(raw.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, ...rest } = parsed.data;
+  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, ...rest } = body.data;
 
   const device = await db.device.create({
     data: {
@@ -68,4 +47,4 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json(sanitizeDevice(device), { status: 201 });
-}
+});

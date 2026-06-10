@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 import { LinkDetailDrawer } from "@/components/link-detail-drawer";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -40,38 +41,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/status-badge";
-
-function formatBps(bps: number | null): string {
-  if (bps == null) return "—";
-  if (bps >= 1_000_000_000) return `${(bps / 1_000_000_000).toFixed(1)} Gbps`;
-  if (bps >= 1_000_000)     return `${(bps / 1_000_000).toFixed(1)} Mbps`;
-  if (bps >= 1_000)         return `${(bps / 1_000).toFixed(0)} Kbps`;
-  return `${bps} bps`;
-}
-
-function BandwidthCell({ current, contracted, color }: {
-  current: number | null;
-  contracted: number | null;
-  color: "success" | "primary";
-}) {
-  if (current == null) return <span className="text-muted-foreground/40 text-xs">—</span>;
-  const pct = contracted && contracted > 0 ? Math.min((current / contracted) * 100, 100) : null;
-  const barColor = pct == null ? "" : pct >= 90 ? "bg-destructive" : pct >= 70 ? "bg-warning" : color === "success" ? "bg-success" : "bg-primary";
-  const textColor = color === "success" ? "text-success" : "text-primary";
-  return (
-    <div className="inline-flex flex-col items-end gap-0.5 min-w-18">
-      <span className={`font-mono text-xs font-semibold ${textColor}`}>{formatBps(current)}</span>
-      {contracted != null && (
-        <>
-          <span className="text-[10px] text-muted-foreground font-mono">/ {formatBps(contracted)}</span>
-          <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
-            <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+import { formatBps } from "@/lib/format";
+import { BandwidthCell } from "@/components/bandwidth-cell";
+import { FilterChip } from "@/components/filter-chip";
+import { SkeletonList } from "@/components/skeleton-list";
+import { EmptyState } from "@/components/empty-state";
 
 interface LinkItem {
   id: string;
@@ -132,34 +106,6 @@ function CopyIconButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-interface FilterChipProps {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  color?: "default" | "success" | "destructive";
-}
-
-function FilterChip({ active, onClick, children, color = "default" }: FilterChipProps) {
-  const activeClass =
-    color === "success"
-      ? "bg-success text-white border-success"
-      : color === "destructive"
-      ? "bg-destructive text-white border-destructive"
-      : "bg-primary text-primary-foreground border-primary";
-
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all select-none whitespace-nowrap ${
-        active
-          ? activeClass
-          : "bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
 
 export default function LinksPage() {
   const [links, setLinks] = useState<LinkItem[]>([]);
@@ -194,11 +140,7 @@ export default function LinksPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchLinks();
-    const interval = setInterval(fetchLinks, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchLinks]);
+  usePolling(fetchLinks, 30_000);
 
   useEffect(() => {
     fetch("/api/devices?type=MIKROTIK")
@@ -358,25 +300,17 @@ export default function LinksPage() {
 
         {/* Table */}
         {loading ? (
-          <div className="space-y-2">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-14 rounded-lg" />
-            ))}
-          </div>
+          <SkeletonList count={3} />
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            {links.length === 0 ? (
-              <>
-                <Network className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p>Nenhum link cadastrado.</p>
-                <Button variant="outline" className="mt-4" onClick={openCreate}>
-                  Cadastrar primeiro link
-                </Button>
-              </>
-            ) : (
-              <p>Nenhum link encontrado para o filtro selecionado.</p>
-            )}
-          </div>
+          links.length === 0 ? (
+            <EmptyState
+              icon={Network}
+              title="Nenhum link cadastrado."
+              action={<Button variant="outline" onClick={openCreate}>Cadastrar primeiro link</Button>}
+            />
+          ) : (
+            <EmptyState title="Nenhum link encontrado para o filtro selecionado." />
+          )
         ) : (
           <div className="rounded-xl border bg-card overflow-hidden">
             <table className="w-full text-sm">

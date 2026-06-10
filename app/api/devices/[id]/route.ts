@@ -1,31 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { deviceConfigSchema } from "@/lib/schemas/device";
-import { encrypt, resolveRouterosCredentials, resolveUnifiApiKey, resolveUnifiCredentials } from "@/lib/crypto";
-import { Prisma } from "@prisma/client";
-import { parseBody } from "@/lib/parse-body";
-import type { Device } from "@prisma/client";
+import { encrypt } from "@/lib/crypto";
+import { parseAndValidate } from "@/lib/parse-body";
+import { sanitizeDevice } from "@/lib/device-utils";
+import { notFoundOnP2025 } from "@/lib/prisma-error";
 
 const updateSchema = deviceConfigSchema.partial();
 
-function sanitizeDevice(device: Device) {
-  const { routerosUser, routerosPass, routerosUserEnc, routerosPassEnc, unifiApiKeyEnc, unifiUserEnc, unifiPassEnc, ...rest } = device;
-  return {
-    ...rest,
-    hasRouterosCredentials: !!(resolveRouterosCredentials({ routerosUser, routerosPass, routerosUserEnc, routerosPassEnc })),
-    hasUnifiApiKey: !!(resolveUnifiApiKey({ unifiApiKeyEnc })),
-    hasUnifiCredentials: !!(resolveUnifiCredentials({ unifiUserEnc, unifiPassEnc })),
-  };
-}
-
-export async function GET(
+export const GET = withAuth(async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+) => {
   const { id } = await params;
   const device = await db.device.findUnique({
     where: { id },
@@ -35,27 +22,18 @@ export async function GET(
   if (!device) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   return NextResponse.json(sanitizeDevice(device));
-}
+});
 
-export async function PUT(
+export const PUT = withAuth(async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+) => {
   const { id } = await params;
-  const raw = await parseBody(req);
-  if (!raw.ok) return raw.response;
-  const parsed = updateSchema.safeParse(raw.data);
+  const body = await parseAndValidate(req, updateSchema);
+  if (!body.ok) return body.response;
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
+  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, ...rest } = body.data;
 
-  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, ...rest } = parsed.data;
-
-  // Only update credentials if new non-empty values are provided
   const credentialUpdate: {
     routerosUserEnc?: string | null;
     routerosPassEnc?: string | null;
@@ -86,28 +64,19 @@ export async function PUT(
     });
     return NextResponse.json(sanitizeDevice(device));
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    throw err;
+    return notFoundOnP2025(err) ?? (() => { throw err; })();
   }
-}
+});
 
-export async function DELETE(
+export const DELETE = withAuth(async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+) => {
   const { id } = await params;
   try {
     await db.device.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    throw err;
+    return notFoundOnP2025(err) ?? (() => { throw err; })();
   }
-}
+});
