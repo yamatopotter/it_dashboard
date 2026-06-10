@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 import Link from "next/link";
 import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { buttonVariants } from "@/components/ui/button";
@@ -214,11 +215,7 @@ export default function DevicesPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
-  }, [load]);
+  usePolling(load, 30_000);
 
   const filtered = devices
     .filter((d) => {

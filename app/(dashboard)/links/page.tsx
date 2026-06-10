@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 import { LinkDetailDrawer } from "@/components/link-detail-drawer";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -139,11 +140,7 @@ export default function LinksPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchLinks();
-    const interval = setInterval(fetchLinks, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchLinks]);
+  usePolling(fetchLinks, 30_000);
 
   useEffect(() => {
     fetch("/api/devices?type=MIKROTIK")

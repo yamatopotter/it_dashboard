@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
-import { parseBody } from "@/lib/parse-body";
+import { parseAndValidate } from "@/lib/parse-body";
 
 const noteSchema = z.object({
   title: z.string().min(1, "Título obrigatório").max(200),
@@ -13,10 +13,7 @@ const noteSchema = z.object({
   deviceId: z.string().optional().nullable(),
 });
 
-export async function GET() {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(async () => {
   const notes = await db.note.findMany({
     include: { device: { select: { id: true, name: true, ip: true } } },
     orderBy: [
@@ -26,24 +23,16 @@ export async function GET() {
   });
 
   return NextResponse.json(notes);
-}
+});
 
-export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const raw = await parseBody(req);
-  if (!raw.ok) return raw.response;
-  const parsed = noteSchema.safeParse(raw.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
+export const POST = withAuth(async (req: NextRequest) => {
+  const body = await parseAndValidate(req, noteSchema);
+  if (!body.ok) return body.response;
 
   const note = await db.note.create({
-    data: parsed.data,
+    data: body.data,
     include: { device: { select: { id: true, name: true, ip: true } } },
   });
 
   return NextResponse.json(note, { status: 201 });
-}
+});

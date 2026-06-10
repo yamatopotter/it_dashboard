@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { resolveRouterosCredentials } from "@/lib/crypto";
 import { checkLinkTraffic } from "@/worker/monitors/link-traffic";
 
-export async function GET(
+export const GET = withAuth(async (
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+) => {
   const { id } = await params;
   const link = await db.link.findUnique({
     where: { id },
@@ -51,4 +48,4 @@ export async function GET(
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `Falha ao medir tráfego: ${msg}` }, { status: 422 });
   }
-}
+});

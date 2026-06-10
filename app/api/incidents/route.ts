@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import type { DeviceType } from "@prisma/client";
 
@@ -22,10 +22,7 @@ export interface PaginatedIncidentsResponse {
   hasMore: boolean;
 }
 
-export async function GET(req: Request) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const hours = Math.min(parseInt(searchParams.get("hours") ?? "") || 168, 720);
   const page  = Math.max(1, parseInt(searchParams.get("page")  ?? "") || 1);
@@ -110,4 +107,4 @@ export async function GET(req: Request) {
     limit,
     hasMore: start + limit < total,
   } satisfies PaginatedIncidentsResponse);
-}
+});

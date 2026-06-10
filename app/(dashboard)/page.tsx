@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { LinkDetailDrawer } from "@/components/link-detail-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -400,7 +401,7 @@ export default function OverviewPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 30_000); return () => clearInterval(t); }, [load]);
+  usePolling(load, 30_000);
 
   const online = devices.filter((d) => d.currentStatus?.isOnline).length;
   const offline = devices.length - online;

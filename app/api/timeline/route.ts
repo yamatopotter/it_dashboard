@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import type { DeviceType } from "@prisma/client";
 
 export type TimelineEventKind =
@@ -23,10 +23,7 @@ export interface TimelineEvent {
 
 const LATENCY_THRESHOLD_MS = 150;
 
-export async function GET(req: Request) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const hours = Math.min(parseInt(searchParams.get("hours") ?? "") || 24, 168);
   const since = new Date(Date.now() - hours * 3_600_000);
@@ -138,4 +135,4 @@ export async function GET(req: Request) {
   events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return NextResponse.json(events);
-}
+});

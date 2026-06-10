@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { bulkDeviceSchema } from "@/lib/schemas/device";
 import { encrypt } from "@/lib/crypto";
-import { parseBody } from "@/lib/parse-body";
+import { parseAndValidate } from "@/lib/parse-body";
 
 function ipToInt(ip: string): number | null {
   const parts = ip.split(".").map(Number);
@@ -20,18 +20,11 @@ function intToIp(n: number): string {
   ].join(".");
 }
 
-export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = withAuth(async (req: NextRequest) => {
+  const body = await parseAndValidate(req, bulkDeviceSchema);
+  if (!body.ok) return body.response;
 
-  const raw = await parseBody(req);
-  if (!raw.ok) return raw.response;
-  const parsed = bulkDeviceSchema.safeParse(raw.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const { ipStart, ipEnd, name, routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, ...config } = parsed.data;
+  const { ipStart, ipEnd, name, routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, ...config } = body.data;
 
   const startInt = ipToInt(ipStart);
   const endInt = ipToInt(ipEnd);
@@ -68,4 +61,4 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json({ created: devices.count, ips }, { status: 201 });
-}
+});

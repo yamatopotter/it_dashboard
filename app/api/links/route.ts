@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { withAuth } from "@/lib/with-auth";
 import { generateWebhookToken } from "@/lib/webhook";
-import { parseBody } from "@/lib/parse-body";
+import { parseAndValidate } from "@/lib/parse-body";
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
@@ -15,10 +15,7 @@ const createSchema = z.object({
   contractedUploadBps: z.number().int().positive().optional().nullable(),
 });
 
-export async function GET() {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(async () => {
   const links = await db.link.findMany({
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { events: true } } },
@@ -30,17 +27,12 @@ export async function GET() {
   }));
 
   return NextResponse.json(withTokens);
-}
+});
 
-export async function POST(req: Request) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = withAuth(async (req: Request) => {
+  const body = await parseAndValidate(req, createSchema);
+  if (!body.ok) return body.response;
 
-  const raw = await parseBody(req);
-  if (!raw.ok) return raw.response;
-  const parsed = createSchema.safeParse(raw.data);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-
-  const link = await db.link.create({ data: parsed.data });
+  const link = await db.link.create({ data: body.data });
   return NextResponse.json(link, { status: 201 });
-}
+});
