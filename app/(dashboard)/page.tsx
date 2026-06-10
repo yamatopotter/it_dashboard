@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { LinkDetailDrawer } from "@/components/link-detail-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/empty-state";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
@@ -731,15 +732,15 @@ export default function OverviewPage() {
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-39 rounded-xl" />)}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground">
-              {devices.length === 0 ? (
-                <>
-                  <Server className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                  <p>Nenhum dispositivo cadastrado.</p>
-                  <Link href="/devices/new" className={`mt-4 inline-flex ${buttonVariants({})}`}>Cadastrar primeiro dispositivo</Link>
-                </>
-              ) : <p>Nenhum dispositivo encontrado para os filtros selecionados.</p>}
-            </div>
+            devices.length === 0 ? (
+              <EmptyState
+                icon={Server}
+                title="Nenhum dispositivo cadastrado."
+                action={<Link href="/devices/new" className={buttonVariants({})}>Cadastrar primeiro dispositivo</Link>}
+              />
+            ) : (
+              <EmptyState title="Nenhum dispositivo encontrado para os filtros selecionados." />
+            )
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.slice(0, 9).map((device) => (

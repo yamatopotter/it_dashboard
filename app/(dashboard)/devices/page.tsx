@@ -6,6 +6,8 @@ import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { buttonVariants } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonList } from "@/components/skeleton-list";
+import { EmptyState } from "@/components/empty-state";
 import { PingSparkline } from "@/components/ping-sparkline";
 import {
   Plus, Layers, Pencil, MapPin, Server, Wifi,
@@ -354,26 +356,18 @@ export default function DevicesPage() {
               ))}
             </div>
           ) : (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 rounded-lg" />
-              ))}
-            </div>
+            <SkeletonList count={5} />
           )
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            {devices.length === 0 ? (
-              <>
-                <Server className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p>Nenhum dispositivo cadastrado.</p>
-                <Link href="/devices/new" className={`mt-4 inline-flex ${buttonVariants({})}`}>
-                  Cadastrar primeiro dispositivo
-                </Link>
-              </>
-            ) : (
-              <p>Nenhum dispositivo encontrado para os filtros selecionados.</p>
-            )}
-          </div>
+          devices.length === 0 ? (
+            <EmptyState
+              icon={Server}
+              title="Nenhum dispositivo cadastrado."
+              action={<Link href="/devices/new" className={buttonVariants({})}>Cadastrar primeiro dispositivo</Link>}
+            />
+          ) : (
+            <EmptyState title="Nenhum dispositivo encontrado para os filtros selecionados." />
+          )
         ) : viewMode === "cards" ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filtered.map((device) => (

@@ -43,6 +43,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatBps } from "@/lib/format";
 import { BandwidthCell } from "@/components/bandwidth-cell";
 import { FilterChip } from "@/components/filter-chip";
+import { SkeletonList } from "@/components/skeleton-list";
+import { EmptyState } from "@/components/empty-state";
 
 interface LinkItem {
   id: string;
@@ -301,25 +303,17 @@ export default function LinksPage() {
 
         {/* Table */}
         {loading ? (
-          <div className="space-y-2">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-14 rounded-lg" />
-            ))}
-          </div>
+          <SkeletonList count={3} />
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            {links.length === 0 ? (
-              <>
-                <Network className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p>Nenhum link cadastrado.</p>
-                <Button variant="outline" className="mt-4" onClick={openCreate}>
-                  Cadastrar primeiro link
-                </Button>
-              </>
-            ) : (
-              <p>Nenhum link encontrado para o filtro selecionado.</p>
-            )}
-          </div>
+          links.length === 0 ? (
+            <EmptyState
+              icon={Network}
+              title="Nenhum link cadastrado."
+              action={<Button variant="outline" onClick={openCreate}>Cadastrar primeiro link</Button>}
+            />
+          ) : (
+            <EmptyState title="Nenhum link encontrado para o filtro selecionado." />
+          )
         ) : (
           <div className="rounded-xl border bg-card overflow-hidden">
             <table className="w-full text-sm">

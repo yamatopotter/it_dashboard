@@ -5,6 +5,7 @@ import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
 import { Topbar } from "@/components/topbar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, CheckCircle2, Clock, Wifi, WifiOff } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { DEVICE_TYPE_ICON } from "@/lib/device-constants";
 import { formatDuration, timeAgo } from "@/lib/format";
 import { FilterChip } from "@/components/filter-chip";
@@ -162,15 +163,17 @@ export default function IncidentsPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-20 text-muted-foreground">
-            <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-success opacity-60" />
-            <p className="font-medium text-foreground">Nenhum incidente</p>
-            <p className="text-sm mt-1">
-              {statusFilter !== "ALL"
+          <EmptyState
+            icon={CheckCircle2}
+            iconClassName="text-success opacity-60"
+            title="Nenhum incidente"
+            description={
+              statusFilter !== "ALL"
                 ? "Sem incidentes para o filtro selecionado."
-                : `Todos os dispositivos estiveram online nas últimas ${WINDOWS.find((w) => w.value === window)?.label}.`}
-            </p>
-          </div>
+                : `Todos os dispositivos estiveram online nas últimas ${WINDOWS.find((w) => w.value === window)?.label}.`
+            }
+            className="py-20"
+          />
         ) : (
           <div className="space-y-6">
             {Array.from(grouped.entries()).map(([day, items]) => (
