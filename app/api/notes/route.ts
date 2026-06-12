@@ -3,6 +3,7 @@ import { requireAuth, requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
 import { parseAndValidate } from "@/lib/parse-body";
+import { writeAudit } from "@/lib/audit";
 
 const noteSchema = z.object({
   title: z.string().min(1, "Título obrigatório").max(200),
@@ -38,5 +39,6 @@ export async function POST(req: NextRequest) {
     include: { device: { select: { id: true, name: true, ip: true } } },
   });
 
+  void writeAudit({ action: "CREATE", entity: "Note", entityId: note.id, entityName: note.title, details: { severity: note.severity, category: note.category } });
   return NextResponse.json(note, { status: 201 });
 }

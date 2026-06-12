@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { parseBody } from "@/lib/parse-body";
+import { writeAudit } from "@/lib/audit";
 
 const updateSchema = z.object({
   password: z.string().min(8, "Senha deve ter no mínimo 8 caracteres").optional(),
@@ -61,6 +62,7 @@ export async function PUT(
     select: { id: true, username: true, role: true, createdAt: true },
   });
 
+  void writeAudit({ action: "UPDATE", entity: "User", entityId: updated.id, entityName: updated.username, details: { fields: Object.keys(data) } });
   return NextResponse.json(updated);
 }
 
@@ -91,5 +93,6 @@ export async function DELETE(
   }
 
   await db.user.delete({ where: { id } });
+  void writeAudit({ action: "DELETE", entity: "User", entityId: id, entityName: user.username });
   return NextResponse.json({ ok: true });
 }

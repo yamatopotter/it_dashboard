@@ -8,6 +8,7 @@ import { encrypt } from "@/lib/crypto";
 import { parseAndValidate } from "@/lib/parse-body";
 import { sanitizeDevice } from "@/lib/device-utils";
 import { notFoundOnP2025 } from "@/lib/prisma-error";
+import { writeAudit } from "@/lib/audit";
 
 const updateSchema = deviceConfigSchema.partial();
 
@@ -76,6 +77,7 @@ export async function PUT(
       where: { id },
       data: { ...rest, ...credentialUpdate },
     });
+    void writeAudit({ action: "UPDATE", entity: "Device", entityId: device.id, entityName: device.name, details: { fields: Object.keys({ ...rest, ...credentialUpdate }) } });
     return NextResponse.json(sanitizeDevice(device));
   } catch (err) {
     return notFoundOnP2025(err) ?? (() => { throw err; })();
@@ -90,7 +92,9 @@ export async function DELETE(
   if (unauth) return unauth;
   const { id } = await params;
   try {
+    const device = await db.device.findUnique({ where: { id }, select: { name: true, ip: true } });
     await db.device.delete({ where: { id } });
+    void writeAudit({ action: "DELETE", entity: "Device", entityId: id, entityName: device?.name, details: { ip: device?.ip } });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     return notFoundOnP2025(err) ?? (() => { throw err; })();

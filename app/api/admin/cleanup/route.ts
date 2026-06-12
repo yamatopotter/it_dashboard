@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 
 export async function POST() {
   const unauth = await requireRole("ADMIN");
@@ -27,6 +28,7 @@ export async function POST() {
     data: { lastCleanupAt: new Date() },
   });
 
+  void writeAudit({ action: "CLEANUP", entity: "System", entityName: "Limpeza manual de logs", details: { deletedStatusHistory: deletedHistory.count, deletedLinkEvents: deletedEvents.count } });
   return NextResponse.json({
     deletedStatusHistory: deletedHistory.count,
     deletedLinkEvents: deletedEvents.count,
