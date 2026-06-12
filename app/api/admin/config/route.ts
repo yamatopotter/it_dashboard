@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
+import { writeAudit } from "@/lib/audit";
 
 const configSchema = z.object({
   statusHistoryDays: z.number().int().min(1).max(365),
@@ -42,5 +43,6 @@ export async function PUT(req: NextRequest) {
     update: result.data,
   });
 
+  void writeAudit({ action: "UPDATE", entity: "SystemConfig", entityName: "Configuração de retenção", details: result.data });
   return NextResponse.json(config);
 }

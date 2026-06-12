@@ -8,6 +8,7 @@ import { deviceConfigSchema } from "@/lib/schemas/device";
 import { encrypt } from "@/lib/crypto";
 import { parseAndValidate } from "@/lib/parse-body";
 import { sanitizeDevice } from "@/lib/device-utils";
+import { writeAudit } from "@/lib/audit";
 
 const deviceTypeSchema = z.enum(["MIKROTIK", "DVR", "CAMERA", "OTHER", "UNIFI_AP", "OMADA_AP"]);
 
@@ -54,5 +55,6 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  void writeAudit({ action: "CREATE", entity: "Device", entityId: device.id, entityName: device.name, details: { ip: device.ip, type: device.type, location: device.location } });
   return NextResponse.json(sanitizeDevice(device), { status: 201 });
 }

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAuth, requireRole } from "@/lib/with-auth";
 import { generateWebhookToken } from "@/lib/webhook";
 import { parseAndValidate } from "@/lib/parse-body";
+import { writeAudit } from "@/lib/audit";
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
@@ -40,5 +41,6 @@ export async function POST(req: Request) {
   if (!body.ok) return body.response;
 
   const link = await db.link.create({ data: body.data });
+  void writeAudit({ action: "CREATE", entity: "Link", entityId: link.id, entityName: link.name, details: { location: link.location } });
   return NextResponse.json(link, { status: 201 });
 }

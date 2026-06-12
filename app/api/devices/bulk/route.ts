@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { bulkDeviceSchema } from "@/lib/schemas/device";
 import { encrypt } from "@/lib/crypto";
 import { parseAndValidate } from "@/lib/parse-body";
+import { writeAudit } from "@/lib/audit";
 
 function ipToInt(ip: string): number | null {
   const parts = ip.split(".").map(Number);
@@ -62,5 +63,6 @@ export async function POST(req: NextRequest) {
     skipDuplicates: true,
   });
 
+  void writeAudit({ action: "CREATE", entity: "Device", entityName: `Bulk: ${name}`, details: { created: devices.count, ipStart, ipEnd, type: config.type } });
   return NextResponse.json({ created: devices.count, ips }, { status: 201 });
 }

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { parseBody } from "@/lib/parse-body";
+import { writeAudit } from "@/lib/audit";
 
 const createSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/, "Apenas letras, números, _ . -"),
@@ -50,5 +51,6 @@ export async function POST(req: NextRequest) {
     select: { id: true, username: true, role: true, createdAt: true },
   });
 
+  void writeAudit({ action: "CREATE", entity: "User", entityId: user.id, entityName: user.username, details: { role } });
   return NextResponse.json(user, { status: 201 });
 }

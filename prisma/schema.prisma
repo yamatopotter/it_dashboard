@@ -184,6 +184,32 @@ model WorkerHeartbeat {
   seenAt DateTime @updatedAt
 }
 
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGIN_FAILED
+  CLEANUP
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  timestamp  DateTime    @default(now())
+  userId     String?
+  username   String?
+  ipAddress  String?
+  action     AuditAction
+  entity     String
+  entityId   String?
+  entityName String?
+  details    Json?
+
+  @@index([timestamp])
+  @@index([entity, timestamp])
+  @@index([userId, timestamp])
+}
+
 model SystemConfig {
   id                  Int      @id @default(1) // singleton
   statusHistoryDays   Int      @default(30)

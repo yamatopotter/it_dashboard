@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { z } from "zod";
 import { parseAndValidate } from "@/lib/parse-body";
 import { notFoundOnP2025 } from "@/lib/prisma-error";
+import { writeAudit } from "@/lib/audit";
 
 const updateNoteSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -59,6 +60,7 @@ export async function PUT(
       data,
       include: { device: { select: { id: true, name: true, ip: true } } },
     });
+    void writeAudit({ action: "UPDATE", entity: "Note", entityId: note.id, entityName: note.title, details: { fields: Object.keys(body.data) } });
     return NextResponse.json(note);
   } catch (err) {
     return notFoundOnP2025(err) ?? (() => { throw err; })();
@@ -73,7 +75,9 @@ export async function DELETE(
   if (unauth) return unauth;
   const { id } = await params;
   try {
+    const note = await db.note.findUnique({ where: { id }, select: { title: true } });
     await db.note.delete({ where: { id } });
+    void writeAudit({ action: "DELETE", entity: "Note", entityId: id, entityName: note?.title });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     return notFoundOnP2025(err) ?? (() => { throw err; })();
