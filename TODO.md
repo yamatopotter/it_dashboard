@@ -5,10 +5,10 @@ Itens já concluídos (fases 1–4) foram removidos.
 
 ---
 
-## Testes — (maior gap restante)
+## Testes
 
 ### Cobertura de código
-- [ ] Aumentar cobertura de statements de 46% para 80%+ — foco nos novos submódulos `unifi-http.ts`, `unifi-apikey.ts`, `unifi-inform.ts` e páginas de UI (`app/(dashboard)/**`)
+- [x] Aumentar cobertura de statements de 46% para 80%+ — atingido 83.68% no Bloco D (22 novos arquivos, 541 testes)
 - [ ] Testes de integração com banco real para rotas críticas (usando `testcontainers` ou banco de teste dedicado)
 - [ ] Testes de carga mínimos: simular 50 devices com check interval de 10s no worker
 
@@ -17,8 +17,8 @@ Itens já concluídos (fases 1–4) foram removidos.
 ## Segurança
 
 - [ ] **SEC-022**: monitorar saída da versão estável do `next-auth@5` e atualizar quando sair do beta — usar pin exato em vez de `^`
-- [ ] **SEC-031**: criar `.env.example` com `NEXTAUTH_URL` e demais variáveis documentadas — elimina risco de host header injection com `trustHost: true`
-- [ ] Adicionar `Cross-Origin-Opener-Policy: same-origin` e `Cross-Origin-Resource-Policy: same-origin` nos headers do `next.config.ts`
+- [x] **SEC-031**: `.env.example` criado com todas as variáveis documentadas incluindo `NEXTAUTH_URL` — Bloco A
+- [x] Adicionar `Cross-Origin-Opener-Policy: same-origin` e `Cross-Origin-Resource-Policy: same-origin` nos headers do `next.config.ts` — Bloco A
 
 ---
 
