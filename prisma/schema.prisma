@@ -28,9 +28,10 @@ model Device {
   httpEnabled     Boolean @default(false)
   httpPort        Int?
   httpPath        String  @default("/")
-  snmpEnabled     Boolean @default(false)
-  snmpCommunity   String  @default("public")
-  snmpPort        Int     @default(161)
+  snmpEnabled       Boolean @default(false)
+  snmpCommunity     String  @default("public") // plaintext fallback for existing records
+  snmpCommunityEnc  String? // AES-256-GCM encrypted
+  snmpPort          Int     @default(161)
   routerosEnabled Boolean @default(false)
   routerosUserEnc String? // AES-256-GCM encrypted
   routerosPassEnc String? // AES-256-GCM encrypted

@@ -6,7 +6,7 @@ import { checkRouterOS } from "./monitors/routeros";
 import { checkUnifi } from "./monitors/unifi";
 import { checkOmada } from "./monitors/omada";
 import { checkLinkTraffic } from "./monitors/link-traffic";
-import { resolveRouterosCredentials, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials } from "../lib/crypto";
+import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
 import type { Device, Link } from "@prisma/client";
 
@@ -45,7 +45,7 @@ export async function runChecks(device: Device) {
       ? checkHttp(device.ip, device.httpPort ?? 80, device.httpPath)
       : Promise.resolve(null),
     device.snmpEnabled
-      ? checkSnmp(device.ip, device.snmpCommunity, device.snmpPort)
+      ? checkSnmp(device.ip, resolveSnmpCommunity(device), device.snmpPort)
       : Promise.resolve(null),
     (() => {
       if (!device.routerosEnabled) return Promise.resolve(null);

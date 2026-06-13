@@ -26,6 +26,7 @@ const baseDevice = {
   httpPath: "/",
   snmpEnabled: false,
   snmpCommunity: "public",
+  snmpCommunityEnc: null,
   snmpPort: 161,
   routerosEnabled: false,
   routerosUserEnc: null,

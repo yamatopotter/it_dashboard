@@ -12,6 +12,7 @@ jest.mock("@/lib/db", () => ({
     link:            { findMany: jest.fn(), update: jest.fn() },
     device:          { findMany: jest.fn(), findUnique: jest.fn() },
     workerHeartbeat: { upsert: jest.fn() },
+    systemConfig:    { upsert: jest.fn(), update: jest.fn() },
     $transaction:    jest.fn(),
   },
 }));
@@ -24,6 +25,7 @@ jest.mock("@/worker/monitors/unifi",        () => ({ checkUnifi:       jest.fn()
 jest.mock("@/worker/monitors/link-traffic", () => ({ checkLinkTraffic: jest.fn() }));
 jest.mock("@/lib/crypto", () => ({
   resolveRouterosCredentials: jest.fn(),
+  resolveSnmpCommunity:       jest.fn().mockReturnValue("public"),
   resolveUnifiApiKey:         jest.fn(),
   resolveUnifiCredentials:    jest.fn(),
 }));
@@ -58,6 +60,7 @@ const baseDevice: Device = {
   httpPath:        "/",
   snmpEnabled:     false,
   snmpCommunity:   "public",
+  snmpCommunityEnc: null,
   snmpPort:        161,
   routerosEnabled: false,
   routerosUserEnc: null,
@@ -93,6 +96,8 @@ beforeEach(() => {
   (mockDb.$transaction as jest.Mock).mockResolvedValue([]);
   (mockDb.deviceStatus.upsert as jest.Mock).mockResolvedValue({});
   (mockDb.statusHistory.create as jest.Mock).mockResolvedValue({});
+  (mockDb.systemConfig.upsert as jest.Mock).mockResolvedValue({ id: 1, statusHistoryDays: 30, linkEventDays: 90, lastCleanupAt: null });
+  (mockDb.systemConfig.update as jest.Mock).mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -216,19 +221,20 @@ describe("pruneHistory", () => {
     expect(mockDb.linkEvent.deleteMany).toHaveBeenCalledTimes(1);
   });
 
-  it("uses a cutoff 30 days in the past", async () => {
+  it("uses correct cutoffs (30d for statusHistory, 90d for linkEvent)", async () => {
     const now = new Date("2026-06-05T12:00:00Z").getTime();
     jest.setSystemTime(now);
 
     await pruneHistory();
 
-    const expectedCutoff = new Date(now - 30 * 24 * 3_600_000);
+    const historyCutoff = new Date(now - 30 * 24 * 3_600_000);
+    const eventCutoff   = new Date(now - 90 * 24 * 3_600_000);
 
     expect(mockDb.statusHistory.deleteMany).toHaveBeenCalledWith({
-      where: { timestamp: { lt: expectedCutoff } },
+      where: { timestamp: { lt: historyCutoff } },
     });
     expect(mockDb.linkEvent.deleteMany).toHaveBeenCalledWith({
-      where: { timestamp: { lt: expectedCutoff } },
+      where: { timestamp: { lt: eventCutoff } },
     });
   });
 
