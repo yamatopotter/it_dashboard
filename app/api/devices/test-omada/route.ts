@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAuth } from "@/lib/with-auth";
+import { requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { resolveOmadaCredentials } from "@/lib/crypto";
 import { parseBody } from "@/lib/parse-body";
@@ -16,7 +16,7 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const unauth = await requireAuth();
+  const unauth = await requireRole("OPERADOR");
   if (unauth) return unauth;
 
   const raw = await parseBody(req);

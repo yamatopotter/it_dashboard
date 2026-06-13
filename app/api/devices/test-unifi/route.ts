@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import * as https from "https";
-import { requireAuth } from "@/lib/with-auth";
+import { requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { resolveUnifiApiKey, resolveUnifiCredentials } from "@/lib/crypto";
 import { parseBody } from "@/lib/parse-body";
@@ -264,7 +264,7 @@ async function testUserPass(
 // ── Handler ─────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  const unauth = await requireAuth();
+  const unauth = await requireRole("OPERADOR");
   if (unauth) return unauth;
   const raw = await parseBody(req);
   if (!raw.ok) return raw.response;
