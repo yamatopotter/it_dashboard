@@ -222,6 +222,14 @@ model SystemConfig {
   updatedAt           DateTime @updatedAt
 }
 
+model RateLimit {
+  ip        String   @id
+  count     Int      @default(1)
+  resetAt   DateTime
+
+  @@index([resetAt])
+}
+
 model Note {
   id         String       @id @default(cuid())
   title      String
