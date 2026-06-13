@@ -110,6 +110,32 @@ const notes = [
     category: "SECURITY" as const,
     status: "OPEN" as const,
   },
+  {
+    title: "SEC-023 — Rotas de teste de integração permitiam SSRF por VIEWER (corrigido)",
+    content:
+      `POST /api/devices/test-omada e POST /api/devices/test-unifi usavam requireAuth() em vez ` +
+      `de requireRole("OPERADOR"). Ambas as rotas aceitam um controllerIp do cliente e fazem ` +
+      `requisições HTTPS servidor-para-servidor para esse endereço.\n\n` +
+      `Um VIEWER podia usar isso para fazer o servidor provar hosts internos arbitrários (SSRF), ` +
+      `como 169.254.169.254, serviços internos não roteáveis etc.\n\n` +
+      `Corrigido: ambas as rotas agora exigem requireRole("OPERADOR") ou superior.`,
+    severity: "WARNING" as const,
+    category: "SECURITY" as const,
+    status: "RESOLVED" as const,
+  },
+  {
+    title: "SEC-024 — TLS desabilitado por dispositivo nas integrações Omada/UniFi",
+    content:
+      `A flag tlsVerify: false (Omada e UniFi) desativa rejectUnauthorized na conexão HTTPS com ` +
+      `o controller. Isso é intencional para controllers com certificados autoassinados em redes locais.\n\n` +
+      `Risco residual: com tlsVerify: false, um atacante com acesso à rede local entre o worker e ` +
+      `o controller pode realizar man-in-the-middle, interceptando o token de API e credenciais em trânsito.\n\n` +
+      `Mitigação futura: documentar o risco na interface e recomendar importar o certificado do ` +
+      `controller quando possível.`,
+    severity: "INFO" as const,
+    category: "SECURITY" as const,
+    status: "OPEN" as const,
+  },
 ];
 
 async function main() {

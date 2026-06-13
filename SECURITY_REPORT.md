@@ -1,4 +1,4 @@
-# Relatório de Segurança — IT Dashboard
+# Relatório de Segurança — WatchIT Tower
 
 **Última atualização:** 2026-06-12  
 **Versão do sistema:** 0.1.0  
@@ -9,16 +9,16 @@
 
 ## Sumário Executivo
 
-O IT Dashboard é uma aplicação interna para monitoramento de equipamentos de rede. Por ser voltado para uso local e não exposto à internet, o risco geral é **baixo a moderado**. As vulnerabilidades críticas e de alta severidade identificadas na análise inicial foram resolvidas.
+O WatchIT Tower é uma aplicação interna para monitoramento de equipamentos de rede (Mikrotik, câmeras, DVRs, APs Omada/UniFi). Por ser voltado para uso local e não exposto à internet, o risco geral é **baixo a moderado**. Todas as vulnerabilidades críticas e de alta severidade identificadas foram resolvidas.
 
 | Severidade | Total | Resolvido | Aberto |
 |-----------|-------|-----------|--------|
 | 🔴 Crítico  | 1     | 1         | 0      |
 | 🟠 Alto     | 3     | 3         | 0      |
-| 🟡 Médio    | 3     | 1         | 2      |
+| 🟡 Médio    | 4     | 2         | 2      |
 | 🔵 Baixo    | 3     | 1         | 2      |
-| ℹ️ Info     | 12    | 4         | 8      |
-| **Total**  | **22**| **10**    | **12** |
+| ℹ️ Info     | 13    | 4         | 9      |
+| **Total**  | **24**| **11**    | **13** |
 
 ---
 
@@ -35,12 +35,12 @@ O IT Dashboard é uma aplicação interna para monitoramento de equipamentos de 
 
 ---
 
-### SEC-002 — Credenciais RouterOS armazenadas em texto plano
+### SEC-002 — Credenciais de integração armazenadas em texto plano
 **Severidade:** 🟠 ALTO — ✅ RESOLVIDO  
 **Categoria:** Proteção de dados  
 **Resolvido em:** versão inicial com `lib/crypto.ts`
 
-Campos `routerosUser` e `routerosPass` são criptografados com AES-256-GCM (IV aleatório por operação) antes de gravar no banco. Descriptografados apenas no worker no momento de uso via `resolveRouterosCredentials()`. Campos plaintext nunca retornam nas respostas da API (`sanitizeDevice()`).
+Todos os campos de credencial (RouterOS, UniFi, Omada) são criptografados com AES-256-GCM (IV aleatório por operação) antes de gravar no banco. Descriptografados apenas no worker no momento de uso via `resolveRouterosCredentials()`, `resolveUnifiCredentials()`, `resolveOmadaCredentials()`. Campos plaintext nunca retornam nas respostas da API (`sanitizeDevice()` expõe apenas flags booleanas `hasRouterosCredentials`, `hasUnifiCredentials`, `hasOmadaCredentials`).
 
 ---
 
@@ -182,7 +182,7 @@ O Next.js 14 com App Router requer `unsafe-eval` no CSP para funcionamento inter
 
 As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` não exigem sessão — protegidas apenas por HMAC-SHA256 via query param `?token=`. Isso é intencional para integração com Zabbix, Nagios e scripts externos.
 
-**Risco residual:** Vazamento de `WEBHOOK_SECRET` permite mudar status de qualquer link. Não há log de auditoria para chamadas webhook (IP de origem, timestamp).
+**Risco residual:** Vazamento de `WEBHOOK_SECRET` permite mudar status de qualquer link. Chamadas webhook não são registradas no `AuditLog` (ver SEC-022).
 
 **Mitigação futura:** Adicionar logging estruturado com IP de origem em cada chamada webhook.
 
@@ -232,7 +232,7 @@ Se o banco ficar indisponível na subida, `startScheduler()` pode travar indefin
 
 O papel do usuário é embutido no token JWT no momento do login. Se um administrador alterar o papel de um usuário (ex: VIEWER → ADMIN ou rebaixamento), a mudança só terá efeito na próxima vez que o usuário fizer login (após expiração do token em 8 horas).
 
-**Impacto:** Em caso de rebaixamento urgente ou desativação de acesso, a única garantia imediata é remover o usuário do banco (`DELETE FROM "User" WHERE id = $1`) — alterar o papel não é suficiente sem forçar o logout.
+**Impacto:** Em caso de rebaixamento urgente ou desativação de acesso, a única garantia imediata é remover o usuário do banco — alterar o papel não é suficiente sem forçar o logout.
 
 **Mitigação futura:** Implementar lista negra de tokens JWT (via banco ou Redis) ou usar sessões de banco em vez de JWT, permitindo invalidação imediata.
 
@@ -242,9 +242,30 @@ O papel do usuário é embutido no token JWT no momento do login. Se um administ
 **Severidade:** ℹ️ INFO — 🔴 ABERTO  
 **Categoria:** Rastreabilidade
 
-As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` (já documentadas em SEC-016) não são registradas no `AuditLog`. Com o sistema de auditoria agora em produção, eventos de mudança de status de link via webhook perdem rastreabilidade de IP e frequência.
+As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` não são registradas no `AuditLog`. Com o sistema de auditoria em produção, eventos de mudança de status de link via webhook perdem rastreabilidade de IP e frequência.
 
-**Mitigação futura:** Adicionar `writeAudit({ action: "UPDATE", entity: "Link", entityId, entityName, ipAddress, details: { event: "up"|"down", source: "webhook" } })` em ambas as rotas webhook.
+**Mitigação futura:** Adicionar `writeAudit({ action: "UPDATE", entity: "Link", ..., details: { event: "up"|"down", source: "webhook" } })` em ambas as rotas webhook.
+
+---
+
+### SEC-023 — Rotas de teste de integração permitem SSRF por VIEWER
+**Severidade:** 🟡 MÉDIO — ✅ RESOLVIDO  
+**Categoria:** Controle de acesso / SSRF  
+**Resolvido em:** branch `feat/lighthouse-branding`
+
+`POST /api/devices/test-omada` e `POST /api/devices/test-unifi` usavam `requireAuth()` em vez de `requireRole("OPERADOR")`. Ambas as rotas aceitam um `controllerIp` fornecido pelo cliente e fazem requisições HTTPS servidor-para-servidor para esse endereço. Um VIEWER podia usar isso para fazer o servidor provar hosts internos arbitrários (SSRF — ex: `169.254.169.254`, hosts internos não roteáveis). Corrigido para exigir perfil OPERADOR ou superior em ambas as rotas.
+
+---
+
+### SEC-024 — TLS desabilitado por dispositivo nas integrações Omada/UniFi
+**Severidade:** ℹ️ INFO — ⚠️ ACEITO (design intencional)  
+**Categoria:** Transporte seguro
+
+A flag `tlsVerify: false` (Omada e UniFi) desativa `rejectUnauthorized` na conexão HTTPS com o controller. Isso é intencional para controllers com certificados autoassinados em redes locais.
+
+**Risco residual:** Com `tlsVerify: false`, um atacante com acesso à rede local entre o worker e o controller pode realizar man-in-the-middle, interceptando o token de API e as credenciais em trânsito. O risco é baixo em redes segregadas, mas real em redes flat.
+
+**Mitigação futura:** Documentar o risco na interface e recomendar importar o certificado do controller quando possível.
 
 ---
 
@@ -254,9 +275,9 @@ As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` (já documentadas e
 |---|------|-----------|---------|-----------|
 | SEC-005 | Configurar TLS/HTTPS via reverse proxy | 🟡 Médio | Infra (1h) | Alta |
 | SEC-006 | Permissões do banco / credenciais mínimas | 🔵 Baixo | Infra (30min) | Média |
-| SEC-008 | Sempre usar container Docker em produção | 🔵 Baixo | Infra (0) | Baixa |
 | SEC-021 | Invalidação imediata de papel JWT | ℹ️ Info | Código (4h) | Média |
 | SEC-022 | Auditar chamadas de webhook no AuditLog | ℹ️ Info | Código (30min) | Média |
+| SEC-008 | Sempre usar container Docker em produção | 🔵 Baixo | Infra (0) | Baixa |
 | SEC-012 | Limite de tamanho de requisição | ℹ️ Info | Código (15min) | Baixa |
 | SEC-014 | Rate limiter persistente (Redis/banco) | ℹ️ Info | Código (4h) | Baixa |
 | SEC-017 | Testes para startScheduler | ℹ️ Info | Código (2h) | Baixa |
@@ -275,4 +296,4 @@ Para importar o conjunto inicial: `npm run seed:security`
 
 ## Contexto de Uso
 
-Este dashboard é projetado para uso **exclusivamente na rede local interna**. O nível de risco é significativamente menor comparado a uma aplicação exposta à internet. As vulnerabilidades críticas e de alta severidade foram resolvidas. Os itens abertos restantes são adequados para resolução incremental sem bloquear o uso em produção em ambiente controlado.
+O WatchIT Tower é projetado para uso **exclusivamente na rede local interna**. O nível de risco é significativamente menor comparado a uma aplicação exposta à internet. Todas as vulnerabilidades críticas e de alta severidade foram resolvidas. Os itens abertos restantes são adequados para resolução incremental sem bloquear o uso em produção em ambiente controlado.
