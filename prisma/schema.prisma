@@ -73,6 +73,8 @@ model Device {
   history        StatusHistory[]
 
   monitoredLinks Link[]          @relation("LinkMikrotik")
+
+  @@index([type])
 }
 
 model DeviceStatus {
@@ -170,6 +172,8 @@ model Link {
 
   mikrotikDevice Device?    @relation("LinkMikrotik", fields: [mikrotikDeviceId], references: [id], onDelete: SetNull)
   events         LinkEvent[]
+
+  @@index([mikrotikDeviceId])
 }
 
 model LinkEvent {
@@ -211,6 +215,7 @@ model AuditLog {
   @@index([timestamp])
   @@index([entity, timestamp])
   @@index([userId, timestamp])
+  @@index([ipAddress, timestamp])
 }
 
 model SystemConfig {
