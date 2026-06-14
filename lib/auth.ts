@@ -79,6 +79,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (blacklisted) return null;
       }
 
+      // SEC-021: invalidate tokens issued before the user's last password change
+      if (token.sub && typeof token.iat === "number") {
+        const u = await db.user
+          .findUnique({ where: { id: token.sub }, select: { passwordChangedAt: true } })
+          .catch(() => null);
+        if (u?.passwordChangedAt && u.passwordChangedAt.getTime() > token.iat * 1000) {
+          return null;
+        }
+      }
+
       return token;
     },
     session({ session, token }) {

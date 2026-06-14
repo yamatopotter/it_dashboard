@@ -58,8 +58,12 @@ export async function PUT(
     );
   }
 
-  const data: { password?: string; role?: "ADMIN" | "OPERADOR" | "VIEWER"; version?: { increment: number } } = {};
-  if (password) data.password = await bcrypt.hash(password, 12);
+  const data: { password?: string; role?: "ADMIN" | "OPERADOR" | "VIEWER"; version?: { increment: number }; passwordChangedAt?: Date } = {};
+  if (password) {
+    data.password = await bcrypt.hash(password, 12);
+    // SEC-021: stamp the change so JWTs issued before it are invalidated
+    data.passwordChangedAt = new Date();
+  }
   if (newRole) data.role = newRole;
 
   if (!password && !newRole) {

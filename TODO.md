@@ -19,10 +19,10 @@ Itens marcados com ✓ foram verificados diretamente no código; os demais devem
 - [x] **Testes de autorização** — `__tests__/security/viewer-authorization.test.ts` (8 testes: VIEWER→403,
       OPERADOR→ok, webhookToken ausente p/ VIEWER e presente p/ OPERADOR).
 
-### Branch `fix/password-change-revocation`
-- [ ] ✓ **`passwordChangedAt` é controle de segurança morto** — `prisma/schema.prisma:125`
-      Campo nunca escrito nem lido. Gravar no update de senha (`app/api/users/[id]/route.ts`) e
-      comparar com `token.iat` no callback `jwt` de `lib/auth.ts` (retornar `null` se senha mudou após emissão).
+### Branch `fix/password-change-revocation` ✅ CONCLUÍDA (SEC-021)
+- [x] ✓ **`passwordChangedAt` é controle de segurança morto** — agora gravado no update de senha
+      (`app/api/users/[id]/route.ts`) e comparado com `token.iat` no callback `jwt` (`lib/auth.ts`);
+      tokens emitidos antes da troca são rejeitados. Testes em `__tests__/api/users-id.test.ts` (16 casos).
 
 ---
 

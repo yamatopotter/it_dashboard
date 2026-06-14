@@ -1,6 +1,6 @@
 # Relatório de Segurança — WatchIT Tower
 
-**Última atualização:** 2026-06-14 (v0.2.0 — SEC-028/SEC-029 resolvidos: autorização por papel em webhook tokens e operações de rede)  
+**Última atualização:** 2026-06-14 (v0.2.0 — SEC-028/SEC-029 resolvidos; SEC-021 completado com revalidação por troca de senha)  
 **Versão do sistema:** 0.2.0  
 **Analista:** Análise automatizada via Claude Code  
 **Escopo:** Código-fonte completo — Next.js 14 (frontend/API), worker de monitoramento, banco PostgreSQL
@@ -221,6 +221,8 @@ O Next.js 14 com App Router requer `unsafe-eval` apenas em desenvolvimento. Em p
 **Resolvido em:** branch `feat/omada-ap-integration`
 
 Lista negra de tokens JWT implementada: modelo `TokenBlacklist` com `jti` (UUID gerado no jwt callback) e `expiresAt`. `POST /api/auth/logout` insere o `jti` no blacklist e limpa o cookie de sessão. O jwt callback verifica o blacklist a cada request — tokens revogados são rejeitados imediatamente. Entradas expiradas removidas diariamente pelo `pruneHistory()` do worker.
+
+**Revalidação por troca de senha (completado na branch `fix/password-change-revocation`):** o campo `User.passwordChangedAt` agora é gravado em toda alteração de senha (`PUT /api/users/[id]`). O jwt callback compara `passwordChangedAt` com o `iat` do token a cada request e rejeita (retorna `null`) qualquer token emitido antes da troca — invalidando todas as sessões antigas imediatamente após a senha mudar. Antes, o campo existia no schema mas nunca era escrito nem lido (controle morto). Coberto por `__tests__/api/users-id.test.ts`.
 
 ---
 

@@ -56,6 +56,18 @@ describe("PUT /api/users/[id]", () => {
     expect(res.status).toBe(200);
   });
 
+  it("SEC-021: stamps passwordChangedAt when password changes", async () => {
+    await PUT(makePutReq("u2", { password: "newpassword123" }), { params: Promise.resolve({ id: "u2" }) });
+    const updateArg = (mockDb.user.update as jest.Mock).mock.calls.at(-1)![0];
+    expect(updateArg.data.passwordChangedAt).toBeInstanceOf(Date);
+  });
+
+  it("SEC-021: does NOT stamp passwordChangedAt on role-only change", async () => {
+    await PUT(makePutReq("u2", { role: "VIEWER" }), { params: Promise.resolve({ id: "u2" }) });
+    const updateArg = (mockDb.user.update as jest.Mock).mock.calls.at(-1)![0];
+    expect(updateArg.data.passwordChangedAt).toBeUndefined();
+  });
+
   it("returns 400 when no fields provided", async () => {
     const res = await PUT(makePutReq("u2", {}), { params: Promise.resolve({ id: "u2" }) });
     expect(res.status).toBe(400);
