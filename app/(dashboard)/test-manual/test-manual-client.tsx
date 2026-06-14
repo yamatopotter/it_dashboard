@@ -156,8 +156,8 @@ export default function TestManualClient() {
           <div data-section id="overview">
             <SectionTitle id="overview">Visão geral</SectionTitle>
             <P>
-              O WatchIT Tower possui uma suite com mais de <strong>560 testes</strong> distribuídos em{" "}
-              <strong>67 arquivos</strong> cobrindo API routes, worker de monitoramento, componentes React,
+              O WatchIT Tower possui uma suite com <strong>580 testes</strong> em <strong>67 suítes</strong>{" "}
+              (run padrão) cobrindo API routes, worker de monitoramento, componentes React,
               bibliotecas utilitárias, segurança e fluxos de integração end-to-end.
             </P>
             <P>
@@ -169,11 +169,11 @@ export default function TestManualClient() {
             <Table
               headers={["Camada", "Arquivos", "Ambiente", "Banco"]}
               rows={[
-                ["API Routes",     "29 arquivos",  "node",   "Mock (jest-mock-extended)"],
-                ["Worker Monitors","9 arquivos",   "node",   "Mock"],
-                ["Componentes",    "16 arquivos",  "jsdom",  "–"],
+                ["API Routes",     "32 arquivos",  "node",   "Mock (jest-mock-extended)"],
+                ["Worker Monitors","11 arquivos",  "node",   "Mock"],
+                ["Componentes",    "17 arquivos",  "jsdom",  "–"],
                 ["Bibliotecas",    "5 arquivos",   "node",   "–"],
-                ["Segurança",      "2 arquivos",   "node",   "Mock"],
+                ["Segurança",      "3 arquivos",   "node",   "Mock"],
                 ["Integração",     "3 arquivos",   "node",   "PostgreSQL real (Docker)"],
                 ["Carga",          "1 arquivo",    "node",   "PostgreSQL real (Docker)"],
               ]}
@@ -436,6 +436,23 @@ prismaMock.deviceStatus.upsert.mockResolvedValue({ ... });`}
               Versão expandida que itera sobre <strong>todos</strong> os handlers importados e verifica
               401 em massa. Usa <InlineCode>@jest-environment node</InlineCode> para ter acesso ao
               módulo de autenticação real.
+            </P>
+
+            <SubTitle>viewer-authorization.test.ts</SubTitle>
+            <P>
+              Verifica autorização <strong>por papel</strong> (não só 401): um VIEWER recebe <strong>403</strong>{" "}
+              em endpoints que disparam operações de rede (<InlineCode>devices/check</InlineCode>,{" "}
+              <InlineCode>links/test-traffic</InlineCode>, <InlineCode>links/[id]/live-traffic</InlineCode>) e
+              não recebe o <InlineCode>webhookToken</InlineCode> em <InlineCode>GET /api/links</InlineCode> —
+              cobre os achados SEC-028 e SEC-029.
+            </P>
+
+            <SubTitle>Rotas de autenticação (TOTP, logout, check-2fa)</SubTitle>
+            <P>
+              <InlineCode>users-totp.test.ts</InlineCode> cobre ativação/desativação de 2FA (admin e
+              auto-gerenciamento, 403 para terceiros, token inválido, criptografia do segredo);{" "}
+              <InlineCode>auth-logout.test.ts</InlineCode> cobre a blacklist do JWT (idempotência, limpeza
+              de cookie); <InlineCode>auth-check-2fa.test.ts</InlineCode> cobre a detecção de 2FA sem enumeração.
             </P>
             <Code>{`// Padrão usado em ambos os arquivos:
 jest.mock("@/lib/auth", () => ({

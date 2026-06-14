@@ -20,7 +20,7 @@ describe("GET /api/version", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.version).toBe("0.1.0");
+    expect(body.version).toBe("0.2.1");
     expect(body.build).toBe(42);
     expect(body.hash).toBe("abc1234");
   });

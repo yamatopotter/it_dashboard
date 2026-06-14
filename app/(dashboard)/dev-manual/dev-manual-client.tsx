@@ -433,7 +433,7 @@ export default async function UsersPage() {
                   ["Device", "Configuração do dispositivo: IP, tipo, protocolos habilitados, credenciais AES-256-GCM, intervalo", "id"],
                   ["DeviceStatus", "Uma linha por device — resultado mais recente (upsert). Lida pelo dashboard em tempo real", "deviceId (único)"],
                   ["StatusHistory", "Append-only de cada checagem. Base dos gráficos de histórico. Retida por N dias (SystemConfig)", "(deviceId, timestamp)"],
-                  ["User", "Credenciais de acesso (bcrypt). Campo version para invalidar JWT ao trocar senha", "id, username"],
+                  ["User", "Credenciais (bcrypt) + TOTP. version = optimistic locking; passwordChangedAt invalida JWTs emitidos antes da troca de senha", "id, username"],
                   ["TokenBlacklist", "JWTs invalidados. Consultado no middleware a cada request autenticado", "jti"],
                   ["RateLimit", "Contadores de rate limiting persistidos. Usado pelo middleware de login", "(key, window)"],
                   ["Link", "Link WAN: config RouterOS, banda contratada (bps), tráfego ao vivo (atualizado pelo worker)", "id"],
