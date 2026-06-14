@@ -47,13 +47,18 @@ Itens marcados com ✓ foram verificados diretamente no código; os demais devem
       `incidents/page.tsx` (+ `res.ok` check e toast), `unifi/page.tsx`, `omada/page.tsx`, `devices/[id]/page.tsx`.
 - [x] **`fetch` sem checar `res.ok`** — `links/page.tsx` confirmDelete agora valida `res.ok` antes do toast de sucesso.
 
-### Branch `perf/bounded-queries`
-- [ ] **Histórico ilimitado em memória** — `incidents/route.ts`, `timeline/route.ts`,
-      `lib/report-builder.ts`, `devices/[id]/export/route.ts`
-      `findMany` de `StatusHistory` sem `take`; janela de 30d × 100 devices = milhões de linhas.
-      Usar `aggregate`/`_avg` no banco e `take` nas subqueries.
-- [ ] **Índices ausentes no Prisma** — adicionar `@@index` em `Device.type`, `Link.mikrotikDeviceId`
-      (consultado a cada 60s), `AuditLog.ipAddress`. Rodar `db:migrate` + `db:generate`.
+### Branch `perf/bounded-queries` ✅ CONCLUÍDA (parcial — ver nota)
+- [x] **Índices ausentes no Prisma** — `@@index` em `Device.type`, `Link.mikrotikDeviceId`,
+      `AuditLog([ipAddress, timestamp])`. Migração `20260614000000_perf_indexes` aplicada + `db:generate`.
+- [x] **`take` seguro onde não muda semântica** — `devices/[id]/export` (cap 100k linhas) e
+      `links/[id]/events` (2000 eventos mais recentes, reordenados asc).
+
+### Branch `perf/incident-detection-sql` (separada — refactor arriscado)
+- [ ] **Histórico ilimitado em memória** — `incidents/route.ts`, `timeline/route.ts`, `lib/report-builder.ts`
+      compartilham o algoritmo `buildIncidents` que exige histórico ordenado completo (detecção de transições
+      via `LAG`). Reescrever com query SQL de window function (`$queryRaw`) retornando só transições, e
+      reescrever os testes dos três. Queries já são indexadas por `[deviceId, timestamp]` — é memória, não scan.
+      Separado de `perf/bounded-queries` por exigir refactor cross-cutting + reescrita de testes.
 
 ---
 

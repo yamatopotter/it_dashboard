@@ -32,6 +32,9 @@ export async function GET(
     where: { deviceId: id, timestamp: { gte: since } },
     orderBy: { timestamp: "asc" },
     select: { timestamp: true, isOnline: true, pingMs: true, cpuLoad: true, memoryUsed: true },
+    // Bound the CSV built in memory — ~70 days at 60s intervals. Beyond this the
+    // export is truncated rather than risking an unbounded string allocation.
+    take: 100_000,
   });
 
   const header = "timestamp,isOnline,pingMs,cpuLoad,memoryUsed\n";
