@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Wifi, Server, AlertTriangle, Shield } from "lucide-react";
+import { Eye, EyeOff, Wifi, Server, AlertTriangle, Shield, KeyRound } from "lucide-react";
 
 function LighthouseIcon({ size = 24, className = "" }: { size?: number; className?: string }) {
   return (
@@ -50,28 +50,54 @@ export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [totp, setTotp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // SEC-009: track whether this user has TOTP enabled
+  const [needsTotp, setNeedsTotp] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const result = await signIn("credentials", {
-      username,
-      password,
-      redirect: false,
-    });
+    try {
+      // SEC-009: if TOTP step not yet revealed, check if user has 2FA enabled
+      if (!needsTotp) {
+        const check = await fetch(
+          `/api/auth/check-2fa?username=${encodeURIComponent(username)}`
+        ).then((r) => r.json() as Promise<{ totpEnabled: boolean }>);
 
-    setLoading(false);
+        if (check.totpEnabled) {
+          // Show TOTP field — don't sign in yet
+          setNeedsTotp(true);
+          setLoading(false);
+          return;
+        }
+      }
 
-    if (result?.error) {
-      setError("Usuário ou senha inválidos");
-    } else {
-      router.push("/");
-      router.refresh();
+      const result = await signIn("credentials", {
+        username,
+        password,
+        totp: needsTotp ? totp : "",
+        redirect: false,
+      });
+
+      if (result?.error) {
+        if (needsTotp) {
+          setError("Código 2FA inválido ou expirado");
+        } else {
+          setError("Usuário ou senha inválidos");
+        }
+      } else {
+        router.push("/");
+        router.refresh();
+      }
+    } catch {
+      setError("Erro ao conectar ao servidor");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -175,54 +201,89 @@ export default function LoginPage() {
 
           <div className="mb-8">
             <h2 className="text-[1.6rem] font-extrabold tracking-tight leading-tight">
-              Bem-vindo de volta
+              {needsTotp ? "Verificação em duas etapas" : "Bem-vindo de volta"}
             </h2>
             <p className="text-muted-foreground text-sm mt-1.5">
-              Credenciais fornecidas pelo administrador
+              {needsTotp
+                ? "Digite o código do seu app autenticador"
+                : "Credenciais fornecidas pelo administrador"}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="username" className="text-sm font-semibold">
-                Usuário
-              </Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Seu nome de usuário"
-                required
-                autoFocus
-                className="h-11"
-              />
-            </div>
+            {!needsTotp && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="username" className="text-sm font-semibold">
+                    Usuário
+                  </Label>
+                  <Input
+                    id="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Seu nome de usuário"
+                    required
+                    autoFocus
+                    className="h-11"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-semibold">
-                Senha
-              </Label>
-              <div className="relative">
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm font-semibold">
+                    Senha
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="h-11 pr-11"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showPassword
+                        ? <EyeOff className="h-4 w-4" />
+                        : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* SEC-009: TOTP step */}
+            {needsTotp && (
+              <div className="space-y-2">
+                <Label htmlFor="totp" className="text-sm font-semibold flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Código 2FA
+                </Label>
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="totp"
+                  value={totp}
+                  onChange={(e) => setTotp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
                   required
-                  className="h-11 pr-11"
+                  autoFocus
+                  maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="h-11 font-mono text-center tracking-[0.3em] text-lg"
                 />
                 <button
                   type="button"
-                  tabIndex={-1}
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => { setNeedsTotp(false); setTotp(""); setError(""); }}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
                 >
-                  {showPassword
-                    ? <EyeOff className="h-4 w-4" />
-                    : <Eye className="h-4 w-4" />}
+                  Voltar ao login
                 </button>
               </div>
-            </div>
+            )}
 
             {error && (
               <div className="flex items-center gap-2.5 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
@@ -244,7 +305,7 @@ export default function LoginPage() {
                     }
               }
             >
-              {loading ? "Entrando..." : "Entrar"}
+              {loading ? "Verificando..." : needsTotp ? "Verificar código" : "Entrar"}
             </Button>
           </form>
 

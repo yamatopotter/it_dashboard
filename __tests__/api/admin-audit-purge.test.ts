@@ -11,13 +11,14 @@ jest.mock("@/lib/db", () => ({
 
 jest.mock("@/lib/audit", () => ({ writeAudit: jest.fn() }));
 
+import { NextRequest } from "next/server";
 import { POST } from "@/app/api/admin/audit/purge/route";
 import { db } from "@/lib/db";
 
 const mockDb = db as jest.Mocked<typeof db>;
 
 function makeReq(body: unknown) {
-  return new Request("http://localhost/api/admin/audit/purge", {
+  return new NextRequest("http://localhost/api/admin/audit/purge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -49,7 +50,7 @@ describe("POST /api/admin/audit/purge", () => {
   });
 
   it("returns 400 for malformed JSON", async () => {
-    const req = new Request("http://localhost/api/admin/audit/purge", {
+    const req = new NextRequest("http://localhost/api/admin/audit/purge", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "bad",

@@ -19,11 +19,15 @@ jest.mock("@/lib/db", () => ({
   },
 }));
 
+jest.mock("@/lib/audit", () => ({ writeAudit: jest.fn() }));
+
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 
 const mockAuth = auth as jest.MockedFunction<typeof auth>;
 const mockDb = db as jest.Mocked<typeof db>;
+const mockWriteAudit = writeAudit as jest.Mock;
 
 const FAKE_SESSION = { user: { id: "user-1", name: "admin", role: "ADMIN" }, expires: "2099-01-01" };
 
@@ -124,6 +128,9 @@ describe("POST /api/devices", () => {
     expect(res.status).toBe(201);
     const data = await res.json();
     expect(data.name).toBe("Router Principal");
+    expect(mockWriteAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "CREATE", entity: "Device", entityId: "device-1" })
+    );
   });
 
   it("returns 400 for missing required fields", async () => {

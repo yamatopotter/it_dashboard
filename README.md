@@ -4,6 +4,49 @@ Dashboard local para monitoramento centralizado de infraestrutura de TI — Mikr
 
 ---
 
+## Arquitetura
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Browser                                                        │
+│  Next.js App Router (React + shadcn/ui)                        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ HTTP
+┌───────────────────────────▼─────────────────────────────────────┐
+│  Next.js Server                                                 │
+│  ┌──────────────┐  ┌─────────────────┐  ┌────────────────────┐ │
+│  │  Middleware  │  │   API Routes    │  │  NextAuth.js v5    │ │
+│  │  Auth check  │  │   /api/*        │  │  JWT (sem DB)      │ │
+│  │  Rate-limit  │  │   Zod + Prisma  │  │                    │ │
+│  └──────┬───────┘  └────────┬────────┘  └────────────────────┘ │
+└─────────┼──────────────────┼──────────────────────────────────┘
+          │                  │ read/write
+┌─────────▼──────────────────▼──────────────────────────────────┐
+│  PostgreSQL (Docker)                                           │
+│  Device · DeviceStatus · StatusHistory · WorkerHeartbeat      │
+│  Link · LinkEvent · User · AuditLog · SystemConfig            │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │ read/write
+┌──────────────────────────────▼─────────────────────────────────┐
+│  Worker (Node.js process separado — npm run worker)            │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Scheduler — setInterval por dispositivo                 │  │
+│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌────────┐ ┌───────────┐  │  │
+│  │  │ Ping │ │ HTTP │ │ SNMP │ │RouterOS│ │UniFi/Omada│  │  │
+│  │  └──┬───┘ └──┬───┘ └──┬───┘ └───┬────┘ └─────┬─────┘  │  │
+│  └─────┼────────┼─────────┼─────────┼─────────────┼────────┘  │
+└────────┼────────┼─────────┼─────────┼─────────────┼───────────┘
+         │        │         │         │             │
+         └────────┴─────────┴────┬────┴─────────────┘
+                                 ▼
+                    Dispositivos de rede
+                    Mikrotik · DVR · Câmera · UniFi AP · Omada AP
+```
+
+**Modelo de dois processos:** o Next.js serve a UI e as rotas API; o worker roda em paralelo via `npm run dev:all` (concurrently). Cada processo lê/escreve o banco de forma independente. O worker faz heartbeat a cada 60s — `/api/health` detecta crash se o heartbeat ficar estale.
+
+---
+
 ## Stack
 
 | Camada | Tecnologia | Versão |
@@ -87,14 +130,6 @@ npm run worker
 ```
 
 Acesse [http://localhost:3000](http://localhost:3000) e faça login.
-
-### 6. Popular notas de segurança (opcional)
-
-```bash
-npm run seed:security
-```
-
-Cria 12 findings de segurança pré-definidos na aba **Notas & Segurança**.
 
 ---
 
@@ -215,10 +250,12 @@ docker exec -i it_dashboard_db psql -U it_dashboard it_dashboard < backup.sql
 | `Device` | Configuração do dispositivo (IP, tipo, protocolos, credenciais, intervalo de checagem) |
 | `DeviceStatus` | Uma linha por dispositivo — resultado mais recente (upsert a cada checagem) |
 | `StatusHistory` | Log append-only de cada checagem, indexado por `(deviceId, timestamp)` |
-| `User` | Credenciais do login (senha com bcrypt) |
-| `Note` | Notas de segurança/operacionais com severidade e status de resolução |
+| `User` | Credenciais do login (senha com bcrypt, campo `version` para optimistic locking) |
 | `Link` | Configuração de link WAN: RouterOS config, banda contratada, tráfego ao vivo |
 | `LinkEvent` | Eventos UP/DOWN por link, indexado por `(linkId, timestamp)` |
+| `WorkerHeartbeat` | Singleton atualizado a cada 60s pelo worker; lido por `/api/health` |
+| `AuditLog` | Registro de todas as operações CREATE/UPDATE/DELETE/CLEANUP com IP e usuário |
+| `SystemConfig` | Configurações de retenção de dados (dias de StatusHistory, LinkEvent) |
 
 ---
 
@@ -235,7 +272,7 @@ Cobertura por camada:
 | Pasta | O que testa |
 |---|---|
 | `__tests__/lib/` | Utilitários de formatação (`formatUptime`, `formatResponseTime`, `formatPercent`) |
-| `__tests__/api/` | Rotas de API (devices, status, notes) |
+| `__tests__/api/` | Rotas de API (devices, links, admin, users) |
 | `__tests__/worker/` | Monitores: ping, HTTP, SNMP, RouterOS |
 | `__tests__/components/` | Componentes React |
 | `__tests__/security/` | Enforcement de autenticação em todas as rotas protegidas |

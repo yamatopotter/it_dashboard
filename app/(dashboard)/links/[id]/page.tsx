@@ -124,8 +124,8 @@ function CopyButton({ text }: { text: string }) {
     setTimeout(() => setCopied(false), 2000);
   }
   return (
-    <Button variant="ghost" size="icon" onClick={copy} className="h-6 w-6 shrink-0">
-      {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+    <Button variant="ghost" size="icon" onClick={copy} aria-label="Copiar token" className="h-6 w-6 shrink-0">
+      {copied ? <Check className="h-3 w-3 text-success" aria-hidden="true" /> : <Copy className="h-3 w-3" aria-hidden="true" />}
     </Button>
   );
 }
@@ -209,7 +209,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   if (loading) {
     return (
       <>
-        <Topbar title="Carregando..." back="/links" />
+        <Topbar title="Carregando..." back="/links" backLabel="Links de Internet" />
         <div className="p-7 space-y-6">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-64 w-full" />
@@ -234,6 +234,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         badge={<StatusBadge isOnline={link.isOnline} />}
         subtitle={link.description ?? undefined}
         back="/links"
+        backLabel="Links de Internet"
       />
 
     <div className="p-7 space-y-6">
@@ -549,7 +550,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           <p className="text-sm text-muted-foreground">Nenhum evento registrado neste período.</p>
         ) : (
           <div className="rounded-lg border bg-card overflow-hidden">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Histórico de eventos do link">
               <thead className="bg-muted/40 border-b">
                 <tr>
                   <th className="text-left px-4 py-2.5 font-medium">Data/Hora</th>

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
 import { formatUptime, formatResponseTime, formatPercent, fmtTime } from "@/lib/format";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL } from "@/lib/device-constants";
+import { getCpuColor, getMemoryColor } from "@/lib/device-colors";
 import { MapPin, Users } from "lucide-react";
 import type { Device, DeviceStatus } from "@prisma/client";
 
@@ -113,13 +114,7 @@ export function DeviceCard({ device }: { device: DeviceWithStatus }) {
                   <span className="text-[10px] text-muted-foreground w-8 shrink-0">CPU</span>
                   <MiniBar
                     value={status.cpuLoad}
-                    colorClass={
-                      status.cpuLoad < 60
-                        ? "bg-success"
-                        : status.cpuLoad < 85
-                        ? "bg-warning"
-                        : "bg-destructive"
-                    }
+                    colorClass={getCpuColor(status.cpuLoad)}
                   />
                   <span className="text-[10px] font-mono text-muted-foreground w-8 text-right shrink-0">
                     {formatPercent(status.cpuLoad)}
@@ -133,13 +128,7 @@ export function DeviceCard({ device }: { device: DeviceWithStatus }) {
                   <span className="text-[10px] text-muted-foreground w-8 shrink-0">Mem</span>
                   <MiniBar
                     value={status.memoryUsed}
-                    colorClass={
-                      status.memoryUsed < 70
-                        ? "bg-primary/60"
-                        : status.memoryUsed < 90
-                        ? "bg-warning"
-                        : "bg-destructive"
-                    }
+                    colorClass={getMemoryColor(status.memoryUsed)}
                   />
                   <span className="text-[10px] font-mono text-muted-foreground w-8 text-right shrink-0">
                     {formatPercent(status.memoryUsed)}

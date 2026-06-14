@@ -13,6 +13,7 @@ jest.mock("@/worker/scheduler", () => ({
   runChecks: jest.fn().mockResolvedValue(undefined),
 }));
 
+import { NextRequest } from "next/server";
 import { POST as checkById } from "@/app/api/devices/[id]/check/route";
 import { POST as checkBulk } from "@/app/api/devices/check/route";
 import { db } from "@/lib/db";
@@ -24,7 +25,7 @@ const mockRun = runChecks as jest.Mock;
 const DEVICE = { id: "dev1", name: "Router", ip: "10.0.0.1", type: "MIKROTIK" };
 
 function makeReq(url: string) {
-  return new Request(url, { method: "POST" });
+  return new NextRequest(url, { method: "POST" });
 }
 
 beforeEach(() => {

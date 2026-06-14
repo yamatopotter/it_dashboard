@@ -69,6 +69,18 @@ export async function shutdown(timeoutMs = 10_000): Promise<void> {
 }
 
 export async function runChecks(device: Device): Promise<boolean> {
+  // Maintenance window — mark as online without running monitors or recording history
+  if (device.maintenanceUntil && device.maintenanceUntil > new Date()) {
+    const now = new Date();
+    await db.deviceStatus.upsert({
+      where: { deviceId: device.id },
+      update: { isOnline: true, checkedAt: now },
+      create: { deviceId: device.id, isOnline: true, checkedAt: now },
+    });
+    log("info", `[Manutenção] ${device.name} — incidente suprimido até ${device.maintenanceUntil.toISOString()}`, { ip: device.ip });
+    return true;
+  }
+
   const results = await Promise.allSettled([
     device.pingEnabled ? checkPing(device.ip) : Promise.resolve(null),
     device.httpEnabled
@@ -422,9 +434,12 @@ export async function pruneHistory() {
   const historyCutoff = new Date(Date.now() - config.statusHistoryDays * 24 * 3_600_000);
   const eventCutoff   = new Date(Date.now() - config.linkEventDays   * 24 * 3_600_000);
 
-  const [statusResult, eventResult] = await Promise.all([
+  const now = new Date();
+  const [statusResult, eventResult, blacklistResult] = await Promise.all([
     db.statusHistory.deleteMany({ where: { timestamp: { lt: historyCutoff } } }),
     db.linkEvent.deleteMany({ where: { timestamp: { lt: eventCutoff } } }),
+    // SEC-021: purge expired JWT blacklist entries
+    db.tokenBlacklist.deleteMany({ where: { expiresAt: { lt: now } } }),
   ]);
 
   await db.systemConfig.update({ where: { id: 1 }, data: { lastCleanupAt: new Date() } });
@@ -432,6 +447,7 @@ export async function pruneHistory() {
   log("info", "[Retenção] registros removidos.", {
     statusHistory: statusResult.count,
     linkEvents: eventResult.count,
+    blacklistTokens: blacklistResult.count,
     historyCutoff: historyCutoff.toISOString(),
     eventCutoff: eventCutoff.toISOString(),
   });

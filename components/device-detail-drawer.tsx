@@ -12,6 +12,7 @@ import { DEVICE_TYPE_ICON, DEVICE_TYPE_ICON_BG, DEVICE_TYPE_LABEL } from "@/lib/
 import { MapPin, History, Zap, X } from "lucide-react";
 import { PingSparkline } from "@/components/ping-sparkline";
 import type { Device, DeviceStatus, StatusHistory } from "@prisma/client";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
 
@@ -201,9 +202,10 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
               </div>
               <button
                 onClick={onClose}
+                aria-label="Fechar painel"
                 className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           )}
@@ -332,11 +334,26 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
             {loading ? (
               <Skeleton className="h-5 w-full rounded" />
             ) : (
-              <div className="flex gap-0.5">
-                {segments.map((s, i) => (
-                  <div key={i} className={`flex-1 h-5 rounded-[3px] ${SEG_COLOR[s]}`} />
-                ))}
-              </div>
+              <TooltipProvider>
+                <div className="flex gap-0.5">
+                  {segments.map((s, i) => {
+                    const slotEnd = new Date(now - (47 - i) * 1_800_000);
+                    const slotStart = new Date(slotEnd.getTime() - 1_800_000);
+                    const fmt = (d: Date) => fmtTime(d, { hour: "2-digit", minute: "2-digit" });
+                    const label = `${fmt(slotStart)}–${fmt(slotEnd)} · ${
+                      s === "online" ? "Online" : s === "offline" ? "Offline" : s === "degraded" ? "Instável" : "Sem dados"
+                    }`;
+                    return (
+                      <Tooltip key={i}>
+                        <TooltipTrigger className="flex-1">
+                          <div className={`w-full h-5 rounded-[3px] cursor-default ${SEG_COLOR[s]}`} />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{label}</TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </TooltipProvider>
             )}
           </div>
 

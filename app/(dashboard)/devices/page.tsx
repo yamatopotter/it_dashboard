@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { usePolling } from "@/hooks/use-polling";
 import Link from "next/link";
 import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
@@ -12,30 +12,23 @@ import { EmptyState } from "@/components/empty-state";
 import { PingSparkline } from "@/components/ping-sparkline";
 import {
   Plus, Layers, Pencil, MapPin, Server, Wifi,
-  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List,
+  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List, AlignJustify,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { formatResponseTime, formatUptime, formatPercent } from "@/lib/format";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL, DEVICE_TYPE_ICON_BG } from "@/lib/device-constants";
+import { getPingColor, getPingDot } from "@/lib/device-colors";
 import { FilterChip } from "@/components/filter-chip";
+import { DeviceSearchInput } from "@/components/device-search-input";
+import { useDeviceNotifications } from "@/hooks/use-device-notifications";
+import { Bell, BellOff } from "lucide-react";
 import type { Device, DeviceStatus, DeviceType } from "@prisma/client";
 import type { OverviewData } from "@/app/api/overview/route";
 
 type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
 
-function pingColor(ms: number | null | undefined) {
-  if (ms == null) return "text-muted-foreground";
-  if (ms < 50) return "text-success";
-  if (ms < 150) return "text-warning";
-  return "text-destructive";
-}
-
-function pingDot(ms: number | null | undefined) {
-  if (ms == null) return "bg-muted-foreground/30";
-  if (ms < 50) return "bg-success";
-  if (ms < 150) return "bg-warning";
-  return "bg-destructive";
-}
+const pingColor = getPingColor;
+const pingDot = getPingDot;
 
 function MiniBar({ value, colorClass }: { value: number; colorClass: string }) {
   return (
@@ -172,12 +165,12 @@ function SortableHeader({
         <span className="shrink-0">
           {active ? (
             sortDir === "asc" ? (
-              <ChevronUp className="h-3.5 w-3.5" />
+              <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
             ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
             )
           ) : (
-            <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />
+            <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" aria-hidden="true" />
           )}
         </span>
       </button>
@@ -189,12 +182,60 @@ export default function DevicesPage() {
   const [devices, setDevices] = useState<DeviceWithStatus[]>([]);
   const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<"table" | "cards">("cards");
+  const [viewMode, setViewMode] = useState<"table" | "cards" | "compact">("cards");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("devices-view-mode");
+    if (saved === "table" || saved === "cards" || saved === "compact") setViewMode(saved);
+  }, []);
+
+  function changeViewMode(mode: "table" | "cards" | "compact") {
+    setViewMode(mode);
+    localStorage.setItem("devices-view-mode", mode);
+  }
+  // USA-U005: initialize filters from URL params so they survive navigation
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ONLINE" | "OFFLINE">("ALL");
   const [typeFilter, setTypeFilter] = useState<DeviceType | "ALL">("ALL");
   const [drawerDeviceId, setDrawerDeviceId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [locationFilter, setLocationFilter] = useState<string | "ALL">("ALL");
+  const filtersReady = useRef(false);
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const s = p.get("status"); if (s === "ONLINE" || s === "OFFLINE") setStatusFilter(s);
+    const t = p.get("type") as DeviceType | null; if (t) setTypeFilter(t);
+    const l = p.get("location"); if (l) setLocationFilter(l);
+    const q = p.get("q"); if (q) setSearchQuery(q);
+    filtersReady.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!filtersReady.current) return;
+    const p = new URLSearchParams();
+    if (statusFilter !== "ALL") p.set("status", statusFilter);
+    if (typeFilter !== "ALL") p.set("type", typeFilter);
+    if (locationFilter !== "ALL") p.set("location", locationFilter);
+    if (searchQuery) p.set("q", searchQuery);
+    const qs = p.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [statusFilter, typeFilter, locationFilter, searchQuery]);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>("default");
+  const { notify, requestPermission } = useDeviceNotifications();
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      setNotifPermission(Notification.permission);
+    }
+  }, []);
+
+  async function handleEnableNotifications() {
+    await requestPermission();
+    if ("Notification" in window) setNotifPermission(Notification.permission);
+  }
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -210,13 +251,20 @@ export default function DevicesPage() {
       fetch("/api/devices"),
       fetch("/api/overview"),
     ]);
-    if (devRes.ok) setDevices(await devRes.json());
+    if (devRes.ok) {
+      const data = await devRes.json();
+      setDevices(data);
+      notify(data);
+    }
     if (ovRes.ok) setOverviewData(await ovRes.json());
+    setLastUpdated(new Date());
     setLoading(false);
-  }, []);
+  }, [notify]);
 
   usePolling(load, 30_000);
 
+  const q = searchQuery.trim().toLowerCase();
+  const uniqueLocations = [...new Set(devices.map((d) => d.location).filter(Boolean) as string[])].sort();
   const filtered = devices
     .filter((d) => {
       const statusMatch =
@@ -224,7 +272,9 @@ export default function DevicesPage() {
         (statusFilter === "ONLINE" && (d.currentStatus?.isOnline ?? false)) ||
         (statusFilter === "OFFLINE" && !(d.currentStatus?.isOnline ?? false));
       const typeMatch = typeFilter === "ALL" || d.type === typeFilter;
-      return statusMatch && typeMatch;
+      const locationMatch = locationFilter === "ALL" || d.location === locationFilter;
+      const searchMatch = !q || d.name.toLowerCase().includes(q) || d.ip.startsWith(q);
+      return statusMatch && typeMatch && locationMatch && searchMatch;
     })
     .sort((a, b) => {
       let cmp = 0;
@@ -259,32 +309,63 @@ export default function DevicesPage() {
 
   return (
     <>
-      <Topbar title="Dispositivos" icon={Server} live={!loading}>
+      <Topbar title="Dispositivos" icon={Server} live={!loading} pollIntervalMs={30_000} lastUpdated={lastUpdated}>
         {/* View toggle */}
         <div className="flex items-center rounded-lg border border-border overflow-hidden">
           <button
-            onClick={() => setViewMode("table")}
+            onClick={() => changeViewMode("table")}
             className={`flex items-center justify-center h-8 w-8 transition-colors ${
               viewMode === "table"
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-muted"
             }`}
+            aria-label="Visualização em tabela"
             title="Visualização em tabela"
           >
             <List className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={() => setViewMode("cards")}
+            onClick={() => changeViewMode("cards")}
             className={`flex items-center justify-center h-8 w-8 transition-colors ${
               viewMode === "cards"
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-muted"
             }`}
+            aria-label="Visualização em cards"
             title="Visualização em cards"
           >
             <LayoutGrid className="h-3.5 w-3.5" />
           </button>
+          <button
+            onClick={() => changeViewMode("compact")}
+            className={`flex items-center justify-center h-8 w-8 transition-colors ${
+              viewMode === "compact"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+            aria-label="Visualização compacta NOC"
+            title="Visualização compacta NOC"
+          >
+            <AlignJustify className="h-3.5 w-3.5" />
+          </button>
         </div>
+
+        {"Notification" in (typeof window !== "undefined" ? window : {}) && notifPermission !== "denied" && notifPermission !== "granted" && (
+          <button
+            onClick={handleEnableNotifications}
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
+            title="Ativar notificações de dispositivos offline"
+          >
+            <Bell className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Notificações</span>
+          </button>
+        )}
+        {notifPermission === "granted" && (
+          <span className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-success/30 text-xs text-success/80 select-none">
+            <Bell className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Ativas</span>
+          </span>
+        )}
 
         <Link
           href="/devices/new/bulk"
@@ -300,8 +381,10 @@ export default function DevicesPage() {
       </Topbar>
 
       <div className="p-7 space-y-4">
-        {/* Filter chips */}
-        <div className="flex flex-wrap gap-2">
+        {/* Search + Filter chips */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <DeviceSearchInput value={searchQuery} onChange={setSearchQuery} />
+          <div className="w-px bg-border mx-0.5 self-stretch" />
           <FilterChip active={statusFilter === "ALL"} onClick={() => setStatusFilter("ALL")}>
             Todos os status
           </FilterChip>
@@ -342,6 +425,20 @@ export default function DevicesPage() {
               )}
             </FilterChip>
           ))}
+
+          {uniqueLocations.length > 0 && (
+            <>
+              <div className="w-px bg-border mx-0.5 self-stretch" />
+              <FilterChip active={locationFilter === "ALL"} onClick={() => setLocationFilter("ALL")}>
+                Todos os locais
+              </FilterChip>
+              {uniqueLocations.map((loc) => (
+                <FilterChip key={loc} active={locationFilter === loc} onClick={() => setLocationFilter(loc)}>
+                  {loc}
+                </FilterChip>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Content */}
@@ -350,6 +447,12 @@ export default function DevicesPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {Array.from({ length: 10 }).map((_, i) => (
                 <Skeleton key={i} className="h-28 rounded-xl" />
+              ))}
+            </div>
+          ) : viewMode === "compact" ? (
+            <div className="rounded-xl border bg-card overflow-hidden">
+              {Array.from({ length: 15 }).map((_, i) => (
+                <Skeleton key={i} className="h-7 rounded-none border-b last:border-b-0" />
               ))}
             </div>
           ) : (
@@ -376,9 +479,47 @@ export default function DevicesPage() {
               />
             ))}
           </div>
+        ) : viewMode === "compact" ? (
+          <div className="rounded-xl border bg-card overflow-hidden" role="list" aria-label="Lista de dispositivos — visão compacta">
+            {filtered.map((device) => {
+              const status = device.currentStatus;
+              const isOnline = status?.isOnline ?? false;
+              const ping = status?.pingMs;
+              const isInstavel = isOnline && (ping ?? 0) > 150;
+              const dotColor = isInstavel ? "bg-warning" : isOnline ? "bg-success" : "bg-destructive";
+              const pingText = ping != null ? `${ping}ms` : "—";
+              const pingColor = isInstavel ? "text-warning" : isOnline ? "text-foreground" : "text-muted-foreground";
+              return (
+                <button
+                  key={device.id}
+                  role="listitem"
+                  onClick={() => setDrawerDeviceId(device.id)}
+                  className="w-full flex items-center gap-3 px-3 border-b last:border-b-0 hover:bg-muted/40 transition-colors text-left group"
+                  style={{ height: "28px" }}
+                  aria-label={`${device.name} — ${isInstavel ? "Instável" : isOnline ? "Online" : "Offline"}`}
+                >
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} aria-hidden="true" />
+                  <span className="text-xs font-medium truncate min-w-0 flex-1 group-hover:text-primary transition-colors">
+                    {device.name}
+                  </span>
+                  <span className="text-[10px] font-mono text-muted-foreground hidden sm:block w-24 shrink-0">
+                    {device.ip}
+                  </span>
+                  {device.location && (
+                    <span className="text-[10px] text-muted-foreground hidden lg:block w-28 truncate shrink-0">
+                      {device.location}
+                    </span>
+                  )}
+                  <span className={`text-[10px] font-mono tabular-nums w-10 text-right shrink-0 ${pingColor}`}>
+                    {pingText}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         ) : (
-          <div className="rounded-xl border bg-card overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-xl border bg-card overflow-x-auto">
+            <table className="w-full text-sm" aria-label="Lista de dispositivos">
               <thead className="border-b bg-muted/40">
                 <tr>
                   <SortableHeader
@@ -514,6 +655,7 @@ export default function DevicesPage() {
                       >
                         <Link
                           href={`/devices/${device.id}/edit`}
+                          aria-label="Editar dispositivo"
                           className={buttonVariants({ variant: "ghost", size: "icon" })}
                         >
                           <Pencil className="h-3.5 w-3.5" />

@@ -59,12 +59,12 @@ const ACTION_COLOR: Record<AuditAction, string> = {
 };
 
 const ENTITY_LABEL: Record<string, string> = {
-  Device: "Dispositivo", Link: "Link", User: "Usuário", Note: "Nota",
+  Device: "Dispositivo", Link: "Link", User: "Usuário",
   SystemConfig: "Config. Sistema", System: "Sistema", Auth: "Autenticação", AuditLog: "Audit Log",
 };
 
 const ACTIONS: AuditAction[] = ["CREATE", "UPDATE", "DELETE", "LOGIN", "LOGIN_FAILED", "CLEANUP"];
-const ENTITIES = ["Device", "Link", "User", "Note", "SystemConfig", "System", "Auth", "AuditLog"];
+const ENTITIES = ["Device", "Link", "User", "SystemConfig", "System", "Auth", "AuditLog"];
 
 function StatCard({ label, value, sub, icon: Icon, accent }: { label: string; value: string | number; sub?: string; icon: React.ElementType; accent?: string }) {
   return (
@@ -231,41 +231,41 @@ export function AuditClient() {
         {/* Filters */}
         <div className="rounded-xl border border-border bg-card p-4 flex flex-wrap gap-3 items-end">
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Ação</label>
-            <select value={filterAction} onChange={(e) => setFilterAction(e.target.value)}
+            <label htmlFor="audit-filter-action" className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Ação</label>
+            <select id="audit-filter-action" value={filterAction} onChange={(e) => setFilterAction(e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-ring">
               <option value="">Todas</option>
               {ACTIONS.map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Entidade</label>
-            <select value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}
+            <label htmlFor="audit-filter-entity" className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Entidade</label>
+            <select id="audit-filter-entity" value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-ring">
               <option value="">Todas</option>
               {ENTITIES.map((e) => <option key={e} value={e}>{ENTITY_LABEL[e] ?? e}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">De</label>
-            <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
+            <label htmlFor="audit-filter-from" className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">De</label>
+            <input id="audit-filter-from" type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Até</label>
-            <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
+            <label htmlFor="audit-filter-to" className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Até</label>
+            <input id="audit-filter-to" type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
           <div className="flex flex-col gap-1 flex-1 min-w-45">
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Busca</label>
+            <label htmlFor="audit-filter-search" className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Busca</label>
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <Input placeholder="Nome, usuário, IP ou ID…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 pl-8 text-[13px]" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" aria-hidden="true" />
+              <Input id="audit-filter-search" placeholder="Nome, usuário, IP ou ID…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 pl-8 text-[13px]" />
             </div>
           </div>
           {hasFilters && (
             <button onClick={clearFilters} className="flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] text-muted-foreground hover:text-foreground border border-input hover:bg-muted transition-colors">
-              <X className="h-3.5 w-3.5" /> Limpar
+              <X className="h-3.5 w-3.5" aria-hidden="true" /> Limpar
             </button>
           )}
         </div>
@@ -277,18 +277,20 @@ export function AuditClient() {
             <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
               <span>Página {pagination.page} de {Math.max(1, pagination.totalPages)}</span>
               <button onClick={() => { const p = page - 1; setPage(p); load(p); }} disabled={page <= 1}
+                aria-label="Página anterior"
                 className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </button>
               <button onClick={() => { const p = page + 1; setPage(p); load(p); }} disabled={page >= pagination.totalPages}
+                aria-label="Próxima página"
                 className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
+            <table className="w-full text-[13px]" aria-label="Log de auditoria">
               <thead>
                 <tr className="border-b border-border">
                   {["Data/Hora", "Usuário", "IP", "Ação", "Entidade", "Nome / ID", "Detalhes"].map((h) => (

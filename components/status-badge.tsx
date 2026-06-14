@@ -25,6 +25,8 @@ export function StatusBadge({ isOnline, degraded = false, className }: StatusBad
 
   return (
     <span
+      role="status"
+      aria-label={STATUS_LABELS[status]}
       className={cn(
         "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold",
         STATUS_STYLES[status],
@@ -32,12 +34,13 @@ export function StatusBadge({ isOnline, degraded = false, className }: StatusBad
       )}
     >
       <span
+        aria-hidden="true"
         className={cn(
           "relative h-1.5 w-1.5 rounded-full bg-current",
           status === "online" && "animate-ping-dot"
         )}
       />
-      {STATUS_LABELS[status]}
+      <span aria-hidden="true">{STATUS_LABELS[status]}</span>
     </span>
   );
 }

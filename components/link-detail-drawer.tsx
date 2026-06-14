@@ -77,7 +77,7 @@ function calcOutages(events: LinkEvent[]) {
 function MetricTile({ label, value, loading }: { label: string; value: string | null; loading?: boolean }) {
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-      <p className="text-[9.5px] font-bold uppercase tracking-[.1em] text-muted-foreground mb-2">{label}</p>
+      <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground mb-2">{label}</p>
       {loading ? <Skeleton className="h-7 w-20" /> : (
         <p className="text-[1.6rem] font-extrabold leading-none tabular-nums text-foreground">
           {value ?? "—"}
@@ -200,8 +200,9 @@ export function LinkDetailDrawer({ linkId, onClose }: Props) {
                 </div>
               </div>
               <button onClick={onClose}
+                aria-label="Fechar painel"
                 className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-0.5">
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           )}
@@ -273,11 +274,11 @@ export function LinkDetailDrawer({ linkId, onClose }: Props) {
 
           {/* Availability bar 24h */}
           <div className="space-y-2">
-            <p className="text-[9.5px] font-bold uppercase tracking-[.1em] text-muted-foreground">
+            <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
               Disponibilidade (24h)
             </p>
             {loading ? <Skeleton className="h-5 w-full rounded" /> : (
-              <div className="flex gap-[2px]">
+              <div className="flex gap-0.5">
                 {segments.map((s, i) => (
                   <div key={i} className={`flex-1 h-5 rounded-[3px] ${SEG_COLOR[s as SegState]}`} />
                 ))}
@@ -287,7 +288,7 @@ export function LinkDetailDrawer({ linkId, onClose }: Props) {
 
           {/* Link info table */}
           <div>
-            <p className="text-[9.5px] font-bold uppercase tracking-[.1em] text-muted-foreground mb-1">
+            <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
               Informações do link
             </p>
             {loading ? (

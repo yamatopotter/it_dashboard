@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Server, Network, StickyNote, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, History } from "lucide-react";
+import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, History, ShieldCheck, BookOpen } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface SidebarCounts {
   devicesTotal: number;
@@ -17,7 +18,7 @@ interface SidebarCounts {
 function BrandMark() {
   return (
     <div
-      className="flex items-center justify-center w-[34px] h-[34px] rounded-[10px] flex-shrink-0 text-white"
+      className="flex items-center justify-center w-[34px] h-[34px] rounded-[10px] shrink-0 text-white"
       style={{
         background: "linear-gradient(145deg, #6d5cf6 0%, #5b48e8 100%)",
         boxShadow: "0 4px 12px rgba(109,92,246,.35), inset 0 1px 0 rgba(255,255,255,.25)",
@@ -66,7 +67,7 @@ function NavBadge({ count, alert }: { count: string | number; alert?: boolean })
 
 function NavSectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-2.5 pt-4 pb-1.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted-foreground/60 select-none">
+    <div className="px-2.5 pt-4 pb-1.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted-foreground select-none">
       {children}
     </div>
   );
@@ -100,7 +101,7 @@ function NavItem({
       <span
         className={cn(
           "flex items-center justify-center transition-colors duration-150",
-          active ? "text-primary" : "text-muted-foreground"
+          active ? "text-accent-foreground" : "text-muted-foreground"
         )}
       >
         <Icon className="h-[18px] w-[18px]" />
@@ -126,7 +127,7 @@ function UserAvatar({ name }: { name: string }) {
 
   return (
     <div
-      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0"
+      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[13px] font-bold shrink-0"
       style={{ background: "linear-gradient(145deg, #2a2c38, #15161e)" }}
     >
       {initials}
@@ -134,44 +135,20 @@ function UserAvatar({ name }: { name: string }) {
   );
 }
 
-export function Sidebar({ userName = "Usuário", userRole = "VIEWER" }: { userName?: string; userRole?: string }) {
+export function Sidebar({
+  userName = "Usuário",
+  userRole = "VIEWER",
+  initialCounts,
+}: {
+  userName?: string;
+  userRole?: string;
+  initialCounts?: SidebarCounts;
+}) {
   const pathname = usePathname();
-  const [counts, setCounts] = useState<SidebarCounts>({
-    devicesTotal: 0,
-    devicesOffline: 0,
-    linksOnline: 0,
-    linksTotal: 0,
-  });
+  const [counts, setCounts] = useState<SidebarCounts>(
+    initialCounts ?? { devicesTotal: 0, devicesOffline: 0, linksOnline: 0, linksTotal: 0 }
+  );
   const [version, setVersion] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function loadCounts() {
-      const [devRes, linkRes] = await Promise.all([
-        fetch("/api/devices"),
-        fetch("/api/links"),
-      ]);
-      if (devRes.ok) {
-        const devices = await devRes.json();
-        setCounts((prev) => ({
-          ...prev,
-          devicesTotal: devices.length,
-          devicesOffline: devices.filter((d: { currentStatus?: { isOnline: boolean } }) => !d.currentStatus?.isOnline).length,
-        }));
-      }
-      if (linkRes.ok) {
-        const links = await linkRes.json();
-        setCounts((prev) => ({
-          ...prev,
-          linksOnline: links.filter((l: { isOnline: boolean }) => l.isOnline).length,
-          linksTotal: links.length,
-        }));
-      }
-    }
-
-    loadCounts();
-    const interval = setInterval(loadCounts, 30_000);
-    return () => clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     fetch("/api/version")
@@ -181,7 +158,7 @@ export function Sidebar({ userName = "Usuário", userRole = "VIEWER" }: { userNa
   }, []);
 
   return (
-    <aside className="w-60 flex-shrink-0 bg-card border-r border-border flex flex-col" style={{ padding: "18px 14px 14px" }}>
+    <aside aria-label="Menu lateral" className="w-60 shrink-0 bg-card border-r border-border flex flex-col pt-4.5 px-3.5 pb-3.5">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-2 pb-5">
         <BrandMark />
@@ -192,7 +169,7 @@ export function Sidebar({ userName = "Usuário", userRole = "VIEWER" }: { userNa
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-col gap-0.5 flex-1">
+      <nav aria-label="Menu principal" className="flex flex-col gap-0.5 flex-1">
         <NavSectionLabel>Monitoramento</NavSectionLabel>
 
         <NavItem
@@ -264,10 +241,10 @@ export function Sidebar({ userName = "Usuário", userRole = "VIEWER" }: { userNa
         />
 
         <NavItem
-          href="/notes"
-          label="Notas & Segurança"
-          icon={StickyNote}
-          active={pathname.startsWith("/notes")}
+          href="/security"
+          label="Segurança"
+          icon={ShieldCheck}
+          active={pathname.startsWith("/security")}
         />
 
         <NavItem
@@ -275,6 +252,13 @@ export function Sidebar({ userName = "Usuário", userRole = "VIEWER" }: { userNa
           label="Changelog"
           icon={History}
           active={pathname.startsWith("/changelog")}
+        />
+
+        <NavItem
+          href="/manual"
+          label="Manual"
+          icon={BookOpen}
+          active={pathname.startsWith("/manual")}
         />
 
         {userRole === "ADMIN" && (
@@ -312,13 +296,20 @@ export function Sidebar({ userName = "Usuário", userRole = "VIEWER" }: { userNa
               {userRole === "ADMIN" ? "Administrador" : userRole === "OPERADOR" ? "Operador" : "Viewer"}
             </div>
           </div>
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
-            title="Sair"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ThemeToggle />
+            <button
+              onClick={async () => {
+                // SEC-021: blacklist the JWT before signing out
+                await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+                await signOut({ callbackUrl: "/login" });
+              }}
+              className="p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
+              aria-label="Sair"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
       {version && (

@@ -28,7 +28,19 @@ process.on("unhandledRejection", (reason) => {
   log("error", "[worker] Unhandled rejection", { reason: String(reason) });
 });
 
-startScheduler().catch((err) => {
-  log("error", "[worker] Falha ao iniciar scheduler", { error: String(err) });
+const STARTUP_TIMEOUT_MS = 30_000;
+const startupTimer = setTimeout(() => {
+  log("error", "[worker] Timeout de inicialização atingido (30s). Encerrando.");
   process.exit(1);
-});
+}, STARTUP_TIMEOUT_MS);
+if (typeof startupTimer === "object" && startupTimer !== null && "unref" in startupTimer) {
+  (startupTimer as NodeJS.Timeout).unref();
+}
+
+startScheduler()
+  .then(() => clearTimeout(startupTimer))
+  .catch((err) => {
+    clearTimeout(startupTimer);
+    log("error", "[worker] Falha ao iniciar scheduler", { error: String(err) });
+    process.exit(1);
+  });

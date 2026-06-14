@@ -16,7 +16,6 @@ export async function GET() {
       linkEventCount,
       deviceCount,
       userCount,
-      noteCount,
       linkCount,
       oldestHistory,
       newestHistory,
@@ -41,7 +40,6 @@ export async function GET() {
       db.linkEvent.count(),
       db.device.count(),
       db.user.count(),
-      db.note.count(),
       db.link.count(),
       db.statusHistory.findFirst({ orderBy: { timestamp: "asc" }, select: { timestamp: true } }),
       db.statusHistory.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } }),
@@ -68,7 +66,6 @@ export async function GET() {
         linkEvents: linkEventCount,
         devices: deviceCount,
         users: userCount,
-        notes: noteCount,
         links: linkCount,
       },
       statusHistoryRange: {

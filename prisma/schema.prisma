@@ -58,6 +58,9 @@ model Device {
 
   checkInterval Int @default(60)
 
+  // Maintenance window — worker skips incident generation while active
+  maintenanceUntil DateTime?
+
   // Alert notifications
   alertWebhookUrl String?
   alertThreshold  Int      @default(3) // consecutive failures before firing alert
@@ -68,7 +71,7 @@ model Device {
 
   currentStatus  DeviceStatus?
   history        StatusHistory[]
-  noteItems      Note[]
+
   monitoredLinks Link[]          @relation("LinkMikrotik")
 }
 
@@ -113,6 +116,21 @@ model User {
   password  String
   role      UserRole @default(ADMIN)
   createdAt DateTime @default(now())
+  // SEC-027: optimistic locking — previne race condition em atualizações concorrentes
+  version   Int      @default(1)
+  // SEC-009: 2FA/TOTP opcional
+  totpSecret    String?
+  totpEnabled   Boolean @default(false)
+  // SEC-021: força revalidação após troca de senha
+  passwordChangedAt DateTime?
+}
+
+// SEC-021: token blacklist para invalidação imediata após logout ou troca de senha
+model TokenBlacklist {
+  jti       String   @id       // JWT ID (uuid v4 gerado no JWT callback)
+  expiresAt DateTime            // igual ao exp do token (para limpeza automática)
+
+  @@index([expiresAt])
 }
 
 enum UserRole {
@@ -164,25 +182,6 @@ model LinkEvent {
   @@index([linkId, timestamp])
 }
 
-enum NoteSeverity {
-  INFO
-  WARNING
-  HIGH
-  CRITICAL
-}
-
-enum NoteCategory {
-  SECURITY
-  OPERATIONAL
-  GENERAL
-}
-
-enum NoteStatus {
-  OPEN
-  IN_PROGRESS
-  RESOLVED
-}
-
 model WorkerHeartbeat {
   id     Int      @id @default(1) // singleton — only one row ever
   seenAt DateTime @updatedAt
@@ -230,16 +229,3 @@ model RateLimit {
   @@index([resetAt])
 }
 
-model Note {
-  id         String       @id @default(cuid())
-  title      String
-  content    String
-  severity   NoteSeverity @default(INFO)
-  category   NoteCategory @default(GENERAL)
-  status     NoteStatus   @default(OPEN)
-  deviceId   String?
-  device     Device?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  resolvedAt DateTime?
-}

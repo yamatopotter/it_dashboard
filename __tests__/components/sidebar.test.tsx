@@ -46,7 +46,7 @@ describe("Sidebar", () => {
     expect(screen.getByText("Links de Internet")).toBeInTheDocument();
     expect(screen.getByText("Incidentes")).toBeInTheDocument();
     expect(screen.getByText("Relatórios")).toBeInTheDocument();
-    expect(screen.getByText("Notas & Segurança")).toBeInTheDocument();
+    expect(screen.getByText("Segurança")).toBeInTheDocument();
   });
 
   it("renders user name in footer", async () => {
@@ -59,33 +59,21 @@ describe("Sidebar", () => {
     expect(screen.getByText("Usuário")).toBeInTheDocument();
   });
 
-  it("shows device counts from API", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url === "/api/devices") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [
-            { currentStatus: { isOnline: true } },
-            { currentStatus: { isOnline: true } },
-            { currentStatus: { isOnline: true } },
-          ],
-        });
-      }
-      return Promise.resolve({ ok: false, json: async () => [] });
-    });
-
-    render(<Sidebar />);
-    // 3 online devices, 0 offline → alertBadge=0 so regular badge "3" is shown
-    await waitFor(() => {
-      expect(screen.getByText("3")).toBeInTheDocument();
-    });
+  it("shows device counts from initialCounts prop", () => {
+    render(
+      <Sidebar
+        initialCounts={{ devicesTotal: 3, devicesOffline: 0, linksOnline: 2, linksTotal: 2 }}
+      />
+    );
+    // 3 total devices, 0 offline → badge shows "3"
+    expect(screen.getByText("3")).toBeInTheDocument();
   });
 
   it("calls signOut when logout button is clicked", async () => {
     const { signOut } = require("next-auth/react");
     render(<Sidebar userName="Admin" />);
 
-    const logoutBtn = screen.getByTitle("Sair");
+    const logoutBtn = screen.getByRole("button", { name: "Sair" });
     await userEvent.click(logoutBtn);
 
     expect(signOut).toHaveBeenCalledWith({ callbackUrl: "/login" });

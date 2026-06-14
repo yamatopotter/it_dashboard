@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: it_dashboard_db_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: it_dashboard
+      POSTGRES_PASSWORD: it_dashboard
+      POSTGRES_DB: it_dashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U it_dashboard -d it_dashboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata-dev:
+    driver: local

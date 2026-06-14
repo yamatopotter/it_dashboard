@@ -171,7 +171,7 @@ export default function UsersClient() {
         ) : (
           <Card>
             <CardContent className="p-0">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" aria-label="Lista de usuários">
                 <thead>
                   <tr className="border-b text-xs text-muted-foreground">
                     <th className="px-4 py-3 text-left font-medium">Usuário</th>
@@ -200,9 +200,10 @@ export default function UsersClient() {
                             <Button size="sm" variant="outline" onClick={() => openEdit(u)}>
                               <Key className="h-3.5 w-3.5 mr-1" />Editar
                             </Button>
-                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            <Button size="sm" variant="ghost" aria-label={`Remover usuário ${u.username}`}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() => setDeleteUser(u)}>
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </Button>
                           </div>
                         </td>

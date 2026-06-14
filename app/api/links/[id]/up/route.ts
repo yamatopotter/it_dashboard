@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyWebhookToken } from "@/lib/webhook";
+import { writeAudit, extractIp } from "@/lib/audit";
 
 async function handleUp(req: Request, id: string) {
   const url = new URL(req.url);
@@ -22,6 +23,13 @@ async function handleUp(req: Request, id: string) {
       db.link.update({ where: { id }, data: { isOnline: true, lastEventAt: now } }),
     ]);
   }
+
+  // SEC-022: audit webhook events with source IP
+  void writeAudit({
+    action: "UPDATE", entity: "Link", entityId: id, entityName: link.name,
+    details: { event: "up", previousStatus: link.isOnline ? "up" : "down" },
+    ipAddress: extractIp(req), userId: null, username: "webhook",
+  });
 
   return NextResponse.json({ ok: true, status: "up" });
 }

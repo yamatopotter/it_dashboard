@@ -35,10 +35,12 @@ tags:
     description: Gerenciamento de links WAN e tráfego
   - name: Incidentes
     description: Incidentes e linha do tempo de eventos
-  - name: Notas
-    description: Notas de segurança e issues operacionais
+  - name: Admin
+    description: Administração do sistema — auditoria, limpeza e configuração (requer papel ADMIN)
+  - name: Usuários
+    description: CRUD de usuários do dashboard (requer papel ADMIN)
   - name: Sistema
-    description: Saúde do sistema e dados do overview
+    description: Saúde do sistema, dados do overview e versão do build
 
 # ─── Componentes reutilizáveis ──────────────────────────────────────────────
 components:
@@ -1105,6 +1107,65 @@ components:
           format: date-time
           nullable: true
 
+    # ── AuditLog ───────────────────────────────────────────────────────────
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID do registro (CUID).
+        action:
+          type: string
+          enum: [CREATE, UPDATE, DELETE, CLEANUP]
+        entity:
+          type: string
+          example: "Device"
+        entityId:
+          type: string
+          nullable: true
+        entityName:
+          type: string
+          nullable: true
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+        ipAddress:
+          type: string
+          nullable: true
+        userId:
+          type: string
+          nullable: true
+        username:
+          type: string
+          nullable: true
+          example: "admin"
+        timestamp:
+          type: string
+          format: date-time
+
+    # ── User ───────────────────────────────────────────────────────────────
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+          example: "admin"
+        role:
+          type: string
+          enum: [ADMIN, OPERADOR, VIEWER]
+        version:
+          type: integer
+          description: Campo de versão para optimistic locking.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
     # ── Respostas de erro ──────────────────────────────────────────────────
     ErrorResponse:
       type: object
@@ -1513,6 +1574,45 @@ paths:
       responses:
         "204":
           description: Dispositivo excluído com sucesso.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/devices/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    get:
+      tags: [Dispositivos]
+      summary: Exportar histórico de status como CSV
+      description: |
+        Retorna o `StatusHistory` do dispositivo no intervalo especificado como arquivo CSV.
+        Campos: `timestamp`, `isOnline`, `pingMs`, `cpuLoad`, `memoryUsed`.
+        Máximo de 8760 horas (1 ano). Padrão: 720 horas (30 dias).
+      parameters:
+        - in: query
+          name: hours
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8760
+            default: 720
+          description: Janela de tempo em horas a partir de agora.
+      responses:
+        "200":
+          description: Arquivo CSV com histórico de status.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="Router_HQ-2026-06-13.csv"
+          content:
+            text/csv:
+              schema:
+                type: string
+                example: |
+                  timestamp,isOnline,pingMs,cpuLoad,memoryUsed
+                  2026-06-13T10:00:00.000Z,true,5,20.5,60.0
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -2373,154 +2473,359 @@ paths:
                   value:
                     error: "Autenticação falhou — verifique as credenciais"
 
-  # ── Notas ─────────────────────────────────────────────────────────────────
-  /api/notes:
+  # ── Admin — Auditoria ─────────────────────────────────────────────────────
+  /api/admin/audit:
     get:
-      tags: [Notas]
-      summary: Listar notas de segurança e operacionais
+      tags: [Admin]
+      summary: Listar logs de auditoria
       description: |
-        Retorna todas as notas ordenadas por severidade (CRITICAL primeiro) e depois por data de criação.
-        Inclui dados resumidos do dispositivo associado quando presente.
-
-        **Filtros**: `severity` e `status` podem ser combinados. Ambos são opcionais.
-        **Paginação**: quando `page` ou `limit` são informados, a resposta inclui o header `X-Total-Count`.
+        Retorna os últimos registros de auditoria (CREATE/UPDATE/DELETE/CLEANUP), 50 por página.
+        Requer papel **ADMIN**.
       parameters:
         - in: query
-          name: severity
-          schema:
-            $ref: "#/components/schemas/NoteSeverity"
-          description: Filtrar por nível de severidade.
-          example: CRITICAL
-        - in: query
-          name: status
-          schema:
-            $ref: "#/components/schemas/NoteStatus"
-          description: Filtrar por status da nota.
-          example: OPEN
-        - in: query
           name: page
-          schema:
-            type: integer
-            minimum: 1
-            default: 1
-          description: "Número da página (base 1). Requer `limit`."
+          schema: { type: integer, minimum: 1, default: 1 }
         - in: query
-          name: limit
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-          description: Registros por página. Ativa a paginação e o header `X-Total-Count`.
+          name: action
+          schema: { type: string, enum: [CREATE, UPDATE, DELETE, CLEANUP] }
+        - in: query
+          name: entity
+          schema: { type: string }
+          example: Device
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
       responses:
         "200":
-          description: Lista de notas.
-          headers:
-            X-Total-Count:
-              description: Total de registros (presente quando `page` ou `limit` são usados).
+          description: Página de logs de auditoria.
+          content:
+            application/json:
               schema:
-                type: integer
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditLog"
+                  pagination:
+                    type: object
+                    properties:
+                      page: { type: integer }
+                      pageSize: { type: integer }
+                      total: { type: integer }
+                      totalPages: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+  /api/admin/audit/stats:
+    get:
+      tags: [Admin]
+      summary: Estatísticas de auditoria
+      description: Contagem de eventos por ação nas últimas 24h e totais históricos. Requer papel **ADMIN**.
+      responses:
+        "200":
+          description: Estatísticas de auditoria.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last24h:
+                    type: object
+                    additionalProperties: { type: integer }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+  /api/admin/audit/export:
+    get:
+      tags: [Admin]
+      summary: Exportar logs de auditoria como CSV
+      description: Retorna todos os logs de auditoria em formato CSV para download. Requer papel **ADMIN**.
+      responses:
+        "200":
+          description: Arquivo CSV com os logs.
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+  /api/admin/audit/purge:
+    post:
+      tags: [Admin]
+      summary: Purgar logs de auditoria antigos
+      description: Remove logs de auditoria anteriores à janela de retenção configurada. Requer papel **ADMIN**.
+      responses:
+        "200":
+          description: Contagem de registros removidos.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+  # ── Admin — Cleanup ────────────────────────────────────────────────────────
+  /api/admin/cleanup:
+    post:
+      tags: [Admin]
+      summary: Limpeza manual de logs de status e eventos
+      description: |
+        Remove registros de `StatusHistory` e `LinkEvent` mais antigos que a janela de retenção
+        configurada em `/api/admin/config`. Requer papel **ADMIN**.
+      responses:
+        "200":
+          description: Contagem de registros removidos.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedStatusHistory: { type: integer }
+                  deletedLinkEvents: { type: integer }
+                  cutoffs:
+                    type: object
+                    properties:
+                      statusHistory: { type: string, format: date-time }
+                      linkEvents: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+  # ── Admin — Configuração ───────────────────────────────────────────────────
+  /api/admin/config:
+    get:
+      tags: [Admin]
+      summary: Obter configuração do sistema
+      description: Retorna as configurações de retenção de dados. Requer papel **ADMIN**.
+      responses:
+        "200":
+          description: Configuração atual.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  statusHistoryDays: { type: integer, example: 30 }
+                  linkEventDays: { type: integer, example: 90 }
+                  lastCleanupAt: { type: string, format: date-time, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+    put:
+      tags: [Admin]
+      summary: Atualizar configuração do sistema
+      description: Atualiza os dias de retenção de StatusHistory e/ou LinkEvent. Requer papel **ADMIN**.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                statusHistoryDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+                linkEventDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+            example:
+              statusHistoryDays: 60
+              linkEventDays: 180
+      responses:
+        "200":
+          description: Configuração atualizada.
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+  # ── Admin — Stats ──────────────────────────────────────────────────────────
+  /api/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Estatísticas do banco e do worker
+      description: Retorna tamanho do banco, contagem de registros por tabela e status do worker. Requer papel **ADMIN**.
+      responses:
+        "200":
+          description: Estatísticas do sistema.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  database:
+                    type: object
+                    properties:
+                      size: { type: string, example: "42 MB" }
+                      sizeBytes: { type: integer }
+                  counts:
+                    type: object
+                    additionalProperties: { type: integer }
+                  tables:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        rowEstimate: { type: integer }
+                        totalSize: { type: string }
+                        totalBytes: { type: integer }
+                  worker:
+                    type: object
+                    properties:
+                      isAlive: { type: boolean }
+                      lastSeenAt: { type: string, format: date-time, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+
+  # ── Usuários ───────────────────────────────────────────────────────────────
+  /api/users:
+    get:
+      tags: [Usuários]
+      summary: Listar usuários
+      description: Retorna todos os usuários cadastrados (sem hash de senha). Requer papel **ADMIN**.
+      responses:
+        "200":
+          description: Lista de usuários.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Note"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                  $ref: "#/components/schemas/User"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
 
     post:
-      tags: [Notas]
-      summary: Criar nota
+      tags: [Usuários]
+      summary: Criar usuário
+      description: Cria um novo usuário com bcrypt na senha. Requer papel **ADMIN**.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NoteInput"
+              type: object
+              required: [username, password, role]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 32
+                  pattern: '^[a-zA-Z0-9_.-]+$'
+                password:
+                  type: string
+                  minLength: 8
+                role:
+                  type: string
+                  enum: [ADMIN, OPERADOR, VIEWER]
             example:
-              title: "Senha padrão não alterada"
-              content: "O DVR da recepção ainda usa admin/12345. Risco crítico de acesso não autorizado."
-              severity: "CRITICAL"
-              category: "SECURITY"
-              deviceId: "clxyz987654321"
+              username: "operador1"
+              password: "senha-segura-123"
+              role: "OPERADOR"
       responses:
         "201":
-          description: Nota criada com sucesso.
+          description: Usuário criado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Note"
-        "400":
-          $ref: "#/components/responses/ValidationError"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                $ref: "#/components/schemas/User"
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+        "409": { description: "Username já existe." }
 
-  /api/notes/{id}:
+  /api/users/{id}:
     parameters:
       - in: path
         name: id
         required: true
-        schema:
-          type: string
-        description: ID da nota.
+        schema: { type: string }
+        description: ID do usuário (CUID).
 
     get:
-      tags: [Notas]
-      summary: Buscar nota por ID
+      tags: [Usuários]
+      summary: Buscar usuário por ID
       responses:
         "200":
-          description: Nota encontrada.
+          description: Usuário encontrado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Note"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                $ref: "#/components/schemas/User"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+        "404": { $ref: "#/components/responses/NotFound" }
 
     put:
-      tags: [Notas]
-      summary: Atualizar nota
+      tags: [Usuários]
+      summary: Atualizar usuário
       description: |
-        Atualiza campos da nota (todos opcionais).
-
-        **Comportamento automático de `resolvedAt`:**
-        - Ao mudar `status` para `RESOLVED` sem fornecer `resolvedAt`, o campo é preenchido com o timestamp atual.
-        - Ao mudar `status` para `OPEN` ou `IN_PROGRESS`, `resolvedAt` é limpo automaticamente.
+        Atualiza `username`, `password` e/ou `role`. Usa optimistic locking via campo `version`:
+        envie o `version` atual para detectar conflito de edição concorrente (responde 409 se divergir).
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NoteUpdateInput"
-            example:
-              status: "RESOLVED"
+              type: object
+              properties:
+                username: { type: string }
+                password: { type: string, minLength: 8 }
+                role: { type: string, enum: [ADMIN, OPERADOR, VIEWER] }
+                version: { type: integer, description: "Versão atual do registro para optimistic locking." }
       responses:
         "200":
-          description: Nota atualizada.
+          description: Usuário atualizado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Note"
-        "400":
-          $ref: "#/components/responses/ValidationError"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                $ref: "#/components/schemas/User"
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Conflito de versão (optimistic locking) ou username duplicado." }
 
     delete:
-      tags: [Notas]
-      summary: Excluir nota
+      tags: [Usuários]
+      summary: Excluir usuário
+      description: Remove o usuário. Não é possível excluir o próprio usuário autenticado.
       responses:
-        "204":
-          description: Nota excluída com sucesso.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: "Usuário excluído com sucesso." }
+        "400": { description: "Tentativa de auto-exclusão negada." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Acesso negado — papel ADMIN necessário." }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ── Versão ─────────────────────────────────────────────────────────────────
+  /api/version:
+    get:
+      tags: [Sistema]
+      summary: Versão do build
+      description: Retorna a versão da aplicação e o hash do commit git atual. Endpoint público.
+      security: []
+      responses:
+        "200":
+          description: Informações de versão.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string, example: "0.1.0" }
+                  build: { type: integer, nullable: true, example: 142 }
+                  hash: { type: string, nullable: true, example: "a3f7b2c" }
 
 # ─── Parâmetros e respostas comuns ───────────────────────────────────────────
   parameters:

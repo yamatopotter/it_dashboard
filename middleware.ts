@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth.config";
-import { LRUCache } from "lru-cache";
 
 const { auth } = NextAuth({
   ...authConfig,
@@ -12,19 +11,25 @@ const { auth } = NextAuth({
   },
 });
 
-// SEC-026: LRU cache with TTL replaces unbounded Map — auto-evicts expired entries,
-// bounded at 10k IPs, survives within a single process lifetime.
-// Edge Runtime constraint prevents persistent DB storage here; for multi-instance
-// deployments, swap for an Upstash Redis client.
-const loginAttempts = new LRUCache<string, number>({
-  max:  10_000,
-  ttl:  15 * 60_000, // 15-minute sliding window
-});
-
-function isRateLimited(ip: string): boolean {
-  const count = (loginAttempts.get(ip) ?? 0) + 1;
-  loginAttempts.set(ip, count);
-  return count > 10;
+async function isRateLimited(req: NextRequest, ip: string): Promise<boolean> {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret) return false; // fail open if misconfigured
+  try {
+    const origin = req.nextUrl.origin;
+    const res = await fetch(`${origin}/api/auth/rate-check`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${secret}`,
+      },
+      body: JSON.stringify({ ip }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json() as { allowed?: boolean };
+    return data.allowed === false;
+  } catch {
+    return false; // fail open on network error
+  }
 }
 
 function buildCsp(nonce: string): string {
@@ -53,7 +58,7 @@ export async function middleware(req: NextRequest) {
       req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
       req.headers.get("x-real-ip") ??
       "unknown";
-    if (isRateLimited(ip)) {
+    if (await isRateLimited(req, ip)) {
       response = NextResponse.json(
         { error: "Muitas tentativas de login. Aguarde 15 minutos." },
         { status: 429 }

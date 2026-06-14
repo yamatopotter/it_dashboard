@@ -12,6 +12,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       credentials: {
         username: { label: "Usuário", type: "text" },
         password: { label: "Senha", type: "password" },
+        totp:     { label: "Código 2FA", type: "text" },
       },
       async authorize(credentials, request) {
         if (!credentials?.username || !credentials?.password) return null;
@@ -38,6 +39,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return null;
           }
 
+          // SEC-009: verify TOTP if enabled
+          if (user.totpEnabled && user.totpSecret) {
+            const totpToken = (credentials.totp as string | undefined) ?? "";
+            if (!totpToken) {
+              // TOTP required but not provided — fail silently (login page pre-checks)
+              return null;
+            }
+            const { decryptSecret, verifyTotp } = await import("@/lib/totp");
+            const secret = decryptSecret(user.totpSecret);
+            if (!(await verifyTotp(totpToken, secret))) {
+              await writeAudit({ action: "LOGIN_FAILED", entity: "Auth", entityName: user.username, userId: null, username: null, ipAddress: ip });
+              return null;
+            }
+          }
+
           await writeAudit({ action: "LOGIN", entity: "Auth", entityId: user.id, entityName: user.username, userId: user.id, username: user.username, ipAddress: ip });
           return { id: user.id, name: user.username, role: user.role };
         } catch (error) {
@@ -48,8 +64,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
-      if (user) token.role = (user as { role: string }).role;
+    async jwt({ token, user }) {
+      if (user) {
+        token.role = (user as { role: string }).role;
+        // SEC-021: assign a unique jti (JWT ID) on first token creation
+        token.jti = crypto.randomUUID();
+      }
+
+      // SEC-021: reject blacklisted tokens (e.g., after explicit logout)
+      if (token.jti && typeof token.jti === "string") {
+        const blacklisted = await db.tokenBlacklist
+          .findUnique({ where: { jti: token.jti } })
+          .catch(() => null);
+        if (blacklisted) return null;
+      }
+
       return token;
     },
     session({ session, token }) {

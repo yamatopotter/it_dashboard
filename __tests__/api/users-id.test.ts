@@ -15,6 +15,7 @@ jest.mock("@/lib/audit", () => ({ writeAudit: jest.fn() }));
 
 jest.mock("bcryptjs", () => ({ hash: jest.fn().mockResolvedValue("$hashed$") }));
 
+import { NextRequest } from "next/server";
 import { PUT, DELETE } from "@/app/api/users/[id]/route";
 import { db } from "@/lib/db";
 
@@ -24,7 +25,7 @@ const ADMIN_USER = { id: "u1", username: "admin", role: "ADMIN" };
 const OTHER_USER = { id: "u2", username: "user2", role: "OPERADOR" };
 
 function makePutReq(id: string, body: unknown) {
-  return new Request(`http://localhost/api/users/${id}`, {
+  return new NextRequest(`http://localhost/api/users/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -32,7 +33,7 @@ function makePutReq(id: string, body: unknown) {
 }
 
 function makeDeleteReq(id: string) {
-  return new Request(`http://localhost/api/users/${id}`, { method: "DELETE" });
+  return new NextRequest(`http://localhost/api/users/${id}`, { method: "DELETE" });
 }
 
 beforeEach(() => {

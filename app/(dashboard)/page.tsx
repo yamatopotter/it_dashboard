@@ -21,6 +21,7 @@ import { DEVICE_TYPE_ICON, DEVICE_TYPE_ICON_BG, DEVICE_TYPE_LABEL } from "@/lib/
 import { formatBps, timeAgo, fmtTime } from "@/lib/format";
 import { BandwidthCell } from "@/components/bandwidth-cell";
 import { FilterChip } from "@/components/filter-chip";
+import { WorkerStatusBanner } from "@/components/worker-status-banner";
 import type { Device, DeviceStatus, DeviceType } from "@prisma/client";
 import type { HealthData } from "@/app/api/health/route";
 import type { Incident } from "@/app/api/incidents/route";
@@ -100,7 +101,7 @@ function KpiCard({ label, value, suffix, icon: Icon, iconBg, iconColor, subtitle
           <p className="text-xs font-medium text-muted-foreground">{label}</p>
         </div>
         {loading ? <Skeleton className="h-9 w-16" /> : (
-          <p className="text-[2.1rem] font-extrabold leading-none tabular-nums text-foreground">
+          <p role="status" aria-label={`${label}: ${animated}${suffix ?? ""}`} aria-live="polite" className="text-[2.1rem] font-extrabold leading-none tabular-nums text-foreground">
             {animated}{suffix && <span className="text-base font-semibold text-muted-foreground ml-1">{suffix}</span>}
           </p>
         )}
@@ -450,7 +451,9 @@ export default function OverviewPage() {
     <>
       <Topbar title="Visão Geral" icon={LayoutDashboard}
         subtitle={lastUpdated ? `Atualizado às ${fmtTime(lastUpdated)}` : undefined}
-        live={!loading}>
+        live={!loading}
+        pollIntervalMs={30_000}
+        lastUpdated={lastUpdated}>
         <button onClick={load}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
           <RefreshCw className="h-3.5 w-3.5" />Atualizar
@@ -459,6 +462,13 @@ export default function OverviewPage() {
           <Plus className="h-4 w-4 mr-1" />Novo
         </Link>
       </Topbar>
+
+      {health && (
+        <WorkerStatusBanner
+          workerStatus={health.workerStatus}
+          workerLastSeen={health.workerLastSeen}
+        />
+      )}
 
       <div className="p-7 space-y-6">
 
@@ -593,7 +603,7 @@ export default function OverviewPage() {
               <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>
             ) : (
               <div className="rounded-xl border bg-card overflow-hidden">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" aria-label="Links de internet">
                   <thead className="border-b bg-muted/40">
                     <tr>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Link</th>

@@ -3,6 +3,8 @@ import { Manrope, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme-provider";
+import { AxeProvider } from "@/components/axe-provider";
 
 const manrope = Manrope({
   variable: "--font-sans",
@@ -27,12 +29,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className={`${manrope.variable} ${jetbrainsMono.variable} h-full`}>
+    <html lang="pt-BR" className={`${manrope.variable} ${jetbrainsMono.variable} h-full`} suppressHydrationWarning>
       <body className="min-h-full bg-background text-foreground antialiased">
-        <TooltipProvider>
-          {children}
-          <Toaster richColors />
-        </TooltipProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <AxeProvider>
+            <TooltipProvider>
+              {children}
+              <Toaster richColors />
+            </TooltipProvider>
+          </AxeProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

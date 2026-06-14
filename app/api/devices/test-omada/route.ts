@@ -5,9 +5,10 @@ import { db } from "@/lib/db";
 import { resolveOmadaCredentials } from "@/lib/crypto";
 import { parseBody } from "@/lib/parse-body";
 import { getOmadaToken, listOmadaSites } from "@/worker/monitors/omada";
+import { controllerIpSchema } from "@/lib/schemas/device";
 
 const schema = z.object({
-  controllerIp:      z.string().min(1),
+  controllerIp:      controllerIpSchema,
   omadacId:          z.string().min(1),
   tlsVerify:         z.boolean(),
   omadaClientId:     z.string().optional(),

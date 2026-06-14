@@ -194,10 +194,10 @@ export default function DeviceDetailPage({
   if (loading && !device) {
     return (
       <>
-        <Topbar title="Carregando..." back="/devices" />
+        <Topbar title="Carregando..." back="/devices" backLabel="Dispositivos" />
         <div className="p-7 space-y-6">
           <Skeleton className="h-8 w-48" />
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
@@ -256,6 +256,7 @@ export default function DeviceDetailPage({
         badge={<StatusBadge isOnline={status?.isOnline ?? false} />}
         subtitle={`${device.ip}${device.location ? ` · ${device.location}` : ''}`}
         back="/devices"
+        backLabel="Dispositivos"
       >
         <Link href={`/reports?device=${id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
           <FileText className="h-4 w-4 mr-1" />
@@ -295,7 +296,7 @@ export default function DeviceDetailPage({
 
       <div className="p-7 space-y-6">
         {/* Row 1: 4 metric cards always on same line */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <MetricCard
             icon={Wifi}
             label="Ping"
@@ -332,7 +333,7 @@ export default function DeviceDetailPage({
 
         {/* Row 2 (UniFi/Omada): bandwidth + clients + http */}
         {(unifiData != null || omadaData != null || status?.httpOk != null) && (
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {(unifiData ?? omadaData) != null && (() => {
               const apData = unifiData ?? omadaData!;
               return (
@@ -521,7 +522,7 @@ export default function DeviceDetailPage({
                 Redes Wi-Fi
               </h2>
               <div className="rounded-lg border bg-card overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full text-xs" aria-label="Redes Wi-Fi">
                   <thead className="bg-muted/40 border-b">
                     <tr>
                       <th className="text-left px-4 py-2.5 font-medium">SSID</th>
@@ -564,15 +565,15 @@ export default function DeviceDetailPage({
               className="w-full flex items-center justify-between font-semibold hover:text-foreground/80 transition-colors"
             >
               <span className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
+                <Users className="h-4 w-4" aria-hidden="true" />
                 Clientes conectados
                 <Badge variant="secondary" className="text-xs">{activeClients.length}</Badge>
               </span>
-              {clientsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {clientsExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
             </button>
             {clientsExpanded && (
-              <div className="rounded-lg border bg-card overflow-hidden">
-                <table className="w-full text-xs">
+              <div className="rounded-lg border bg-card overflow-x-auto">
+                <table className="w-full text-xs" aria-label="Clientes Wi-Fi conectados">
                   <thead className="bg-muted/40 border-b">
                     <tr>
                       <th className="px-4 py-2.5 text-left">
@@ -659,22 +660,22 @@ export default function DeviceDetailPage({
               className="w-full flex items-center justify-between font-semibold hover:text-foreground/80 transition-colors"
             >
               <span className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
+                <Users className="h-4 w-4" aria-hidden="true" />
                 Clientes DHCP
                 {routerosData !== null && (
                   <Badge variant="secondary" className="text-xs">{routerosData.clients.length}</Badge>
                 )}
               </span>
-              {dhcpExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {dhcpExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
             </button>
             {dhcpExpanded && (
-              <div className="rounded-lg border bg-card overflow-hidden">
+              <div className="rounded-lg border bg-card overflow-x-auto">
                 {routerosData === null ? (
                   <p className="px-4 py-3 text-xs text-muted-foreground">Aguardando primeira coleta...</p>
                 ) : routerosData.clients.length === 0 ? (
                   <p className="px-4 py-3 text-xs text-muted-foreground">Nenhum cliente DHCP ativo.</p>
                 ) : (
-                  <table className="w-full text-xs">
+                  <table className="w-full text-xs" aria-label="Clientes DHCP ativos">
                     <thead className="bg-muted/40 border-b">
                       <tr>
                         <th className="text-left px-4 py-2.5 font-medium">Hostname</th>
@@ -706,8 +707,8 @@ export default function DeviceDetailPage({
         {history.length > 0 && (
           <div className="space-y-3">
             <h2 className="font-semibold">Histórico recente</h2>
-            <div className="rounded-lg border bg-card overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="rounded-lg border bg-card overflow-x-auto">
+              <table className="w-full text-xs" aria-label="Histórico de status do dispositivo">
                 <thead className="bg-muted/40 border-b">
                   <tr>
                     <th className="text-left px-4 py-2.5 font-medium">Data/Hora</th>

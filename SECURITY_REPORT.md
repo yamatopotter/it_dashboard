@@ -1,24 +1,26 @@
 # Relatório de Segurança — WatchIT Tower
 
-**Última atualização:** 2026-06-12  
+**Última atualização:** 2026-06-14 (feat/omada-ap-integration — SEC-009, SEC-012, SEC-014, SEC-017, SEC-018, SEC-021 resolvidos)  
 **Versão do sistema:** 0.1.0  
 **Analista:** Análise automatizada via Claude Code  
-**Escopo:** Código-fonte completo — Next.js (frontend/API), worker de monitoramento, banco PostgreSQL
+**Escopo:** Código-fonte completo — Next.js 14 (frontend/API), worker de monitoramento, banco PostgreSQL
 
 ---
 
 ## Sumário Executivo
 
-O WatchIT Tower é uma aplicação interna para monitoramento de equipamentos de rede (Mikrotik, câmeras, DVRs, APs Omada/UniFi). Por ser voltado para uso local e não exposto à internet, o risco geral é **baixo a moderado**. Todas as vulnerabilidades críticas e de alta severidade identificadas foram resolvidas.
+O WatchIT Tower é uma aplicação interna para monitoramento de equipamentos de rede (Mikrotik, câmeras, DVRs, APs Omada/UniFi). Por ser voltado para uso local e não exposto à internet, o risco geral é **baixo**. Todas as vulnerabilidades críticas, de alta e média severidade identificadas foram resolvidas ou mitigadas.
 
 | Severidade | Total | Resolvido | Aberto |
 |-----------|-------|-----------|--------|
 | 🔴 Crítico  | 1     | 1         | 0      |
 | 🟠 Alto     | 3     | 3         | 0      |
-| 🟡 Médio    | 4     | 2         | 2      |
+| 🟡 Médio    | 4     | 3         | 1      |
 | 🔵 Baixo    | 3     | 1         | 2      |
-| ℹ️ Info     | 13    | 4         | 9      |
-| **Total**  | **24**| **11**    | **13** |
+| ℹ️ Info     | 16    | 12 + 4⚠️  | 0      |
+| **Total**  | **27**| **24**    | **3**  |
+
+> ⚠️ = Aceito / won't-fix por design intencional ou limitação de framework
 
 ---
 
@@ -40,16 +42,16 @@ O WatchIT Tower é uma aplicação interna para monitoramento de equipamentos de
 **Categoria:** Proteção de dados  
 **Resolvido em:** versão inicial com `lib/crypto.ts`
 
-Todos os campos de credencial (RouterOS, UniFi, Omada) são criptografados com AES-256-GCM (IV aleatório por operação) antes de gravar no banco. Descriptografados apenas no worker no momento de uso via `resolveRouterosCredentials()`, `resolveUnifiCredentials()`, `resolveOmadaCredentials()`. Campos plaintext nunca retornam nas respostas da API (`sanitizeDevice()` expõe apenas flags booleanas `hasRouterosCredentials`, `hasUnifiCredentials`, `hasOmadaCredentials`).
+Todos os campos de credencial (RouterOS, UniFi, Omada, SNMP) são criptografados com AES-256-GCM (IV aleatório por operação) antes de gravar no banco. Descriptografados apenas no worker no momento de uso. `sanitizeDevice()` expõe apenas flags booleanas nas respostas da API.
 
 ---
 
 ### SEC-003 — Sem rate limiting no endpoint de login
 **Severidade:** 🟠 ALTO — ✅ RESOLVIDO  
 **Categoria:** Controle de acesso  
-**Resolvido em:** `middleware.ts`
+**Resolvido em:** `middleware.ts` + tabela `RateLimit` (PostgreSQL)
 
-Rate limiting implementado: 10 tentativas por IP em janela de 15 minutos. Retorna 429 ao exceder o limite. Estado mantido em memória (ver SEC-014).
+Rate limiting implementado: 10 tentativas por IP em janela de 15 minutos via tabela `RateLimit` no PostgreSQL. Retorna 429 ao exceder o limite. Estado persistido no banco — sobrevive a restarts.
 
 ---
 
@@ -58,7 +60,7 @@ Rate limiting implementado: 10 tentativas por IP em janela de 15 minutos. Retorn
 **Categoria:** Configuração  
 **Resolvido em:** `next.config.ts`
 
-Headers implementados: `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Content-Security-Policy`. HSTS ativo apenas em produção (`NODE_ENV=production`).
+Headers implementados: `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Content-Security-Policy` com nonce por request, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`.
 
 ---
 
@@ -83,7 +85,7 @@ dashboard.local {
 **Severidade:** 🔵 BAIXO — 🔴 ABERTO  
 **Categoria:** Proteção de dados
 
-O banco PostgreSQL corre em container Docker. Permissões de acesso dependem da configuração do host e do `docker-compose.yml`. Em ambiente multi-usuário, verificar que o socket do Docker não é acessível a usuários não autorizados.
+O banco PostgreSQL corre em container Docker. Permissões de acesso dependem da configuração do host.
 
 **Mitigação:** Configurar `DATABASE_URL` com credenciais dedicadas de leitura/escrita mínimas. Não usar o usuário `postgres` padrão em produção.
 
@@ -94,27 +96,26 @@ O banco PostgreSQL corre em container Docker. Permissões de acesso dependem da 
 **Categoria:** Rastreabilidade  
 **Resolvido em:** branch `feat/audit-logs`
 
-Sistema de auditoria completo implementado: modelo `AuditLog` com ações `CREATE`, `UPDATE`, `DELETE`, `LOGIN`, `LOGIN_FAILED`, `CLEANUP`. Todos os handlers POST/PUT/DELETE registram o ator (userId + username), a entidade, o IP de origem e detalhes da operação. Tela `/audit` com filtros, paginação, exportação CSV e purge explícito com confirmação.
+Sistema de auditoria completo: modelo `AuditLog` com ações `CREATE`, `UPDATE`, `DELETE`, `LOGIN`, `LOGIN_FAILED`, `CLEANUP`. Todos os handlers POST/PUT/DELETE registram ator, entidade, IP e detalhes. Tela `/audit` com filtros, paginação, exportação CSV e purge.
 
 ---
 
 ### SEC-008 — Worker com privilégios do processo pai
 **Severidade:** 🔵 BAIXO — 🔴 ABERTO  
-**Categoria:** Menor privilégio  
+**Categoria:** Menor privilégio
 
-O worker executa com os privilégios do usuário que iniciou o processo. O Dockerfile já cria usuário não-root `app` para o container — em deploy via Docker o risco é mitigado. Em execução direta (`npm run worker`), o worker roda com o usuário do terminal.
+O worker executa com os privilégios do usuário que iniciou o processo. O Dockerfile já cria usuário não-root `app` — em deploy via Docker o risco é mitigado.
 
 **Mitigação:** Em produção, sempre usar o container Docker que já aplica `USER app`.
 
 ---
 
 ### SEC-009 — Autenticação de fator único
-**Severidade:** ℹ️ INFO — 🔴 ABERTO  
-**Categoria:** Autenticação
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** Autenticação  
+**Resolvido em:** branch `feat/omada-ap-integration`
 
-Apenas usuário e senha protegem o acesso. Sem 2FA/TOTP.
-
-**Mitigação futura:** Implementar TOTP opcional com `otplib` e QR code na primeira configuração.
+2FA/TOTP opcional implementado com `otplib`. Usuário habilita via `GET/POST/DELETE /api/users/[id]/totp`. Segredo armazenado criptografado com AES-256-GCM. Login exibe campo de código quando usuário tem TOTP ativo (pré-verificação via `/api/auth/check-2fa`). QR code gerado para registro em app autenticador.
 
 ---
 
@@ -122,7 +123,7 @@ Apenas usuário e senha protegem o acesso. Sem 2FA/TOTP.
 **Severidade:** ℹ️ INFO — ⚠️ ACEITO (design intencional)  
 **Categoria:** Validação de entrada
 
-O campo `ip` aceita qualquer string não vazia sem validar formato IPv4 estrito. Isso é intencional: o dashboard monitora dispositivos WireGuard com endereços `10.255.255.x/29` que poderiam ser rejeitados por validações mais restritivas. O risco de injection via IP é mitigado pelo uso de bibliotecas (`ping`, `routeros`, `net-snmp`) que não passam o IP para shell diretamente.
+O campo `ip` aceita qualquer string não vazia sem validar formato IPv4 estrito. Isso é intencional: o dashboard monitora dispositivos WireGuard com endereços privados. O risco de injection via IP é mitigado pelo uso de bibliotecas que não passam o IP para shell diretamente.
 
 ---
 
@@ -136,12 +137,11 @@ O campo `ip` aceita qualquer string não vazia sem validar formato IPv4 estrito.
 ---
 
 ### SEC-012 — Sem limite de tamanho explícito nas requisições
-**Severidade:** ℹ️ INFO — 🔴 ABERTO  
-**Categoria:** DoS
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** DoS  
+**Resolvido em:** branch `feat/omada-ap-integration`
 
-Payloads de qualquer tamanho são aceitos. Os schemas Zod limitam o conteúdo por campo (`max(100)`, `max(500)`), mas não há limite de bytes no corpo da requisição.
-
-**Mitigação futura:** Configurar `bodySizeLimit` no `next.config.ts`.
+`lib/parse-body.ts` verifica o header `Content-Length` e rejeita com `413` qualquer corpo acima de 1 MB antes de chamar `req.json()`. `next.config.ts` inclui `experimental.serverActions.bodySizeLimit: "1mb"`.
 
 ---
 
@@ -150,19 +150,16 @@ Payloads de qualquer tamanho são aceitos. Os schemas Zod limitam o conteúdo po
 **Categoria:** Tratamento de erros  
 **Resolvido em:** branch `fix/json-parse-guard`
 
-8 rotas de API expunham `SyntaxError` não tratada quando o body da requisição era JSON inválido, resultando em resposta 500 em vez de 400. Corrigido com helper `lib/parse-body.ts` aplicado em todas as rotas POST/PUT.
+Helper `lib/parse-body.ts` aplicado em todas as rotas POST/PUT — retorna `400` ao invés de `500 SyntaxError`.
 
 ---
 
 ### SEC-014 — Rate limiting em memória (não persiste entre restarts)
-**Severidade:** ℹ️ INFO — 🔴 ABERTO  
-**Categoria:** Controle de acesso
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** Controle de acesso  
+**Resolvido em:** branch `feat/omada-ap-integration`
 
-O rate limiter do login mantém estado em um `Map` em memória. O contador zera em cada reinício do processo e não é compartilhado entre réplicas.
-
-**Impacto:** Baixo no contexto single-instance atual. Em deploy com múltiplas réplicas, o limite efetivo seria multiplicado pelo número de instâncias.
-
-**Mitigação futura:** Mover estado do rate limiter para Redis ou tabela do banco com TTL.
+Estado do rate limiter migrado para tabela `RateLimit` no PostgreSQL com TTL automático via job de limpeza no worker. Endpoint interno `/api/auth/rate-check` consultado pelo middleware. Persiste entre restarts e é compartilhado entre réplicas.
 
 ---
 
@@ -170,9 +167,7 @@ O rate limiter do login mantém estado em um `Map` em memória. O contador zera 
 **Severidade:** ℹ️ INFO — ⚠️ ACEITO (limitação do framework)  
 **Categoria:** Content Security Policy
 
-O Next.js 14 com App Router requer `unsafe-eval` no CSP para funcionamento interno. Remover essa diretiva quebraria o framework.
-
-**Contexto:** O risco prático é baixo em dashboard interno sem conteúdo de usuário renderizado como HTML. A alternativa seria migrar para Next.js 15+ que suporta nonces, eliminando a necessidade de `unsafe-eval`.
+O Next.js 14 com App Router requer `unsafe-eval` apenas em desenvolvimento. Em produção, o CSP usa `nonce` + `strict-dynamic` sem `unsafe-eval` (configurado em `middleware.ts`).
 
 ---
 
@@ -180,31 +175,25 @@ O Next.js 14 com App Router requer `unsafe-eval` no CSP para funcionamento inter
 **Severidade:** ℹ️ INFO — ⚠️ ACEITO (design intencional)  
 **Categoria:** Autenticação
 
-As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` não exigem sessão — protegidas apenas por HMAC-SHA256 via query param `?token=`. Isso é intencional para integração com Zabbix, Nagios e scripts externos.
-
-**Risco residual:** Vazamento de `WEBHOOK_SECRET` permite mudar status de qualquer link. Chamadas webhook não são registradas no `AuditLog` (ver SEC-022).
-
-**Mitigação futura:** Adicionar logging estruturado com IP de origem em cada chamada webhook.
+`GET /api/links/:id/up` e `GET /api/links/:id/down` protegidos por HMAC-SHA256 via `?token=`. Intencional para integração com Zabbix, Nagios e scripts externos. Chamadas agora registradas no `AuditLog` (SEC-022 resolvido).
 
 ---
 
 ### SEC-017 — startScheduler sem cobertura de testes
-**Severidade:** ℹ️ INFO — 🔴 ABERTO  
-**Categoria:** Qualidade / Operacional
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** Qualidade / Operacional  
+**Resolvido em:** branch `feat/omada-ap-integration`
 
-A função que orquestra heartbeat, reconciliação de devices e polling de links não possui testes de integração. Bugs de inicialização só são detectados em runtime.
-
-**Mitigação futura:** Teste de integração com fake timers, mockando `db.device.findMany` e verificando criação e drenagem dos intervals.
+`__tests__/worker/scheduler-startup.test.ts` criado com 9 testes cobrindo: inicialização com múltiplos devices, criação de intervals, heartbeat, reconciliação, shutdown com drenagem de `pendingChecks`, deadline, idempotência.
 
 ---
 
 ### SEC-018 — Sem timeout global na inicialização do worker
-**Severidade:** ℹ️ INFO — 🔴 ABERTO  
-**Categoria:** Operacional / Resiliência
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** Operacional / Resiliência  
+**Resolvido em:** branch `feat/omada-ap-integration`
 
-Se o banco ficar indisponível na subida, `startScheduler()` pode travar indefinidamente em `db.device.findMany()` sem encerrar o processo nem emitir sinal de falha ao orquestrador (Docker/systemd).
-
-**Mitigação futura:** Adicionar `AbortSignal` com timeout em `startScheduler()` ou watchdog via `setTimeout` que chama `process.exit(1)` se a inicialização não completar em 30 segundos.
+`worker/index.ts` configura `setTimeout` de 30s antes de chamar `startScheduler()`. Se a inicialização não completar (ex: banco indisponível), o processo encerra com `process.exit(1)` e log de erro estruturado. `timer.unref()` garante que o timeout não impede o encerramento normal.
 
 ---
 
@@ -213,7 +202,7 @@ Se o banco ficar indisponível na subida, `startScheduler()` pode travar indefin
 **Categoria:** Controle de acesso  
 **Resolvido em:** branch `feat/security-audit-2`
 
-`POST /api/devices/bulk` usava `requireAuth()` em vez de `requireRole("OPERADOR")`, permitindo que qualquer usuário autenticado (inclusive VIEWER) criasse até 254 dispositivos por chamada. Corrigido para exigir perfil OPERADOR ou superior.
+`POST /api/devices/bulk` exige perfil OPERADOR ou superior.
 
 ---
 
@@ -222,29 +211,25 @@ Se o banco ficar indisponível na subida, `startScheduler()` pode travar indefin
 **Categoria:** Segurança de dados  
 **Resolvido em:** branch `feat/security-audit-2`
 
-`csvEscape()` em `app/api/admin/audit/export/route.ts` não prefixava caracteres de fórmula (`=`, `+`, `-`, `@`). Um `entityName` começando com `=` poderia ser executado como fórmula ao abrir o CSV no Excel/LibreOffice. Corrigido: valores que começam com esses caracteres recebem prefixo `'` e são citados.
+`csvEscape()` prefixada com `'` em campos que começam com `=`, `+`, `-`, `@`.
 
 ---
 
 ### SEC-021 — Cache de papel (role) no JWT não atualiza imediatamente
-**Severidade:** ℹ️ INFO — 🔴 ABERTO  
-**Categoria:** Controle de acesso
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** Controle de acesso  
+**Resolvido em:** branch `feat/omada-ap-integration`
 
-O papel do usuário é embutido no token JWT no momento do login. Se um administrador alterar o papel de um usuário (ex: VIEWER → ADMIN ou rebaixamento), a mudança só terá efeito na próxima vez que o usuário fizer login (após expiração do token em 8 horas).
-
-**Impacto:** Em caso de rebaixamento urgente ou desativação de acesso, a única garantia imediata é remover o usuário do banco — alterar o papel não é suficiente sem forçar o logout.
-
-**Mitigação futura:** Implementar lista negra de tokens JWT (via banco ou Redis) ou usar sessões de banco em vez de JWT, permitindo invalidação imediata.
+Lista negra de tokens JWT implementada: modelo `TokenBlacklist` com `jti` (UUID gerado no jwt callback) e `expiresAt`. `POST /api/auth/logout` insere o `jti` no blacklist e limpa o cookie de sessão. O jwt callback verifica o blacklist a cada request — tokens revogados são rejeitados imediatamente. Entradas expiradas removidas diariamente pelo `pruneHistory()` do worker.
 
 ---
 
 ### SEC-022 — Chamadas de webhook não registradas no sistema de auditoria
-**Severidade:** ℹ️ INFO — 🔴 ABERTO  
-**Categoria:** Rastreabilidade
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** Rastreabilidade  
+**Resolvido em:** branch `feat/omada-ap-integration`
 
-As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` não são registradas no `AuditLog`. Com o sistema de auditoria em produção, eventos de mudança de status de link via webhook perdem rastreabilidade de IP e frequência.
-
-**Mitigação futura:** Adicionar `writeAudit({ action: "UPDATE", entity: "Link", ..., details: { event: "up"|"down", source: "webhook" } })` em ambas as rotas webhook.
+`writeAudit()` adicionado em `/api/links/:id/up` e `/api/links/:id/down` com `username: "webhook"`, IP de origem e `details: { event: "up"|"down" }`.
 
 ---
 
@@ -253,7 +238,7 @@ As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` não são registrad
 **Categoria:** Controle de acesso / SSRF  
 **Resolvido em:** branch `feat/lighthouse-branding`
 
-`POST /api/devices/test-omada` e `POST /api/devices/test-unifi` usavam `requireAuth()` em vez de `requireRole("OPERADOR")`. Ambas as rotas aceitam um `controllerIp` fornecido pelo cliente e fazem requisições HTTPS servidor-para-servidor para esse endereço. Um VIEWER podia usar isso para fazer o servidor provar hosts internos arbitrários (SSRF — ex: `169.254.169.254`, hosts internos não roteáveis). Corrigido para exigir perfil OPERADOR ou superior em ambas as rotas.
+`POST /api/devices/test-omada` e `POST /api/devices/test-unifi` exigem perfil OPERADOR ou superior.
 
 ---
 
@@ -261,11 +246,34 @@ As rotas `GET /api/links/:id/up` e `GET /api/links/:id/down` não são registrad
 **Severidade:** ℹ️ INFO — ⚠️ ACEITO (design intencional)  
 **Categoria:** Transporte seguro
 
-A flag `tlsVerify: false` (Omada e UniFi) desativa `rejectUnauthorized` na conexão HTTPS com o controller. Isso é intencional para controllers com certificados autoassinados em redes locais.
+Flag `tlsVerify: false` intencional para controllers com certificados autoassinados em redes locais. Risco baixo em redes segregadas.
 
-**Risco residual:** Com `tlsVerify: false`, um atacante com acesso à rede local entre o worker e o controller pode realizar man-in-the-middle, interceptando o token de API e as credenciais em trânsito. O risco é baixo em redes segregadas, mas real em redes flat.
+---
 
-**Mitigação futura:** Documentar o risco na interface e recomendar importar o certificado do controller quando possível.
+### SEC-025 — SSRF parcial em endpoints de teste de integração
+**Severidade:** 🟡 MÉDIO — ✅ RESOLVIDO  
+**Categoria:** Controle de acesso / SSRF  
+**Resolvido em:** branch `feat/omada-ap-integration`
+
+`controllerIpSchema` em `lib/schemas/device.ts` rejeita loopback (`127.x`), link-local/AWS metadata (`169.254.x`), `0.0.0.0`, broadcast e multicast. Endereços RFC 1918 permitidos (controladores locais legítimos).
+
+---
+
+### SEC-026 — Sem limite de tamanho de requisição (bodySizeLimit)
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** DoS  
+**Resolvido em:** branch `feat/omada-ap-integration`
+
+Ver SEC-012. `parse-body.ts` rejeita corpos acima de 1 MB com `413`. `next.config.ts` com `bodySizeLimit: "1mb"` para Server Actions.
+
+---
+
+### SEC-027 — Race condition em atualização de usuário sem versionamento
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO  
+**Categoria:** Integridade de dados  
+**Resolvido em:** branch `feat/omada-ap-integration`
+
+Campo `version Int @default(1)` no modelo `User`. `PUT /api/users/[id]` retorna `409 Conflict` se versão enviada diverge da versão no banco. Versão incrementada com `{ increment: 1 }` em cada update.
 
 ---
 
@@ -275,25 +283,18 @@ A flag `tlsVerify: false` (Omada e UniFi) desativa `rejectUnauthorized` na conex
 |---|------|-----------|---------|-----------|
 | SEC-005 | Configurar TLS/HTTPS via reverse proxy | 🟡 Médio | Infra (1h) | Alta |
 | SEC-006 | Permissões do banco / credenciais mínimas | 🔵 Baixo | Infra (30min) | Média |
-| SEC-021 | Invalidação imediata de papel JWT | ℹ️ Info | Código (4h) | Média |
-| SEC-022 | Auditar chamadas de webhook no AuditLog | ℹ️ Info | Código (30min) | Média |
 | SEC-008 | Sempre usar container Docker em produção | 🔵 Baixo | Infra (0) | Baixa |
-| SEC-012 | Limite de tamanho de requisição | ℹ️ Info | Código (15min) | Baixa |
-| SEC-014 | Rate limiter persistente (Redis/banco) | ℹ️ Info | Código (4h) | Baixa |
-| SEC-017 | Testes para startScheduler | ℹ️ Info | Código (2h) | Baixa |
-| SEC-018 | Timeout de inicialização do worker | ℹ️ Info | Código (30min) | Baixa |
-| SEC-009 | 2FA/TOTP opcional | ℹ️ Info | Código (1 dia) | Muito baixa |
 
 ---
 
 ## Rastreamento no Dashboard
 
-Todos os achados abertos foram importados como notas em `/notes`.  
-Para inserir novas notas: `npx tsx scripts/add-security-notes.ts`  
-Para importar o conjunto inicial: `npm run seed:security`
+Todos os achados são exibidos na página `/security` do dashboard.  
+A tela lê este arquivo diretamente — não depende de banco de dados.  
+Para adicionar achados, edite este arquivo seguindo o padrão de cada seção `### SEC-XXX`.
 
 ---
 
 ## Contexto de Uso
 
-O WatchIT Tower é projetado para uso **exclusivamente na rede local interna**. O nível de risco é significativamente menor comparado a uma aplicação exposta à internet. Todas as vulnerabilidades críticas e de alta severidade foram resolvidas. Os itens abertos restantes são adequados para resolução incremental sem bloquear o uso em produção em ambiente controlado.
+O WatchIT Tower é projetado para uso **exclusivamente na rede local interna**. O nível de risco é **baixo**. Todos os achados de código foram resolvidos. Os 3 itens abertos restantes são de infraestrutura (TLS via proxy, permissões do banco, execução em Docker) e adequados para resolução pelo administrador do ambiente.
