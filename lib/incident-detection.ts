@@ -56,6 +56,35 @@ export async function getOnlineTransitions(
   return byDevice;
 }
 
+/**
+ * Same as getOnlineTransitions but scoped to a single device — used by the
+ * per-device report builder so it doesn't scan the whole fleet's history.
+ */
+export async function getOnlineTransitionsForDevice(
+  deviceId: string,
+  since: Date,
+  client: Pick<PrismaClient, "$queryRaw"> = db,
+): Promise<TransitionRow[]> {
+  return client.$queryRaw<TransitionRow[]>`
+    WITH ranked AS (
+      SELECT
+        "deviceId",
+        "isOnline",
+        "timestamp",
+        LAG("isOnline") OVER w AS prev_online,
+        ROW_NUMBER() OVER w AS rn,
+        ROW_NUMBER() OVER (ORDER BY "timestamp" DESC) AS rn_desc
+      FROM "StatusHistory"
+      WHERE "deviceId" = ${deviceId} AND "timestamp" >= ${since}
+      WINDOW w AS (ORDER BY "timestamp")
+    )
+    SELECT "deviceId", "isOnline", "timestamp"
+    FROM ranked
+    WHERE rn = 1 OR rn_desc = 1 OR "isOnline" IS DISTINCT FROM prev_online
+    ORDER BY "timestamp"
+  `;
+}
+
 export interface StatusEventRow {
   deviceId: string;
   isOnline: boolean;

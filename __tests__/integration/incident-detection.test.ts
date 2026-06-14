@@ -6,6 +6,7 @@
  */
 import { createTestDb } from "./db-helper";
 import { getOnlineTransitions, detectIncidents, getDeviceStatusEvents } from "@/lib/incident-detection";
+import { getDeviceReportStats, getDeviceChartSamples } from "@/lib/report-queries";
 
 const db = createTestDb();
 const TEST_PREFIX = `integ-incident-${Date.now()}`;
@@ -111,5 +112,30 @@ describe("getDeviceStatusEvents (real SQL — latency buckets)", () => {
     // first(0), rising(1), falling(3) — the redundant still-high row at 2 collapses out
     expect(minutes).toEqual([0, 1, 3]);
     expect(rows.find((r) => Math.round((r.timestamp.getTime() - lbase) / 60_000) === 1)?.pingMs).toBe(200);
+  });
+
+  it("getDeviceReportStats computes counts and ping aggregates (real SQL)", async () => {
+    // 4 online rows with pings 20,200,300,30
+    const stats = await getDeviceReportStats(latDeviceId, lat(-10), 80, db);
+    expect(stats.total).toBe(4);
+    expect(stats.online).toBe(4);
+    expect(stats.avgPing).toBeCloseTo(137.5);
+    expect(stats.minPing).toBe(20);
+    expect(stats.maxPing).toBe(300);
+    expect(stats.cpuCount).toBe(0);
+    expect(stats.avgCpu).toBeNull();
+  });
+
+  it("getDeviceChartSamples returns all rows when under maxPoints (real SQL)", async () => {
+    const samples = await getDeviceChartSamples(latDeviceId, lat(-10), 400, db);
+    expect(samples).toHaveLength(4);
+    expect(samples.map((s) => s.pingMs)).toEqual([20, 200, 300, 30]);
+  });
+
+  it("getDeviceChartSamples strides down to ~maxPoints for large sets (real SQL)", async () => {
+    const samples = await getDeviceChartSamples(latDeviceId, lat(-10), 2, db);
+    // 4 rows, maxPoints 2 → stride ceil(4/2)=2 → idx 0 and 2 kept
+    expect(samples.length).toBeLessThanOrEqual(3);
+    expect(samples.length).toBeGreaterThanOrEqual(2);
   });
 });
