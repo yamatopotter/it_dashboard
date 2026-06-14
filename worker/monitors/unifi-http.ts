@@ -1,5 +1,9 @@
 import * as https from "https";
 
+// Cap controller responses to avoid buffering an unbounded payload in worker memory
+// (a misbehaving or malicious controller could stream megabytes of client data).
+export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB
+
 export function normalizeNetworkError(err: NodeJS.ErrnoException, host: string, port: number): Error {
   if (err.code === "ECONNREFUSED")
     return new Error(`Conexão recusada em ${host}:${port} — verifique IP e porta`);
@@ -20,7 +24,10 @@ export function httpsGetApiKey(
         rejectUnauthorized: tlsVerify },
       (res) => {
         let raw = "";
-        res.on("data", (c: string) => (raw += c));
+        res.on("data", (c: string) => {
+          raw += c;
+          if (raw.length > MAX_RESPONSE_BYTES) req.destroy(new Error(`Resposta excedeu ${MAX_RESPONSE_BYTES} bytes`));
+        });
         res.on("end", () => {
           try { resolve({ status: res.statusCode ?? 0, body: JSON.parse(raw) }); }
           catch { resolve({ status: res.statusCode ?? 0, body: null }); }
@@ -44,7 +51,10 @@ export function httpsPostJson(
         rejectUnauthorized: tlsVerify },
       (res) => {
         let raw = "";
-        res.on("data", (c: string) => (raw += c));
+        res.on("data", (c: string) => {
+          raw += c;
+          if (raw.length > MAX_RESPONSE_BYTES) req.destroy(new Error(`Resposta excedeu ${MAX_RESPONSE_BYTES} bytes`));
+        });
         res.on("end", () => {
           const cookies = ((res.headers["set-cookie"] ?? []) as string[]);
           try { resolve({ status: res.statusCode ?? 0, body: JSON.parse(raw), cookies }); }
@@ -70,7 +80,10 @@ export function httpsGetCookie(
       { hostname: host, port, path, method: "GET", headers, rejectUnauthorized: tlsVerify },
       (res) => {
         let raw = "";
-        res.on("data", (c: string) => (raw += c));
+        res.on("data", (c: string) => {
+          raw += c;
+          if (raw.length > MAX_RESPONSE_BYTES) req.destroy(new Error(`Resposta excedeu ${MAX_RESPONSE_BYTES} bytes`));
+        });
         res.on("end", () => {
           try { resolve({ status: res.statusCode ?? 0, body: JSON.parse(raw) }); }
           catch { resolve({ status: res.statusCode ?? 0, body: null }); }

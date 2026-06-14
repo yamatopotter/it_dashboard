@@ -9,7 +9,7 @@ export interface AlertPayload {
   timestamp:  string;
 }
 
-const ALERT_COOLDOWN_MS = 60 * 60 * 1_000; // 1 hour
+export const ALERT_COOLDOWN_MS = 60 * 60 * 1_000; // 1 hour
 
 export function isCooldownActive(lastAlertAt: Date | null): boolean {
   if (!lastAlertAt) return false;

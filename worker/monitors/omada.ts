@@ -1,6 +1,9 @@
 import * as https from "https";
 import * as http from "http";
 
+// Cap controller responses to avoid buffering an unbounded payload in worker memory.
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB
+
 export interface OmadaSSID {
   ssid: string;
   band: string;
@@ -67,7 +70,10 @@ function rawRequest(
       (res) => {
         const status = res.statusCode ?? 0;
         let raw = "";
-        res.on("data", (c: string) => (raw += c));
+        res.on("data", (c: string) => {
+          raw += c;
+          if (raw.length > MAX_RESPONSE_BYTES) req.destroy(new Error(`Resposta excedeu ${MAX_RESPONSE_BYTES} bytes`));
+        });
         res.on("end", () => {
           try { resolve({ status, body: JSON.parse(raw) }); }
           catch { resolve({ status, body: null }); }

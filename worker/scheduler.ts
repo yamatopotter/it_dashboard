@@ -8,7 +8,7 @@ import { checkOmada } from "./monitors/omada";
 import { checkLinkTraffic } from "./monitors/link-traffic";
 import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
-import { sendAlert, isCooldownActive } from "./monitors/alert";
+import { sendAlert, ALERT_COOLDOWN_MS } from "./monitors/alert";
 import type { Device, Link } from "@prisma/client";
 
 const timers          = new Map<string, ReturnType<typeof setInterval>>();
@@ -45,6 +45,19 @@ function trackAsync<T>(p: Promise<T>): Promise<T> {
   pendingChecks.add(p);
   void p.finally(() => pendingChecks.delete(p));
   return p;
+}
+
+// Upper bound for a single device check. Monitors have their own timeouts (~5–10s),
+// but a hung DB transaction or a misbehaving library could otherwise hold a semaphore
+// slot forever, starving every other device. This guarantees the slot is released.
+export const CHECK_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} excedeu ${ms}ms`)), ms);
+    if (typeof t === "object" && t !== null && "unref" in t) (t as NodeJS.Timeout).unref();
+    p.then(resolve, reject).finally(() => clearTimeout(t));
+  });
 }
 
 function makeInterval(fn: () => void, ms: number) {
@@ -205,7 +218,7 @@ export async function runChecks(device: Device): Promise<boolean> {
     db.statusHistory.create({
       data: { deviceId: device.id, isOnline, pingMs, cpuLoad, memoryUsed, timestamp: now },
     }),
-  ]);
+  ], { timeout: 5_000 });
 
   if (omadaResult) {
     log("info", `${isOnline ? "✓" : "✗"} ${device.name}`, {
@@ -248,7 +261,7 @@ function scheduleDevice(device: Device) {
 
     await acquireSlot();
     try {
-      const isOnline = await runChecks(device);
+      const isOnline = await withTimeout(runChecks(device), CHECK_TIMEOUT_MS, `runChecks(${device.name})`);
       if (isOnline) {
         const prev = consecutiveFailures.get(device.id) ?? 0;
         consecutiveFailures.set(device.id, 0);
@@ -268,10 +281,17 @@ function scheduleDevice(device: Device) {
             });
           }
         }
-        // Fire alert if threshold reached and webhook is configured
+        // Fire alert if threshold reached and webhook is configured.
+        // Atomically claim the alert slot: updateMany only matches (count === 1) when
+        // no alert was sent within the cooldown, so overlapping ticks for the same
+        // device can never send a duplicate alert (TOCTOU-safe).
         if (device.alertWebhookUrl && fails === device.alertThreshold) {
-          const lastAlert = await db.device.findUnique({ where: { id: device.id }, select: { lastAlertAt: true } });
-          if (!isCooldownActive(lastAlert?.lastAlertAt ?? null)) {
+          const cooldownBoundary = new Date(Date.now() - ALERT_COOLDOWN_MS);
+          const claim = await db.device.updateMany({
+            where: { id: device.id, OR: [{ lastAlertAt: null }, { lastAlertAt: { lt: cooldownBoundary } }] },
+            data: { lastAlertAt: new Date() },
+          });
+          if (claim.count === 1) {
             try {
               await sendAlert(device.alertWebhookUrl, {
                 deviceId:   device.id,
@@ -281,7 +301,6 @@ function scheduleDevice(device: Device) {
                 failCount:  fails,
                 timestamp:  new Date().toISOString(),
               });
-              await db.device.update({ where: { id: device.id }, data: { lastAlertAt: new Date() } });
             } catch (alertErr: unknown) {
               log("error", "[Alerta] falha ao enviar webhook", {
                 device: device.name,
