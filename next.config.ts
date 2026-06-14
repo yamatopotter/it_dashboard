@@ -18,6 +18,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
+  // SEC-026: limita o tamanho do corpo das requisições API a 1 MB
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "1mb",
+    },
+  },
 };
 
 export default nextConfig;

@@ -4,12 +4,6 @@
  * Comprehensive authentication enforcement tests.
  * Every protected route must return 401 without a valid session.
  */
-import { GET as notesGET, POST as notesPOST } from "@/app/api/notes/route";
-import {
-  GET as noteIdGET,
-  PUT as noteIdPUT,
-  DELETE as noteIdDELETE,
-} from "@/app/api/notes/[id]/route";
 import { GET as linksGET, POST as linksPOST } from "@/app/api/links/route";
 import {
   GET as linkIdGET,
@@ -28,13 +22,6 @@ jest.mock("@/lib/auth", () => ({
 
 jest.mock("@/lib/db", () => ({
   db: {
-    note: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-    },
     link: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -56,45 +43,7 @@ jest.mock("@/lib/db", () => ({
   },
 }));
 
-const FAKE_NOTE_PARAMS = Promise.resolve({ id: "note-1" });
 const FAKE_LINK_PARAMS = Promise.resolve({ id: "link-1" });
-
-describe("Notes routes — 401 without session", () => {
-  it("GET /api/notes → 401", async () => {
-    const res = await notesGET(new NextRequest("http://localhost/api/notes"));
-    expect(res.status).toBe(401);
-  });
-
-  it("POST /api/notes → 401", async () => {
-    const req = new NextRequest("http://localhost/api/notes", {
-      method: "POST",
-      body: JSON.stringify({ title: "Test", body: "Body", severity: "INFO", category: "SEC" }),
-    });
-    const res = await notesPOST(req);
-    expect(res.status).toBe(401);
-  });
-
-  it("GET /api/notes/:id → 401", async () => {
-    const req = new NextRequest("http://localhost/api/notes/note-1");
-    const res = await noteIdGET(req, { params: FAKE_NOTE_PARAMS });
-    expect(res.status).toBe(401);
-  });
-
-  it("PUT /api/notes/:id → 401", async () => {
-    const req = new NextRequest("http://localhost/api/notes/note-1", {
-      method: "PUT",
-      body: JSON.stringify({ title: "Updated" }),
-    });
-    const res = await noteIdPUT(req, { params: FAKE_NOTE_PARAMS });
-    expect(res.status).toBe(401);
-  });
-
-  it("DELETE /api/notes/:id → 401", async () => {
-    const req = new NextRequest("http://localhost/api/notes/note-1", { method: "DELETE" });
-    const res = await noteIdDELETE(req, { params: FAKE_NOTE_PARAMS });
-    expect(res.status).toBe(401);
-  });
-});
 
 describe("Links routes — 401 without session", () => {
   it("GET /api/links → 401", async () => {

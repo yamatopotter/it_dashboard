@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { AlertCircle, CheckCircle, CheckCircle2, Layers, Loader2, XCircle } from "lucide-react";
 import { PasswordInput } from "@/components/ui/password-input";
+import { testUnifiConnection, testOmadaConnection } from "@/lib/device-tests";
 
 const schema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
@@ -50,10 +51,11 @@ const schema = z.object({
   unifiMode: z.enum(["standalone", "controller"]),
   unifiControllerIp: z.string().optional().nullable(),
   omadaEnabled: z.boolean(),
-  omadaUser: z.string().optional().nullable(),
-  omadaPass: z.string().optional().nullable(),
-  omadaPort: z.number(),
-  omadaSite: z.string(),
+  omadaClientId:     z.string().optional().nullable(),
+  omadaClientSecret: z.string().optional().nullable(),
+  omadacId:          z.string().optional().nullable(),
+  omadaSite:         z.string().optional().nullable(),
+  omadaSiteId:       z.string().optional().nullable(),
   omadaTlsVerify: z.boolean(),
   omadaMode: z.enum(["standalone", "controller"]),
   omadaControllerIp: z.string().optional().nullable(),
@@ -116,8 +118,7 @@ export function BulkDeviceForm() {
       unifiTlsVerify: false,
       unifiMode: "standalone",
       omadaEnabled: false,
-      omadaPort: 8043,
-      omadaSite: "Default",
+      omadaSite: "",
       omadaTlsVerify: true,
       omadaMode: "standalone",
       checkInterval: 60,
@@ -144,7 +145,7 @@ export function BulkDeviceForm() {
   }, [ipStart, ipEnd]);
 
   const ips = preview();
-  async function testUnifiConnection() {
+  async function handleTestUnifi() {
     const values = watch();
     const controllerIp =
       values.unifiMode === "controller" && values.unifiControllerIp
@@ -156,31 +157,19 @@ export function BulkDeviceForm() {
       return;
     }
 
-    setUnifiTest({ status: "testing" });
-    try {
-      const res = await fetch("/api/devices/test-unifi", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          controllerIp,
-          port: values.unifiPort,
-          site: values.unifiSite,
-          tlsVerify: values.unifiTlsVerify,
-          authMethod: values.unifiAuthMethod,
-          apiKey: values.unifiApiKey || undefined,
-          unifiUser: values.unifiUser || undefined,
-          unifiPass: values.unifiPass || undefined,
-        }),
-      });
-      const json = await res.json() as { ok?: boolean; message?: string; error?: string };
-      if (res.ok && json.ok) {
-        setUnifiTest({ status: "ok", message: json.message });
-      } else {
-        setUnifiTest({ status: "error", message: json.error ?? "Falha no teste" });
-      }
-    } catch {
-      setUnifiTest({ status: "error", message: "Erro de rede ao testar conexão" });
-    }
+    await testUnifiConnection(
+      {
+        controllerIp,
+        port: values.unifiPort ?? 443,
+        site: values.unifiSite ?? "default",
+        tlsVerify: values.unifiTlsVerify ?? true,
+        authMethod: values.unifiAuthMethod ?? "apikey",
+        apiKey: values.unifiApiKey || undefined,
+        unifiUser: values.unifiUser || undefined,
+        unifiPass: values.unifiPass || undefined,
+      },
+      (s) => setUnifiTest(s as Parameters<typeof setUnifiTest>[0]),
+    );
   }
 
   const rangeError = ipStart && ipEnd && ips === null
@@ -189,41 +178,33 @@ export function BulkDeviceForm() {
       : "Máximo de 254 IPs por operação")
     : null;
 
-  async function testOmadaConnection() {
+  async function handleTestOmada() {
     const values = watch();
     const controllerIp =
       values.omadaMode === "controller" && values.omadaControllerIp
         ? values.omadaControllerIp
         : null;
+    const omadacId = values.omadacId?.trim();
 
     if (!controllerIp) {
       setOmadaTest({ status: "error", message: "Informe o IP do controlador no modo OC / Controller" });
       return;
     }
-
-    setOmadaTest({ status: "testing" });
-    try {
-      const res = await fetch("/api/devices/test-omada", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          controllerIp,
-          port: values.omadaPort,
-          site: values.omadaSite,
-          tlsVerify: values.omadaTlsVerify,
-          omadaUser: values.omadaUser || undefined,
-          omadaPass: values.omadaPass || undefined,
-        }),
-      });
-      const json = await res.json() as { ok?: boolean; message?: string; error?: string };
-      if (res.ok && json.ok) {
-        setOmadaTest({ status: "ok", message: json.message });
-      } else {
-        setOmadaTest({ status: "error", message: json.error ?? "Falha no teste" });
-      }
-    } catch {
-      setOmadaTest({ status: "error", message: "Erro de rede ao testar conexão" });
+    if (!omadacId) {
+      setOmadaTest({ status: "error", message: "Informe o Omada Controller ID (omadacId)" });
+      return;
     }
+
+    await testOmadaConnection(
+      {
+        controllerIp,
+        omadacId,
+        tlsVerify: values.omadaTlsVerify ?? true,
+        omadaClientId: values.omadaClientId || undefined,
+        omadaClientSecret: values.omadaClientSecret || undefined,
+      },
+      (s) => setOmadaTest(s as Parameters<typeof setOmadaTest>[0]),
+    );
   }
 
   async function onSubmit(data: FormData) {
@@ -630,7 +611,7 @@ export function BulkDeviceForm() {
                   <button
                     type="button"
                     disabled={unifiTest.status === "testing"}
-                    onClick={testUnifiConnection}
+                    onClick={handleTestUnifi}
                     className="inline-flex items-center gap-2 h-8 px-3 rounded-lg border border-border bg-background text-xs font-medium hover:bg-muted disabled:opacity-50 transition-colors"
                   >
                     {unifiTest.status === "testing" ? (
@@ -673,30 +654,26 @@ export function BulkDeviceForm() {
             </div>
             {omadaEnabled && (
               <div className="space-y-3 pl-4 border-l-2 border-muted">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Usuário</Label>
-                    <Input placeholder="admin" {...register("omadaUser")} autoComplete="off" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Senha</Label>
-                    <PasswordInput {...register("omadaPass")} />
-                  </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Omada Controller ID (omadacId)</Label>
+                  <Input placeholder="abc123..." {...register("omadacId")} autoComplete="off" className="font-mono" />
+                  <p className="text-[10px] text-muted-foreground">Disponível em Settings › Controller no Omada SDN.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Site</Label>
-                    <Input placeholder="Default" {...register("omadaSite")} />
+                    <Label className="text-xs">Client ID</Label>
+                    <Input placeholder="client_id" {...register("omadaClientId")} autoComplete="off" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Porta</Label>
-                    <Input
-                      type="number"
-                      placeholder="8043"
-                      {...register("omadaPort", { valueAsNumber: true })}
-                    />
+                    <Label className="text-xs">Client Secret</Label>
+                    <PasswordInput {...register("omadaClientSecret")} />
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Site (nome do site no Omada)</Label>
+                  <Input placeholder="Default" {...register("omadaSite")} />
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -752,7 +729,7 @@ export function BulkDeviceForm() {
                   <button
                     type="button"
                     disabled={omadaTest.status === "testing"}
-                    onClick={testOmadaConnection}
+                    onClick={handleTestOmada}
                     className="inline-flex items-center gap-2 h-8 px-3 rounded-lg border border-border bg-background text-xs font-medium hover:bg-muted disabled:opacity-50 transition-colors"
                   >
                     {omadaTest.status === "testing" ? (

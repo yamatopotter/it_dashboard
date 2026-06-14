@@ -217,15 +217,15 @@ function DeviceCard({
             className="w-full flex items-center justify-between px-5 py-2.5 text-xs font-semibold hover:bg-muted/30 transition-colors"
           >
             <span className="flex items-center gap-1.5">
-              <Network className="h-3.5 w-3.5 text-muted-foreground" />
+              <Network className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               Links de Internet
               <Badge variant="secondary" className="text-[10px]">{links.length}</Badge>
             </span>
-            {linksOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {linksOpen ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
           </button>
           {linksOpen && (
             <div className="overflow-x-auto border-t">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs" aria-label="Links de internet">
                 <thead className="bg-muted/40">
                   <tr>
                     <th className="text-left px-5 py-2 font-medium text-muted-foreground">Link</th>
@@ -281,13 +281,13 @@ function DeviceCard({
               className="w-full flex items-center justify-between px-5 py-2.5 text-xs font-semibold hover:bg-muted/30 transition-colors"
             >
               <span className="flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                <Users className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
                 Clientes DHCP
                 {clients !== null && (
                   <Badge variant="secondary" className="text-[10px]">{clients.length}</Badge>
                 )}
               </span>
-              {clientsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {clientsOpen ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
             </button>
             {clientsOpen && (
               <div className="border-t">
@@ -297,7 +297,7 @@ function DeviceCard({
                   <p className="px-5 py-3 text-xs text-muted-foreground">Nenhum cliente DHCP ativo.</p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
+                    <table className="w-full text-xs" aria-label="Clientes DHCP ativos">
                       <thead className="bg-muted/40">
                         <tr>
                           <th className="text-left px-5 py-2 font-medium text-muted-foreground">Hostname</th>

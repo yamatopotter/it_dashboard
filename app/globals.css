@@ -63,7 +63,7 @@
   --popover-foreground: #15161e;
 
   /* Primary — indigo/violet */
-  --primary: #6d5cf6;
+  --primary: #5544e5;
   --primary-foreground: #ffffff;
   --primary-weak: #efecff;
   --primary-weak-2: #f6f4ff;
@@ -74,7 +74,7 @@
   --secondary: #eef0f6;
   --secondary-foreground: #545767;
   --muted: #eef0f6;
-  --muted-foreground: #8a8d9c;
+  --muted-foreground: #696c7a;
   --accent: #efecff;
   --accent-foreground: #4a3bd6;
 
@@ -84,22 +84,22 @@
   --ring: #8b7cff;
 
   /* Status — success (online) */
-  --success: #18a058;
+  --success: #0e7c3e;
   --success-foreground: #ffffff;
 
   /* Status — warning (degraded) */
-  --warning: #d98a06;
+  --warning: #9f5f00;
   --warning-foreground: #ffffff;
 
   /* Status — destructive (offline) */
-  --destructive: #e5484d;
+  --destructive: #c0373b;
   --destructive-foreground: #ffffff;
 
   /* Charts */
-  --chart-1: #6d5cf6;
-  --chart-2: #18a058;
-  --chart-3: #d98a06;
-  --chart-4: #e5484d;
+  --chart-1: #5544e5;
+  --chart-2: #0e7c3e;
+  --chart-3: #9f5f00;
+  --chart-4: #c0373b;
   --chart-5: #0ea5e9;
 
   /* Radius */
@@ -108,7 +108,7 @@
   /* Sidebar */
   --sidebar: #ffffff;
   --sidebar-foreground: #15161e;
-  --sidebar-primary: #6d5cf6;
+  --sidebar-primary: #5544e5;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #efecff;
   --sidebar-accent-foreground: #4a3bd6;

@@ -230,4 +230,25 @@ describe("POST /api/devices/test-unifi — validation", () => {
     const res = await POST(makeReq(VALID_API_KEY_BODY));
     expect(res.status).toBe(403);
   });
+
+  // SEC-025: SSRF prevention
+  it.each([
+    ["127.0.0.1",       "loopback"],
+    ["127.1.2.3",       "loopback range"],
+    ["169.254.169.254", "AWS metadata"],
+    ["169.254.0.1",     "link-local"],
+    ["0.0.0.0",         "unspecified"],
+    ["255.255.255.255",  "broadcast"],
+    ["224.0.0.1",       "multicast"],
+  ])("returns 400 for SSRF-prone IP %s (%s)", async (ip) => {
+    const res = await POST(makeReq({ ...VALID_API_KEY_BODY, controllerIp: ip }));
+    expect(res.status).toBe(400);
+  });
+
+  it("allows private LAN addresses (10.x, 192.168.x)", async () => {
+    mockQueue([fakeRes(200, SITES_RESPONSE)]);
+    const res = await POST(makeReq({ ...VALID_API_KEY_BODY, controllerIp: "192.168.1.1" }));
+    // Reaches the actual connection logic (not blocked at schema level)
+    expect(res.status).not.toBe(400);
+  });
 });

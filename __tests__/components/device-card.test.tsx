@@ -50,6 +50,7 @@ const baseDevice = {
   omadaTlsVerify:       true,
   omadaControllerIp:    null,
   checkInterval:   60,
+  maintenanceUntil: null,
   alertWebhookUrl: null,
   alertThreshold:  3,
   lastAlertAt:     null,

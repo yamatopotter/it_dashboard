@@ -65,6 +65,7 @@ describe("DeviceForm", () => {
       omadaTlsVerify: true,
       omadaControllerIp: null,
       checkInterval: 60,
+      maintenanceUntil: null,
       alertWebhookUrl: null,
       alertThreshold: 3,
       lastAlertAt: null,
@@ -97,7 +98,7 @@ describe("DeviceForm", () => {
       unifiTlsVerify: false, unifiControllerIp: null, omadaEnabled: false,
       omadaClientIdEnc: null, omadaClientSecretEnc: null, omadacId: null,
       omadaSite: null, omadaSiteId: null, omadaTlsVerify: true, omadaControllerIp: null,
-      checkInterval: 60, alertWebhookUrl: null, alertThreshold: 3, lastAlertAt: null,
+      checkInterval: 60, maintenanceUntil: null, alertWebhookUrl: null, alertThreshold: 3, lastAlertAt: null,
       createdAt: new Date(), updatedAt: new Date(),
       hasRouterosCredentials: false, hasUnifiApiKey: false, hasUnifiCredentials: false, hasOmadaCredentials: false,
     };

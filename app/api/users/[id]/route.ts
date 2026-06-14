@@ -12,6 +12,8 @@ import { writeAudit } from "@/lib/audit";
 const updateSchema = z.object({
   password: z.string().min(8, "Senha deve ter no mínimo 8 caracteres").optional(),
   role: z.enum(["ADMIN", "OPERADOR", "VIEWER"]).optional(),
+  // SEC-027: versão atual do registro para optimistic locking
+  version: z.number().int().min(1).optional(),
 });
 
 export async function PUT(
@@ -38,7 +40,7 @@ export async function PUT(
     return NextResponse.json({ error: result.error.issues[0].message }, { status: 400 });
   }
 
-  const { password, role: newRole } = result.data;
+  const { password, role: newRole, version } = result.data;
 
   // Only admin can change roles
   if (newRole && role !== "ADMIN") {
@@ -48,18 +50,29 @@ export async function PUT(
   const user = await db.user.findUnique({ where: { id } });
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const data: { password?: string; role?: "ADMIN" | "OPERADOR" | "VIEWER" } = {};
+  // SEC-027: reject stale writes when caller sent a version that differs from DB
+  if (version !== undefined && version !== user.version) {
+    return NextResponse.json(
+      { error: "Conflito de versão: o registro foi modificado por outra sessão. Recarregue e tente novamente." },
+      { status: 409 },
+    );
+  }
+
+  const data: { password?: string; role?: "ADMIN" | "OPERADOR" | "VIEWER"; version?: { increment: number } } = {};
   if (password) data.password = await bcrypt.hash(password, 12);
   if (newRole) data.role = newRole;
 
-  if (Object.keys(data).length === 0) {
+  if (!password && !newRole) {
     return NextResponse.json({ error: "Nenhum campo para atualizar" }, { status: 400 });
   }
+
+  // Increment version on every write so concurrent updates are detectable
+  data.version = { increment: 1 };
 
   const updated = await db.user.update({
     where: { id },
     data,
-    select: { id: true, username: true, role: true, createdAt: true },
+    select: { id: true, username: true, role: true, createdAt: true, version: true },
   });
 
   void writeAudit({ action: "UPDATE", entity: "User", entityId: updated.id, entityName: updated.username, details: { fields: Object.keys(data) } });

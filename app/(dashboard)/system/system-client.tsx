@@ -33,7 +33,7 @@ interface Stats {
     linkEvents: number;
     devices: number;
     users: number;
-    notes: number;
+
     links: number;
   };
   statusHistoryRange: { oldest: string | null; newest: string | null };
@@ -89,7 +89,7 @@ const TABLE_LABELS: Record<string, string> = {
   DeviceStatus: "Status atual",
   Device: "Dispositivos",
   Link: "Links",
-  Note: "Notas",
+
   User: "Usuários",
   WorkerHeartbeat: "Worker heartbeat",
   SystemConfig: "Configuração",
@@ -174,7 +174,7 @@ export function SystemClient() {
   }
 
   const totalRows = stats
-    ? stats.counts.statusHistory + stats.counts.linkEvents + stats.counts.devices + stats.counts.users + stats.counts.notes + stats.counts.links
+    ? stats.counts.statusHistory + stats.counts.linkEvents + stats.counts.devices + stats.counts.users + stats.counts.links
     : 0;
 
   return (
@@ -232,7 +232,7 @@ export function SystemClient() {
             <span className="text-[13px] font-semibold">Tabelas do banco de dados</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
+            <table className="w-full text-[13px]" aria-label="Informações do sistema">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left px-5 py-2.5 font-semibold text-muted-foreground">Tabela</th>
@@ -291,7 +291,6 @@ export function SystemClient() {
               { label: "Links", value: stats.counts.links },
               { label: "Histórico", value: stats.counts.statusHistory },
               { label: "Eventos", value: stats.counts.linkEvents },
-              { label: "Notas", value: stats.counts.notes },
               { label: "Usuários", value: stats.counts.users },
             ].map(({ label, value }) => (
               <div

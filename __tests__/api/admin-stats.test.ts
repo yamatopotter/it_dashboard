@@ -12,7 +12,6 @@ jest.mock("@/lib/db", () => ({
     linkEvent: { count: jest.fn() },
     device: { count: jest.fn() },
     user: { count: jest.fn() },
-    note: { count: jest.fn() },
     link: { count: jest.fn() },
     workerHeartbeat: { findFirst: jest.fn() },
     systemConfig: { findFirst: jest.fn() },
@@ -36,7 +35,6 @@ beforeEach(() => {
   (mockDb.linkEvent.count as jest.Mock).mockResolvedValue(50);
   (mockDb.device.count as jest.Mock).mockResolvedValue(10);
   (mockDb.user.count as jest.Mock).mockResolvedValue(3);
-  (mockDb.note.count as jest.Mock).mockResolvedValue(5);
   (mockDb.link.count as jest.Mock).mockResolvedValue(2);
   (mockDb.statusHistory.findFirst as jest.Mock)
     .mockResolvedValueOnce({ timestamp: new Date("2025-01-01") })

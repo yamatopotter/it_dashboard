@@ -6,6 +6,7 @@
 process.env.WEBHOOK_SECRET = "links-test-secret-at-least-32chars!!";
 
 jest.mock("@/lib/auth", () => ({ auth: jest.fn() }));
+jest.mock("@/lib/audit", () => ({ writeAudit: jest.fn() }));
 jest.mock("@/lib/db", () => ({
   db: {
     link: {
@@ -28,9 +29,11 @@ import {
 } from "@/app/api/links/[id]/route";
 import { auth } from "@/lib/auth";
 import { db }   from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 
 const mockAuth = auth as jest.MockedFunction<typeof auth>;
 const mockDb   = db   as jest.Mocked<typeof db>;
+const mockWriteAudit = writeAudit as jest.Mock;
 
 const SESSION = { user: { id: "u1", name: "admin", role: "ADMIN" }, expires: "2099-01-01" };
 const LINK_ID = "link-test-001";
@@ -116,6 +119,9 @@ describe("POST /api/links", () => {
     expect(mockDb.link.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ name: "Fibra SP" }) })
     );
+    expect(mockWriteAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "CREATE", entity: "Link", entityId: LINK_ID })
+    );
   });
 
   it("returns 400 when name is missing", async () => {
@@ -190,6 +196,9 @@ describe("PUT /api/links/[id]", () => {
     );
     expect(res.status).toBe(200);
     expect((await res.json()).name).toBe("Fibra SP v2");
+    expect(mockWriteAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "UPDATE", entity: "Link", entityId: LINK_ID })
+    );
   });
 
   it("returns 400 when body fails validation", async () => {
@@ -217,6 +226,7 @@ describe("DELETE /api/links/[id]", () => {
   });
 
   it("deletes the link and returns 204", async () => {
+    (mockDb.link.findUnique as jest.Mock).mockResolvedValue(fakeLink);
     (mockDb.link.delete as jest.Mock).mockResolvedValue({});
     const res = await deleteLink(
       makeReq(`http://localhost/api/links/${LINK_ID}`, { method: "DELETE" }),
@@ -224,5 +234,8 @@ describe("DELETE /api/links/[id]", () => {
     );
     expect(res.status).toBe(204);
     expect(mockDb.link.delete).toHaveBeenCalledWith({ where: { id: LINK_ID } });
+    expect(mockWriteAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "DELETE", entity: "Link", entityId: LINK_ID })
+    );
   });
 });

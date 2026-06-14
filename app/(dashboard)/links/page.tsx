@@ -46,6 +46,7 @@ import { BandwidthCell } from "@/components/bandwidth-cell";
 import { FilterChip } from "@/components/filter-chip";
 import { SkeletonList } from "@/components/skeleton-list";
 import { EmptyState } from "@/components/empty-state";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface LinkItem {
   id: string;
@@ -124,6 +125,8 @@ export default function LinksPage() {
     | { state: "error"; message: string };
 
   const [trafficTest, setTrafficTest] = useState<TrafficTest>({ state: "idle" });
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -137,6 +140,7 @@ export default function LinksPage() {
   const fetchLinks = useCallback(async () => {
     const res = await fetch("/api/links");
     if (res.ok) setLinks(await res.json());
+    setLastUpdated(new Date());
     setLoading(false);
   }, []);
 
@@ -235,15 +239,21 @@ export default function LinksPage() {
     }
   }
 
-  async function handleDelete(e: React.MouseEvent, id: string) {
+  function handleDelete(e: React.MouseEvent, id: string) {
     e.stopPropagation();
-    if (!confirm("Excluir este link?")) return;
+    setConfirmDeleteId(id);
+  }
+
+  async function confirmDelete() {
+    if (!confirmDeleteId) return;
     try {
-      await fetch(`/api/links/${id}`, { method: "DELETE" });
+      await fetch(`/api/links/${confirmDeleteId}`, { method: "DELETE" });
       toast.success("Link excluído");
       fetchLinks();
     } catch {
       toast.error("Erro ao excluir");
+    } finally {
+      setConfirmDeleteId(null);
     }
   }
 
@@ -262,6 +272,8 @@ export default function LinksPage() {
         icon={Network}
         subtitle="Monitoramento via webhooks do Mikrotik"
         live={!loading}
+        pollIntervalMs={30_000}
+        lastUpdated={lastUpdated}
       >
         <Button size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4 mr-1" />
@@ -312,8 +324,8 @@ export default function LinksPage() {
             <EmptyState title="Nenhum link encontrado para o filtro selecionado." />
           )
         ) : (
-          <div className="rounded-xl border bg-card overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-xl border bg-card overflow-x-auto">
+            <table className="w-full text-sm" aria-label="Lista de links de internet">
               <thead className="border-b bg-muted/40">
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -413,18 +425,21 @@ export default function LinksPage() {
                         <Link
                           href={`/links/${link.id}`}
                           onClick={(e) => e.stopPropagation()}
+                          aria-label="Ver detalhes do link"
                           className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                         <button
                           onClick={(e) => openEdit(e, link)}
+                          aria-label="Editar link"
                           className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={(e) => handleDelete(e, link.id)}
+                          aria-label="Excluir link"
                           className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-destructive transition-colors"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -605,6 +620,14 @@ export default function LinksPage() {
       </Dialog>
 
       <LinkDetailDrawer linkId={drawerLinkId} onClose={() => setDrawerLinkId(null)} />
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}
+        title="Excluir este link?"
+        description="Esta ação não pode ser desfeita."
+        confirmLabel="Excluir"
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Topbar } from "@/components/topbar";
 import { ReportView } from "@/components/report-view";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Download, Printer, ChevronDown, Check, X, Loader2, Users, Table2 } from "lucide-react";
+import { FileText, Download, Printer, ChevronDown, Check, X, Loader2, Users, Table2, GitCompare } from "lucide-react";
 import { DEVICE_TYPE_ICON } from "@/lib/device-constants";
 import { exportToPdf } from "@/lib/pdf-export";
 import type { Device, DeviceStatus } from "@prisma/client";
@@ -119,6 +119,7 @@ export default function ReportsPage() {
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [hours, setHours] = useState(168);
+  const [compare, setCompare] = useState(false);
   const [showClients, setShowClients] = useState(true);
   const [reports, setReports] = useState<DeviceReport[] | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -153,7 +154,8 @@ export default function ReportsPage() {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/reports?devices=${selected.join(",")}&hours=${hours}`);
+      const compareParam = compare ? "&compareFrom=auto" : "";
+      const res = await fetch(`/api/reports?devices=${selected.join(",")}&hours=${hours}${compareParam}`);
       if (!res.ok) {
         const body = await res.json();
         setError(body.error ?? "Erro ao gerar relatório.");
@@ -276,6 +278,22 @@ export default function ReportsPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Comparison toggle */}
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Comparação</p>
+            <button
+              onClick={() => setCompare(v => !v)}
+              className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors flex items-center gap-2 ${
+                compare
+                  ? "bg-primary/10 border-primary/30 text-primary"
+                  : "bg-background border-border text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <GitCompare className="h-4 w-4" />
+              {compare ? "Período anterior: ativo" : "Comparar com anterior"}
+            </button>
           </div>
 
           {/* Clients toggle — only shown when a UniFi AP or Omada AP is selected */}

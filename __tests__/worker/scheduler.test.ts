@@ -9,6 +9,7 @@ jest.mock("@/lib/db", () => ({
     deviceStatus:    { upsert: jest.fn() },
     statusHistory:   { create: jest.fn(), deleteMany: jest.fn() },
     linkEvent:       { deleteMany: jest.fn() },
+    tokenBlacklist:  { deleteMany: jest.fn() },
     link:            { findMany: jest.fn(), update: jest.fn() },
     device:          { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     workerHeartbeat: { upsert: jest.fn() },
@@ -84,6 +85,7 @@ const baseDevice: Device = {
   omadaTlsVerify:       true,
   omadaControllerIp:    null,
   checkInterval:   60,
+  maintenanceUntil: null,
   alertWebhookUrl: null,
   alertThreshold:  3,
   lastAlertAt:     null,
@@ -126,6 +128,26 @@ describe("runChecks", () => {
   it("does not call checkPing when pingEnabled is false", async () => {
     await runChecks({ ...baseDevice, pingEnabled: false });
     expect(mockCheckPing).not.toHaveBeenCalled();
+  });
+
+  it("maintenance window: skips monitors, upserts DeviceStatus as online, does not write StatusHistory", async () => {
+    const futureDate = new Date(Date.now() + 60 * 60 * 1000); // 1h from now
+    await runChecks({ ...baseDevice, maintenanceUntil: futureDate });
+
+    expect(mockCheckPing).not.toHaveBeenCalled();
+    expect(mockDb.$transaction).not.toHaveBeenCalled();
+    expect(mockDb.deviceStatus.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { deviceId: "dev-1" }, update: expect.objectContaining({ isOnline: true }) })
+    );
+  });
+
+  it("maintenance window expired: runs monitors normally", async () => {
+    mockCheckPing.mockResolvedValue({ alive: true, responseMs: 5 });
+    const pastDate = new Date(Date.now() - 60 * 60 * 1000); // 1h ago
+    await runChecks({ ...baseDevice, maintenanceUntil: pastDate });
+
+    expect(mockCheckPing).toHaveBeenCalled();
+    expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it("calls checkHttp when httpEnabled", async () => {
@@ -245,6 +267,7 @@ describe("pruneHistory", () => {
     jest.useFakeTimers();
     (mockDb.statusHistory.deleteMany as jest.Mock).mockResolvedValue({ count: 100 });
     (mockDb.linkEvent.deleteMany as jest.Mock).mockResolvedValue({ count: 20 });
+    (mockDb.tokenBlacklist.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
   });
 
   afterEach(() => {

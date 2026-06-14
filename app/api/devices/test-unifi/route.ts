@@ -5,9 +5,10 @@ import { requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { resolveUnifiApiKey, resolveUnifiCredentials } from "@/lib/crypto";
 import { parseBody } from "@/lib/parse-body";
+import { controllerIpSchema } from "@/lib/schemas/device";
 
 const schema = z.object({
-  controllerIp:   z.string().min(1),
+  controllerIp:   controllerIpSchema,
   port:           z.number().int().min(1).max(65535),
   site:           z.string().min(1),
   tlsVerify:      z.boolean(),

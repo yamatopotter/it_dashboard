@@ -223,15 +223,15 @@ function APCard({ device }: { device: UnifiDevice }) {
             className="w-full flex items-center justify-between px-5 py-2.5 text-xs font-semibold hover:bg-muted/30 transition-colors"
           >
             <span className="flex items-center gap-1.5">
-              <Wifi className="h-3.5 w-3.5 text-sky-500" />
+              <Wifi className="h-3.5 w-3.5 text-sky-500" aria-hidden="true" />
               Redes Wi-Fi
               <Badge variant="secondary" className="text-[10px]">{data.ssids.length}</Badge>
             </span>
-            {ssidsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {ssidsOpen ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
           </button>
           {ssidsOpen && (
             <div className="overflow-x-auto border-t">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs" aria-label="Redes Wi-Fi (SSIDs)">
                 <thead className="bg-muted/40">
                   <tr>
                     <th className="text-left px-5 py-2 font-medium text-muted-foreground">SSID</th>
@@ -272,15 +272,15 @@ function APCard({ device }: { device: UnifiDevice }) {
             className="w-full flex items-center justify-between px-5 py-2.5 text-xs font-semibold hover:bg-muted/30 transition-colors"
           >
             <span className="flex items-center gap-1.5">
-              <Users className="h-3.5 w-3.5 text-muted-foreground" />
+              <Users className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               Clientes conectados
               <Badge variant="secondary" className="text-[10px]">{data.clients.length}</Badge>
             </span>
-            {clientsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {clientsOpen ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
           </button>
           {clientsOpen && (
             <div className="overflow-x-auto border-t">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs" aria-label="Clientes UniFi conectados">
                 <thead className="bg-muted/40">
                   <tr>
                     <th className="px-5 py-2.5 text-left"><SortBtn col="name" label="Nome / MAC" /></th>
