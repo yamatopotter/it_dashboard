@@ -18,10 +18,29 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.2.1",
+    date: "14 Jun 2026",
+    label: "Hardening de segurança e estabilidade",
+    latest: true,
+    changes: [
+      { type: "security", text: "Autorização por papel reforçada — VIEWER não obtém mais tokens de webhook nem dispara verificações de rede/tráfego ao vivo (apenas OPERADOR+)" },
+      { type: "security", text: "Trocar a senha de um usuário invalida imediatamente todas as sessões antigas dele" },
+      { type: "security", text: "Community SNMP nunca mais é retornada nas respostas da API — exposta apenas como indicador 'configurado'" },
+      { type: "security", text: "Rate limiter de login agora é atômico — fecha brecha de concorrência que permitia exceder o limite de tentativas" },
+      { type: "security", text: "Validação de chaves de criptografia/webhook no startup do servidor (falha rápida em vez de erro críptico na primeira requisição)" },
+      { type: "security", text: "Mensagens de erro internas do banco não vazam mais ao cliente; IP de auditoria só confia em proxy reverso quando configurado (TRUST_PROXY)" },
+      { type: "fix", text: "Worker mais resiliente — timeout por verificação evita travamento, e alertas de queda nunca disparam em duplicidade" },
+      { type: "fix", text: "Páginas mostram erro com opção de recarregar em vez de ficar presas carregando; novas telas de erro evitam tela branca" },
+      { type: "fix", text: "Trocar o período nos gráficos não embaralha mais os dados (corridas de requisição canceladas corretamente)" },
+      { type: "fix", text: "Cadastro valida formato de IP; filtros de data inválidos retornam erro claro; formulários impedem envio duplicado" },
+      { type: "perf", text: "Índices de banco em tipo de dispositivo, links Mikrotik e auditoria por IP; exportações e listas de eventos com limite de memória" },
+    ],
+  },
+  {
     version: "0.2.0",
     date: "14 Jun 2026",
     label: "Segurança e acessibilidade",
-    latest: true,
+    latest: false,
     changes: [
       { type: "security", text: "Autenticação em dois fatores (TOTP/2FA) — ativação via QR code, compatível com Google Authenticator e Authy" },
       { type: "security", text: "Gerenciamento de 2FA por usuário na página de administração — admins podem ativar/desativar para qualquer conta" },

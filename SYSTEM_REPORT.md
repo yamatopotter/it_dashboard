@@ -1,7 +1,7 @@
 # Relatório Geral do Sistema — WatchIT Tower
 
 **Data:** 2026-06-14  
-**Versão:** 0.2.0  
+**Versão:** 0.2.1  
 **Analista:** Claude Code (claude-sonnet-4-6)  
 **Escopo:** Código-fonte completo — Next.js 14 App Router, worker Node.js, Prisma 7 + PostgreSQL
 
@@ -11,16 +11,16 @@
 
 WatchIT Tower é um dashboard de monitoramento de TI para uso exclusivamente local, sem exposição à internet. Monitora roteadores Mikrotik, câmeras, DVRs, APs UniFi e Omada via ICMP, HTTP, SNMP, RouterOS API e controllers de Wi-Fi.
 
-**Nota atual estimada: 9.4/10**
+**Nota atual estimada: 9.6/10**
 
 | Dimensão | Nota | Tendência |
 |---|---|---|
-| Segurança | 9.0 | → (2FA, JWT blacklist, rate limit persistente, SSRF, bodySizeLimit) |
-| Arquitetura | 8.8 | → (startup timeout, graceful shutdown testado, Omada monitor) |
-| Usabilidade | 8.8 | ↑ (perfil do usuário com 2FA, gerenciamento admin de 2FA) |
-| Design | 9.2 | ↑ (contraste WCAG AA round 3 — warning, sidebar, regiões roláveis) |
-| Testes | 9.0 | ↑ (test-manual documentado, ~560+ testes, 67 arquivos) |
-| Documentação | 9.5 | ↑ (dev-manual + test-manual integrados, README reescrito) |
+| Segurança | 9.4 | ↑ (autorização por papel, revogação por troca de senha, rate limiter atômico, env fail-fast, SNMP não exposto) |
+| Arquitetura | 9.1 | ↑ (timeout por verificação no worker, alerta sem duplicação, índices de banco, queries com limite) |
+| Usabilidade | 9.0 | ↑ (error boundaries, telas de erro com retry, sem travar carregando, sem double-submit) |
+| Design | 9.2 | → (contraste WCAG AA rounds 1–3) |
+| Testes | 9.0 | → (~560 testes, 64 suítes no run padrão) |
+| Documentação | 9.5 | → (dev-manual + test-manual, README reescrito) |
 
 ---
 
@@ -28,10 +28,10 @@ WatchIT Tower é um dashboard de monitoramento de TI para uso exclusivamente loc
 
 ### Estado atual
 
-27 achados catalogados em `SECURITY_REPORT.md`. Todos os críticos, altos e médios foram resolvidos ou aceitos intencionalmente. Apenas 3 itens de infraestrutura permanecem abertos.
+35 achados catalogados em `SECURITY_REPORT.md`. Todos os críticos, altos e médios foram resolvidos ou aceitos intencionalmente. Apenas 3 itens de infraestrutura permanecem abertos.
 
 **Resumo:**
-- **24 resolvidos** (incluindo todos críticos e altos)
+- **32 resolvidos** (incluindo todos críticos e altos) + **1 aceito por design** (SEC-030)
 - **3 abertos** — todos de infraestrutura, sem código a corrigir
 
 | ID | Título | Severidade | Status |
@@ -40,15 +40,18 @@ WatchIT Tower é um dashboard de monitoramento de TI para uso exclusivamente loc
 | SEC-006 | Permissões do banco de dados | 🔵 Baixo | Aberto (infra) |
 | SEC-008 | Worker com privilégios do processo pai | 🔵 Baixo | Aberto (Docker mitiga) |
 
-**Implementações desta sessão:**
-- **SEC-009 (2FA/TOTP)** — `otplib` com `strategy: "totp"`, segredo AES-256-GCM, login em dois passos, QR code para registro
-- **SEC-014 (Rate limit persistente)** — tabela `RateLimit` no PostgreSQL, sobrevive a restarts
-- **SEC-017 (Testes de startup)** — `scheduler-startup.test.ts` com 9 testes de inicialização e shutdown
-- **SEC-018 (Timeout de inicialização)** — `process.exit(1)` após 30s se banco indisponível
-- **SEC-021 (JWT blacklist)** — `TokenBlacklist` com `jti`, logout via `/api/auth/logout`, cleanup automático
-- **SEC-025 (SSRF)** — `controllerIpSchema` bloqueia loopback, link-local, multicast
-- **SEC-026/012 (bodySizeLimit)** — `parse-body.ts` rejeita > 1 MB, `next.config.ts` com `bodySizeLimit`
-- **SEC-027 (Otimistic lock)** — campo `version` em `User`, `PUT /api/users/[id]` retorna `409` em conflito
+**Hardening desta auditoria (v0.2.1):**
+- **SEC-028 (Alto)** — `GET /api/links` não expõe mais `webhookToken` a VIEWER (apenas OPERADOR+)
+- **SEC-029 (Médio)** — `devices/check`, `devices/[id]/check`, `links/test-traffic`, `links/[id]/live-traffic` exigem OPERADOR+
+- **SEC-021 (completado)** — `passwordChangedAt` agora gravado e verificado no callback JWT; troca de senha revoga sessões antigas
+- **SEC-031 (Médio)** — `sanitizeDevice()` remove community SNMP (legada e criptografada) das respostas
+- **SEC-032 (Baixo)** — rate limiter de login com `INSERT ... ON CONFLICT` atômico (sem TOCTOU)
+- **SEC-033 (Baixo)** — `/api/admin/stats` retorna erro genérico (não vaza estrutura do banco)
+- **SEC-036 (Baixo)** — `extractIp()` só confia em `X-Forwarded-For` com `TRUST_PROXY=true`
+- **SEC-037 (Info)** — `instrumentation.ts` valida secrets no startup do servidor web (fail-fast)
+- **SEC-030 (Médio, aceito)** — enumeração de 2FA via `check-2fa`: inerente à feature, escopo interno
+
+**Sessões anteriores:** SEC-009 (2FA/TOTP), SEC-014 (rate limit persistente), SEC-017/018 (startup/timeout), SEC-021 (JWT blacklist), SEC-025 (SSRF), SEC-026/012 (bodySizeLimit), SEC-027 (optimistic lock).
 
 **Pontos positivos mantidos:**
 - AES-256-GCM para todas as credenciais (RouterOS, UniFi, Omada, SNMP, TOTP)
@@ -145,12 +148,11 @@ Worker (Node.js separado)
 
 ### Cobertura atual
 
-- **~560+ testes** em **67 arquivos** de suíte
+- **560 testes** em 64 suítes (run padrão), todos passando
 - **Integração:** `__tests__/integration/` — devices CRUD, webhook e2e (PostgreSQL real)
 - **Carga:** `__tests__/worker/load.test.ts` — 50 dispositivos × 1s interval (excluído do npm test)
 - **Scheduler startup:** `__tests__/worker/scheduler-startup.test.ts` (9 testes)
-- **Omada monitor:** `__tests__/worker/omada.test.ts`
-- **Segurança:** `__tests__/security/api-auth-full.test.ts` (401 em todas as rotas protegidas)
+- **Segurança:** `api-auth-full.test.ts` (401 em rotas protegidas) + `viewer-authorization.test.ts` (403 por papel, SEC-028/029)
 
 ### Distribuição por camada
 
@@ -202,7 +204,10 @@ Todos os 17+ endpoints principais estão documentados incluindo: `/api/admin/aud
 
 ## Próximos passos recomendados
 
+Ver `TODO.md` para o roadmap priorizado completo. Pendências principais:
+
 1. **Infra (alta prioridade):** Configurar reverse proxy com TLS (Caddy, nginx) para produção — SEC-005
-2. **Refactor (médio prazo):** Extrair `testUnifiConnection`/`testOmadaConnection` para `lib/test-connection.ts` para eliminar duplicação entre `device-form` e `bulk-device-form`
-3. **Testes (baixa prioridade):** Adicionar testes de integração para fluxo de login com 2FA
+2. **Perf (P1 separada):** `perf/incident-detection-sql` — mover a detecção de incidentes (incidents/timeline/report-builder) para uma query SQL com window function, evitando carregar histórico completo em memória
+3. **P3 (baixo impacto):** acessibilidade round 4 (ARIA em cards/tabelas), deduplicação de helpers/test-hooks, cobertura de testes (TOTP, logout), bump de dependências
+4. **Follow-up:** `POST /api/devices/bulk` ainda grava community SNMP em texto claro na coluna (criptografia-em-repouso)
 4. **Dependências:** Fazer pin do `next-auth@5` quando versão estável for lançada (ver TODO.md)
