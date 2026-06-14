@@ -28,19 +28,17 @@ Itens marcados com ✓ foram verificados diretamente no código; os demais devem
 
 ## 🟠 P1 — Estabilidade e robustez
 
-### Branch `fix/worker-timeouts`
-- [ ] ✓ **`runChecks` sem timeout externo** — `worker/scheduler.ts`
-      Monitor/transação travado consome slot do semáforo para sempre. Envolver check em `Promise.race`
-      com deadline (~30s) e adicionar `{ timeout: 5000 }` aos `db.$transaction`.
-- [ ] **SNMP engole erros de rede** — `worker/monitors/snmp.ts:14-31`
-      `getOids` só faz `resolve`; timeout vira Map vazio indistinguível de "sem dados". Adicionar `reject(error)`.
-- [ ] **RouterOS `conn.close()` no happy-path** — `worker/monitors/routeros.ts:79`
-      Mover para `finally`; remover close duplicado no catch (evita double-close).
-- [ ] **Buffers de resposta sem limite** — `worker/monitors/unifi-http.ts`, `omada.ts`
-      Controller grande/malicioso estoura memória do worker. Adicionar `MAX_RESPONSE_BYTES` (~4MB) e abortar.
-- [ ] **Race de alerta duplicado (TOCTOU)** — `worker/scheduler.ts:273`
-      `findUnique`+`update` separados disparam alerta duas vezes. Usar `updateMany` atômico com guard
-      em `lastAlertAt` e só enviar se `count === 1`.
+### Branch `fix/worker-timeouts` ✅ CONCLUÍDA
+- [x] ✓ **`runChecks` sem timeout externo** — `worker/scheduler.ts`: helper `withTimeout` (deadline
+      `CHECK_TIMEOUT_MS = 30s`) envolve cada check; `db.$transaction(..., { timeout: 5000 })`.
+- [x] **SNMP engole erros de rede** — `worker/monitors/snmp.ts`: `getOids` rejeita no erro de request;
+      `checkSnmp` loga a falha e mantém o contrato (retorna nulls). Coberto pelo teste existente.
+- [x] **RouterOS `conn.close()` no happy-path** — `worker/monitors/routeros.ts`: movido para `finally`.
+- [x] **Buffers de resposta sem limite** — `unifi-http.ts` e `omada.ts`: `MAX_RESPONSE_BYTES = 8MB`,
+      `req.destroy()` ao exceder.
+- [x] **Race de alerta duplicado (TOCTOU)** — `worker/scheduler.ts`: `updateMany` atômico com guarda em
+      `lastAlertAt` (cooldown); só envia se `count === 1`.
+      _Nota: teste do caminho de alerta (interno a safeRun) movido para `test/coverage-gaps`._
 
 ### Branch `fix/frontend-error-handling`
 - [ ] ✓ **Sem error boundaries** — criar `app/error.tsx` e `app/(dashboard)/error.tsx`
@@ -117,6 +115,8 @@ Itens marcados com ✓ foram verificados diretamente no código; os demais devem
 - [ ] **Zero testes para `/api/auth/check-2fa`**.
 - [ ] **`expect([201, 400]).toContain()`** em `api-auth.test.ts:112` não testa nada — definir comportamento esperado.
 - [ ] **`useFakeTimers`/`useRealTimers` sem `afterEach`** — `scheduler-startup.test.ts` — risco de flakiness entre testes.
+- [ ] **Caminho de alerta do scheduler sem teste** — `safeRun` (claim atômico `updateMany`, cooldown,
+      `sendAlert`); exige fake timers + mock de `@/worker/monitors/alert`.
 
 ### Branch `chore/deps`
 - [ ] **`next-auth` em beta não pinada** — `package.json` `"^5.0.0-beta.31"` → pin exato (item SEC-025 original).

@@ -11,7 +11,7 @@ jest.mock("@/lib/db", () => ({
     linkEvent:       { deleteMany: jest.fn() },
     tokenBlacklist:  { deleteMany: jest.fn() },
     link:            { findMany: jest.fn(), update: jest.fn() },
-    device:          { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    device:          { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     workerHeartbeat: { upsert: jest.fn() },
     systemConfig:    { upsert: jest.fn(), update: jest.fn() },
     $transaction:    jest.fn(),

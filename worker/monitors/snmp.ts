@@ -1,4 +1,5 @@
 import * as snmp from "net-snmp";
+import { log } from "../../lib/logger";
 
 export interface SnmpResult {
   cpuLoad: number | null;
@@ -15,10 +16,13 @@ function getOids(
   session: snmp.Session,
   oids: string[]
 ): Promise<Map<string, number>> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const results = new Map<string, number>();
     session.get(oids, (error, varbinds) => {
-      if (!error && varbinds) {
+      // A request-level error (timeout, no response) means the device is unreachable
+      // via SNMP — surface it instead of silently returning an empty result set.
+      if (error) return reject(error);
+      if (varbinds) {
         for (const vb of varbinds) {
           if (!snmp.isVarbindError(vb)) {
             results.set(vb.oid, Number(vb.value));
@@ -63,7 +67,10 @@ export async function checkSnmp(
         : null;
 
     return { cpuLoad, memoryUsed, uptime };
-  } catch {
+  } catch (err) {
+    // SNMP is metrics-only (não afeta isOnline); log the failure for observability
+    // but keep returning nulls so the contract stays "always resolves a result".
+    log("warn", "[SNMP] consulta falhou", { ip, error: err instanceof Error ? err.message : String(err) });
     return { cpuLoad: null, memoryUsed: null, uptime: null };
   } finally {
     session.close();
