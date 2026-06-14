@@ -18,8 +18,8 @@ WatchIT Tower é um dashboard de monitoramento de TI para uso exclusivamente loc
 | Segurança | 9.4 | ↑ (autorização por papel, revogação por troca de senha, rate limiter atômico, env fail-fast, SNMP não exposto) |
 | Arquitetura | 9.1 | ↑ (timeout por verificação no worker, alerta sem duplicação, índices de banco, queries com limite) |
 | Usabilidade | 9.0 | ↑ (error boundaries, telas de erro com retry, sem travar carregando, sem double-submit) |
-| Design | 9.2 | → (contraste WCAG AA rounds 1–3) |
-| Testes | 9.0 | → (~560 testes, 64 suítes no run padrão) |
+| Design | 9.3 | ↑ (contraste WCAG AA rounds 1–3; navegação por teclado e estados ARIA — round 4) |
+| Testes | 9.1 | ↑ (580 testes, 67 suítes; cobertura de 2FA, logout e autorização por papel) |
 | Documentação | 9.5 | → (dev-manual + test-manual, README reescrito) |
 
 ---
@@ -148,7 +148,7 @@ Worker (Node.js separado)
 
 ### Cobertura atual
 
-- **560 testes** em 64 suítes (run padrão), todos passando
+- **580 testes** em 67 suítes (run padrão), todos passando
 - **Integração:** `__tests__/integration/` — devices CRUD, webhook e2e (PostgreSQL real)
 - **Carga:** `__tests__/worker/load.test.ts` — 50 dispositivos × 1s interval (excluído do npm test)
 - **Scheduler startup:** `__tests__/worker/scheduler-startup.test.ts` (9 testes)
@@ -158,11 +158,11 @@ Worker (Node.js separado)
 
 | Camada | Arquivos | Ambiente |
 |---|---|---|
-| API Routes | 29 | node |
-| Worker Monitors | 9 | node |
-| Componentes React | 16 | jsdom |
+| API Routes | 32 | node |
+| Worker Monitors | 11 | node |
+| Componentes React | 17 | jsdom |
 | Bibliotecas (`lib/`) | 5 | node |
-| Segurança | 2 | node |
+| Segurança | 3 | node |
 | Integração | 3 | node + PostgreSQL real |
 
 ### Lacunas remanescentes
@@ -204,10 +204,9 @@ Todos os 17+ endpoints principais estão documentados incluindo: `/api/admin/aud
 
 ## Próximos passos recomendados
 
-Ver `TODO.md` para o roadmap priorizado completo. Pendências principais:
+Ver `TODO.md` para o roadmap priorizado completo. **P0–P3 concluídos** nesta auditoria. Pendências restantes:
 
 1. **Infra (alta prioridade):** Configurar reverse proxy com TLS (Caddy, nginx) para produção — SEC-005
-2. **Perf (P1 separada):** `perf/incident-detection-sql` — mover a detecção de incidentes (incidents/timeline/report-builder) para uma query SQL com window function, evitando carregar histórico completo em memória
-3. **P3 (baixo impacto):** acessibilidade round 4 (ARIA em cards/tabelas), deduplicação de helpers/test-hooks, cobertura de testes (TOTP, logout), bump de dependências
-4. **Follow-up:** `POST /api/devices/bulk` ainda grava community SNMP em texto claro na coluna (criptografia-em-repouso)
-4. **Dependências:** Fazer pin do `next-auth@5` quando versão estável for lançada (ver TODO.md)
+2. **Perf (refactor separado):** `perf/incident-detection-sql` — mover a detecção de incidentes (incidents/timeline/report-builder) para uma query SQL com window function, evitando carregar histórico completo em memória
+3. **Follow-ups menores:** criptografia-em-repouso da community SNMP no `POST /api/devices/bulk`; badge de contagem da sidebar (estático no SSR); cap de JSON de clientes no `DeviceStatus`; `SortButton`/hook de teste UniFi/Omada (dedup cosmético); teste do caminho de alerta do scheduler
+4. **Dependências:** `next-auth@5` já fixado em `5.0.0-beta.31`; trocar pelo release estável quando sair

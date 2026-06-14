@@ -12,7 +12,7 @@ export function GET() {
   const count = exec("git rev-list --count HEAD");
   const hash  = exec("git rev-parse --short HEAD");
   return NextResponse.json({
-    version: "0.1.0",
+    version: "0.2.1",
     build:   count ? Number(count) : null,
     hash:    hash  || null,
   });
