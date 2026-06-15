@@ -180,8 +180,13 @@ export function DeviceForm({ device }: DeviceFormProps) {
             ? data.unifiControllerIp
             : null,
         omadaControllerIp: data.omadaControllerIp || null,
-        // Write-only: omit when blank on edit so the API keeps the stored community
-        snmpCommunity: data.snmpCommunity || undefined,
+        // Write-only credentials: omit when blank so the API keeps the stored value
+        // on edit (sending "" would clear it). On create, omitted = no credential.
+        snmpCommunity:     data.snmpCommunity || undefined,
+        routerosUser:      data.routerosUser || undefined,
+        routerosPass:      data.routerosPass || undefined,
+        omadaClientId:     data.omadaClientId || undefined,
+        omadaClientSecret: data.omadaClientSecret || undefined,
         // Clear unused auth fields so the API can null them in DB
         unifiApiKey: data.unifiAuthMethod === "apikey" ? (data.unifiApiKey || undefined) : "",
         unifiUser:   data.unifiAuthMethod === "userpass" ? (data.unifiUser || undefined) : "",
