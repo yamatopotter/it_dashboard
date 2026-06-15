@@ -148,11 +148,52 @@ describe("checkRouterOS", () => {
     expect(mockClose).toHaveBeenCalled();
   });
 
-  it("closes the connection even when write throws", async () => {
+  it("captures errors and stays resolved when reads throw (resource + DHCP), still closing", async () => {
     mockWrite.mockRejectedValue(new Error("API error"));
 
-    await expect(checkRouterOS("192.168.1.1", "admin", "pass")).rejects.toThrow("API error");
+    const result = await checkRouterOS("192.168.1.1", "admin", "pass");
 
+    // A failed /system/resource no longer kills the whole check — online status
+    // and DHCP are independent; the reason is recorded instead.
+    expect(result.resourceError).toContain("API error");
+    expect(result.dhcpError).toContain("API error");
+    expect(result.uptime).toBeNull();
+    expect(mockClose).toHaveBeenCalled();
+  });
+
+  it("records resourceError when /system/resource returns empty (e.g. missing read policy)", async () => {
+    mockWrite
+      .mockResolvedValueOnce([])          // /system/resource/print → empty (attempt 1)
+      .mockResolvedValueOnce([])          // retry → still empty (attempt 2)
+      .mockResolvedValueOnce([            // dhcp leases still work
+        { "address": "10.0.0.5", "mac-address": "AA:BB", status: "bound" },
+      ]);
+
+    const result = await checkRouterOS("192.168.1.1", "admin", "pass");
+
+    expect(result.uptime).toBeNull();
+    expect(result.cpuLoad).toBeNull();
+    expect(result.resourceError).toMatch(/vazia|policy/i);
+    expect(result.clients).toHaveLength(1);
+  });
+
+  it("retries /system/resource once and succeeds when the first response is empty", async () => {
+    mockWrite
+      .mockResolvedValueOnce([])                              // resource attempt 1 → empty
+      .mockResolvedValueOnce([{ "uptime": "1h", "cpu-load": "7", "total-memory": "100", "free-memory": "60" }]) // retry → ok
+      .mockResolvedValueOnce([]);                             // dhcp
+
+    const result = await checkRouterOS("192.168.1.1", "admin", "pass");
+
+    expect(result.resourceError).toBeNull();
+    expect(result.cpuLoad).toBe(7);
+    expect(result.uptime).toBe(3600);
+  });
+
+  it("rejects (and closes) when the connection itself fails", async () => {
+    mockConnect.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+    await expect(checkRouterOS("192.168.1.1", "admin", "pass")).rejects.toThrow("ECONNREFUSED");
     expect(mockClose).toHaveBeenCalled();
   });
 });

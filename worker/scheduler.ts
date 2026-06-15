@@ -154,6 +154,11 @@ export async function runChecks(device: Device): Promise<boolean> {
       device: device.name, ip: device.ip, error: routerosResult.dhcpError,
     });
   }
+  if (routerosResult?.resourceError) {
+    log("warn", "[RouterOS] /system/resource indisponível (uptime/CPU/memória ausentes)", {
+      device: device.name, ip: device.ip, error: routerosResult.resourceError,
+    });
+  }
   if (routerosResult && device.routerosEnabled) {
     log("info", "[RouterOS] DHCP debug", {
       device: device.name, ip: device.ip,
