@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { DeviceForm } from "@/components/device-form";
 
 jest.mock("next/navigation", () => ({
@@ -80,6 +80,32 @@ describe("DeviceForm", () => {
     render(<DeviceForm device={device} />);
     expect(screen.getByDisplayValue("Router HQ")).toBeInTheDocument();
     expect(screen.getByDisplayValue("192.168.1.1")).toBeInTheDocument();
+  });
+
+  it("does NOT clobber RouterOS credentials when editing without re-entering them", async () => {
+    const device = {
+      id: "dev1", name: "Router HQ", ip: "192.168.1.1", type: "MIKROTIK" as const, location: "TI",
+      notes: "", pingEnabled: true, httpEnabled: false, httpPort: null, httpPath: "/",
+      snmpEnabled: false, snmpCommunity: "public", snmpCommunityEnc: null, snmpPort: 161,
+      routerosEnabled: true, routerosUserEnc: "enc", routerosPassEnc: "enc", routerosPort: 8728,
+      unifiEnabled: false, unifiAuthMethod: "apikey" as const, unifiApiKeyEnc: null,
+      unifiUserEnc: null, unifiPassEnc: null, unifiPort: 443, unifiSite: "default",
+      unifiTlsVerify: false, unifiControllerIp: null, omadaEnabled: false,
+      omadaClientIdEnc: null, omadaClientSecretEnc: null, omadacId: null,
+      omadaSite: null, omadaSiteId: null, omadaTlsVerify: true, omadaControllerIp: null,
+      checkInterval: 60, maintenanceUntil: null, alertWebhookUrl: null, alertThreshold: 3, lastAlertAt: null,
+      createdAt: new Date(), updatedAt: new Date(),
+      hasRouterosCredentials: true, hasUnifiApiKey: false, hasUnifiCredentials: false, hasOmadaCredentials: false,
+    };
+
+    render(<DeviceForm device={device} />);
+    fireEvent.click(screen.getByRole("button", { name: /atualizar/i }));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    // Blank credentials on edit must be OMITTED (so the API preserves them), not sent as ""
+    expect(body.routerosUser).toBeUndefined();
+    expect(body.routerosPass).toBeUndefined();
   });
 
   it("shows create submit button", () => {
