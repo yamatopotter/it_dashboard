@@ -30,7 +30,7 @@ interface DeviceStatus {
   cpuLoad: number | null;
   memoryUsed: number | null;
   checkedAt: string;
-  routerosData?: { clients: RouterOSClient[] } | null;
+  routerosData?: { clients: RouterOSClient[]; resourceError?: string | null } | null;
 }
 
 interface MikrotikDevice {
@@ -115,6 +115,10 @@ function DeviceCard({
   const hasMetrics = status?.cpuLoad != null || status?.memoryUsed != null;
   const hasCpuAlert = (status?.cpuLoad ?? 0) > 80;
   const hasMemAlert = (status?.memoryUsed ?? 0) > 85;
+  // Online via RouterOS but /system/resource didn't return metrics (uptime/CPU/mem)
+  const resourceError = isOnline && !hasMetrics && status?.uptime == null
+    ? status?.routerosData?.resourceError ?? null
+    : null;
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -206,6 +210,17 @@ function DeviceCard({
               <CpuBar value={status.memoryUsed} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* System metrics unavailable (online, but /system/resource didn't return) */}
+      {resourceError && (
+        <div className="flex items-start gap-2 px-5 py-2.5 bg-warning/5 border-b border-warning/20 text-xs">
+          <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
+          <span className="text-warning">
+            Métricas do sistema (uptime/CPU/memória) indisponíveis — provável permissão da API no RouterOS.
+            Garanta que o usuário da API tenha a policy <span className="font-mono">read</span>.
+          </span>
         </div>
       )}
 
