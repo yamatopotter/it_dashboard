@@ -21,6 +21,7 @@ export interface UnifiClient {
 }
 
 export interface UnifiResult {
+  connected: boolean;
   model: string | null;
   firmware: string | null;
   uptime: number | null;

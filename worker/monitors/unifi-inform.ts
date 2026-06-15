@@ -23,6 +23,8 @@ interface InformDevice {
   model?: string;
   version?: string;
   uptime?: number;
+  // state: 1=connected; absent on some firmware versions → default to connected
+  state?: number;
   "sys_stats"?: { cpu?: number; mem_used?: number; mem_total?: number };
   "system-stats"?: { cpu?: string; mem?: string };
   vap_table?: InformVap[];
@@ -150,6 +152,7 @@ export async function checkUnifiInform(
   }
 
   return {
+    connected: ap.state == null || ap.state === 1,
     model: ap.model ?? null,
     firmware: ap.version ?? null,
     uptime: ap.uptime ?? null,
