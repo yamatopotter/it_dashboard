@@ -23,6 +23,7 @@ const RELEASES: Release[] = [
     label: "Hardening de segurança e estabilidade",
     latest: true,
     changes: [
+      { type: "fix", text: "Status online/offline de APs Omada e UniFi agora reflete o estado real reportado pelo controlador — APs desligados deixam de aparecer como online (falso positivo) e APs ativos via API key deixam de aparecer como offline (falso negativo)" },
       { type: "security", text: "Política de segurança de conteúdo (CSP) com nonce voltou a funcionar — o nonce por requisição agora é propagado ao Next.js e ao tema, sem bloquear scripts legítimos da página" },
       { type: "fix", text: "Criação em massa de APs Omada não falha mais com erro 500 — as credenciais (Client ID/Secret) agora são criptografadas e gravadas corretamente, como na criação individual" },
       { type: "fix", text: "APs Omada criados em massa agora leem a API automaticamente — o worker resolve o ID do site a partir do nome (ou do único site do controlador) e salva, sem precisar configurar o site manualmente" },

@@ -87,6 +87,32 @@ describe("checkOmada — success", () => {
     expect(r.totalClients).toBe(2);
   });
 
+  it("reports connected=true when AP status is 1 (Connected)", async () => {
+    mockQueue([
+      fakeRes(200, { errorCode: 0, result: { accessToken: "AT-test-token", expiresIn: 7200, refreshToken: "RT-xxx" } }),
+      fakeRes(200, { result: { data: [{ ...apDevice, status: 1 }] } }),
+      fakeRes(200, { result: { data: [] } }),
+    ]);
+    const r = await checkOmada(apIp, ctrl, omadacId, clientId, secret, siteId, false);
+    expect(r.connected).toBe(true);
+  });
+
+  it("reports connected=false when AP status is 0 (Disconnected) — prevents false positive", async () => {
+    mockQueue([
+      fakeRes(200, { errorCode: 0, result: { accessToken: "AT-test-token", expiresIn: 7200, refreshToken: "RT-xxx" } }),
+      fakeRes(200, { result: { data: [{ ...apDevice, status: 0 }] } }),
+      fakeRes(200, { result: { data: [] } }),
+    ]);
+    const r = await checkOmada(apIp, ctrl, omadacId, clientId, secret, siteId, false);
+    expect(r.connected).toBe(false);
+  });
+
+  it("defaults connected=true when status field is absent (controller did not report state)", async () => {
+    fullSuccess(); // apDevice has no status field
+    const r = await checkOmada(apIp, ctrl, omadacId, clientId, secret, siteId, false);
+    expect(r.connected).toBe(true);
+  });
+
   it("parses uptime string to seconds", async () => {
     mockQueue([
       fakeRes(200, { errorCode: 0, result: { accessToken: "AT-test-token", expiresIn: 7200, refreshToken: "RT-xxx" } }),

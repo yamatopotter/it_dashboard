@@ -10,7 +10,9 @@ const CANDIDATE_BASES = [
 
 interface Page<T>       { data?: T[] }
 interface SiteItem      { id: string; name: string; internalReference?: string }
-interface DeviceItem    { id: string; macAddress: string; model?: string; firmwareVersion?: string; ipAddress?: string }
+// state: the Integration API v1 reports this as a string enum ("ONLINE", "OFFLINE",
+// "PENDING_ADOPTION", ...). Some controller versions omit it. We treat absent as connected.
+interface DeviceItem    { id: string; macAddress: string; model?: string; firmwareVersion?: string; ipAddress?: string; state?: string | number }
 interface StatsItem     { uptimeSec?: number; cpuUtilizationPct?: number; memoryUtilizationPct?: number; uplink?: { txRateBps?: number; rxRateBps?: number } }
 interface ClientItem    { id: string; type?: string; name?: string; macAddress?: string; ipAddress?: string; connectedAt?: string; uplinkDeviceId?: string }
 interface BroadcastItem { id: string; name: string; enabled?: boolean; broadcastingFrequenciesGHz?: number[] }
@@ -39,6 +41,14 @@ function freqLabel(ghz: number): string {
   if (ghz === 5) return "5 GHz";
   if (ghz === 6) return "6 GHz";
   return `${ghz} GHz`;
+}
+
+// The Integration API returns `state` as a string ("ONLINE"); older/legacy shapes use
+// a number (1=connected). Absent → assume connected (controller didn't report state).
+function isApConnected(state: string | number | undefined): boolean {
+  if (state == null) return true;
+  if (typeof state === "number") return state === 1;
+  return state.toUpperCase() === "ONLINE";
 }
 
 export async function checkUnifiApiKey(
@@ -111,5 +121,5 @@ export async function checkUnifiApiKey(
     ssid: null,
   }));
 
-  return { model: ap.model ?? null, firmware: ap.firmwareVersion ?? null, uptime, cpuLoad, memoryUsed, uplinkTxBps, uplinkRxBps, totalClients: apClients.length, ssids, clients };
+  return { connected: isApConnected(ap.state), model: ap.model ?? null, firmware: ap.firmwareVersion ?? null, uptime, cpuLoad, memoryUsed, uplinkTxBps, uplinkRxBps, totalClients: apClients.length, ssids, clients };
 }

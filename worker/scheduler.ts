@@ -204,11 +204,14 @@ export async function runChecks(device: Device): Promise<boolean> {
     log("error", "[Omada] monitor falhou", { device: device.name, ip: device.ip, error: omadaError });
   }
 
-  // Controller API results (Omada/UniFi) take precedence: if the controller reports
-  // the AP, it's online even when ICMP is blocked. Ping/HTTP are fallbacks only.
+  // Controller API results (Omada/UniFi) take precedence when they report the AP as
+  // connected — APs that block ICMP are still marked online by the controller. But if
+  // the controller itself says the AP is disconnected (connected=false), that wins over
+  // ping, since a controller-reported disconnect is authoritative. Ping/HTTP are
+  // fallbacks when no controller monitor is configured.
   const isOnline =
-    (omadaResult != null ? true : null) ??
-    (unifiResult != null ? true : null) ??
+    omadaResult != null ? omadaResult.connected :
+    unifiResult != null ? unifiResult.connected :
     pingResult?.alive ??
     httpResult?.ok ??
     false;

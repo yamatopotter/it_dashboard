@@ -82,6 +82,45 @@ describe("checkUnifi — API key path", () => {
     expect(r.ssids[0].band).toBe("2.4 GHz / 5 GHz");
   });
 
+  it("reports connected=true when device state is the string \"ONLINE\"", async () => {
+    mockQueue([
+      fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
+      fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
+      fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6-Pro", ipAddress: apIp, state: "ONLINE" }] }),
+      fakeRes(200, {}),
+      fakeRes(200, { data: [] }),
+      fakeRes(200, { data: [] }),
+    ]);
+    const r = await checkUnifi(apIp, ctrl, auth, 443, "default", false);
+    expect(r.connected).toBe(true);
+  });
+
+  it("reports connected=false when device state is the string \"OFFLINE\"", async () => {
+    mockQueue([
+      fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
+      fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
+      fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6-Pro", ipAddress: apIp, state: "OFFLINE" }] }),
+      fakeRes(200, {}),
+      fakeRes(200, { data: [] }),
+      fakeRes(200, { data: [] }),
+    ]);
+    const r = await checkUnifi(apIp, ctrl, auth, 443, "default", false);
+    expect(r.connected).toBe(false);
+  });
+
+  it("defaults connected=true when device omits the state field", async () => {
+    mockQueue([
+      fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
+      fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
+      fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6-Pro", ipAddress: apIp }] }),
+      fakeRes(200, {}),
+      fakeRes(200, { data: [] }),
+      fakeRes(200, { data: [] }),
+    ]);
+    const r = await checkUnifi(apIp, ctrl, auth, 443, "default", false);
+    expect(r.connected).toBe(true);
+  });
+
   it("throws when API key is rejected (HTTP 401)", async () => {
     mockQueue([fakeRes(401, {})]);
     await expect(checkUnifi(apIp, ctrl, auth, 443, "default", false)).rejects.toThrow(/inválida|permissão/i);

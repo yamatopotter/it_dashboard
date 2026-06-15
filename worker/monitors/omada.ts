@@ -25,6 +25,7 @@ export interface OmadaClient {
 }
 
 export interface OmadaResult {
+  connected: boolean;
   model: string | null;
   firmware: string | null;
   uptime: number | null;
@@ -127,6 +128,7 @@ interface DeviceItem {
   download?: number;
   upload?: number;
   clientNum?: number;
+  // 0=Disconnected 1=Connected 2=Pending 3=HeartbeatMissed 4=Isolated
   status?: number;
   type?: string;
 }
@@ -334,6 +336,8 @@ export async function checkOmada(
   }));
 
   return {
+    // status: 1=Connected; undefined means controller didn't report state → assume connected
+    connected:    ap.status == null || ap.status === 1,
     model:        ap.modelName ?? ap.model ?? null,
     firmware:     ap.firmwareVersion ?? null,
     uptime:       parseUptimeSeconds(ap.uptime),
