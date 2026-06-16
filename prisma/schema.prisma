@@ -4,6 +4,7 @@ generator client {
 }
 
 datasource db {
+  // provider is patched by the setup wizard — default: postgresql
   provider = "postgresql"
 }
 
