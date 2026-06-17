@@ -31,11 +31,26 @@ import { useDeviceNotifications } from "@/hooks/use-device-notifications";
 import { Bell, BellOff } from "lucide-react";
 import type { Device, DeviceStatus, DeviceType } from "@prisma/client";
 import type { OverviewData } from "@/app/api/overview/route";
+import type { WifiSignalData } from "@/lib/wifi-signal-map";
 
-type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
+type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null; wifiSignal?: WifiSignalData | null };
 
 const pingColor = getPingColor;
 const pingDot = getPingDot;
+
+function rssiColor(dbm: number | null) {
+  if (dbm == null) return "text-muted-foreground";
+  if (dbm >= -65) return "text-success";
+  if (dbm >= -75) return "text-warning";
+  return "text-destructive";
+}
+
+function snrColor(db: number | null) {
+  if (db == null) return "text-muted-foreground";
+  if (db >= 25) return "text-success";
+  if (db >= 15) return "text-warning";
+  return "text-destructive";
+}
 
 function MiniBar({ value, colorClass }: { value: number; colorClass: string }) {
   return (
@@ -65,10 +80,14 @@ function DeviceCard({
   const isInstavel = isOnline && (ping ?? 0) > 150;
   const TypeIcon = DEVICE_TYPE_ICON[device.type];
 
+  const isAcknowledged = !isOnline && !!device.offlineAcknowledgedAt;
+
   const borderColor = isInstavel
     ? "border-l-warning"
     : isOnline
     ? "border-l-success"
+    : isAcknowledged
+    ? "border-l-border"
     : "border-l-destructive";
 
   const pingColor = isInstavel
@@ -97,6 +116,10 @@ function DeviceCard({
           {isInstavel ? (
             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-warning/10 text-warning border border-warning/20 shrink-0">
               Instável
+            </span>
+          ) : isAcknowledged ? (
+            <span className="text-[9px] font-semibold shrink-0 text-muted-foreground">
+              Reconhecido
             </span>
           ) : (
             <span className={`text-[10px] font-semibold shrink-0 ${isOnline ? "text-success" : "text-destructive"}`}>
@@ -128,6 +151,24 @@ function DeviceCard({
             </svg>
           )}
         </div>
+
+        {/* Wi-Fi signal row */}
+        {device.wifiSignal && (
+          <div className="flex items-center gap-2 pt-0.5 border-t border-border/50">
+            <Wifi className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+            <span className={`text-[10px] font-bold tabular-nums ${rssiColor(device.wifiSignal.signal)}`}>
+              {device.wifiSignal.signal != null ? `${device.wifiSignal.signal} dBm` : "—"}
+            </span>
+            {device.wifiSignal.snr != null && (
+              <span className={`text-[10px] font-semibold tabular-nums ${snrColor(device.wifiSignal.snr)}`}>
+                SNR {device.wifiSignal.snr} dB
+              </span>
+            )}
+            <span className="text-[9.5px] text-muted-foreground truncate ml-auto">
+              {device.wifiSignal.apName}
+            </span>
+          </div>
+        )}
 
         {/* Location */}
         {device.location && (
@@ -555,7 +596,8 @@ export default function DevicesPage() {
               const isOnline = status?.isOnline ?? false;
               const ping = status?.pingMs;
               const isInstavel = isOnline && (ping ?? 0) > 150;
-              const dotColor = isInstavel ? "bg-warning" : isOnline ? "bg-success" : "bg-destructive";
+              const isAcknowledgedCompact = !isOnline && !!device.offlineAcknowledgedAt;
+              const dotColor = isInstavel ? "bg-warning" : isAcknowledgedCompact ? "bg-muted-foreground/50" : isOnline ? "bg-success" : "bg-destructive";
               const pingText = ping != null ? `${ping}ms` : "—";
               const pingColor = isInstavel ? "text-warning" : isOnline ? "text-foreground" : "text-muted-foreground";
               return (
@@ -565,7 +607,7 @@ export default function DevicesPage() {
                   onClick={() => setDrawerDeviceId(device.id)}
                   className="w-full flex items-center gap-3 px-3 border-b last:border-b-0 hover:bg-muted/40 transition-colors text-left group"
                   style={{ height: "28px" }}
-                  aria-label={`${device.name} — ${isInstavel ? "Instável" : isOnline ? "Online" : "Offline"}`}
+                  aria-label={`${device.name} — ${isInstavel ? "Instável" : isAcknowledgedCompact ? "Offline reconhecido" : isOnline ? "Online" : "Offline"}`}
                 >
                   <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} aria-hidden="true" />
                   <span className="text-xs font-medium truncate min-w-0 flex-1 group-hover:text-primary transition-colors">
@@ -675,7 +717,10 @@ export default function DevicesPage() {
 
                       {/* Status */}
                       <td className="px-4 py-3">
-                        <StatusBadge isOnline={status?.isOnline ?? false} />
+                        <StatusBadge
+                          isOnline={status?.isOnline ?? false}
+                          acknowledged={!!(status && !status.isOnline && device.offlineAcknowledgedAt)}
+                        />
                       </td>
 
                       {/* Ping */}

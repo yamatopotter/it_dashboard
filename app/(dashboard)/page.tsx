@@ -27,8 +27,9 @@ import type { HealthData } from "@/app/api/health/route";
 import type { Incident } from "@/app/api/incidents/route";
 import type { OverviewData, SegmentState } from "@/app/api/overview/route";
 import type { TimelineEvent } from "@/app/api/timeline/route";
+import type { WifiSignalData } from "@/lib/wifi-signal-map";
 
-type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
+type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null; wifiSignal?: WifiSignalData | null };
 
 interface LinkItem {
   id: string;
@@ -217,6 +218,20 @@ function UptimeSegments({ segments }: { segments: SegmentState[] }) {
 }
 
 
+function rssiColor(dbm: number | null) {
+  if (dbm == null) return "text-muted-foreground";
+  if (dbm >= -65) return "text-success";
+  if (dbm >= -75) return "text-warning";
+  return "text-destructive";
+}
+
+function snrColor(db: number | null) {
+  if (db == null) return "text-muted-foreground";
+  if (db >= 25) return "text-success";
+  if (db >= 15) return "text-warning";
+  return "text-destructive";
+}
+
 // ─── Device overview card ─────────────────────────────────────────────────────
 
 function DeviceOverviewCard({ device, sparkline, onClick }: { device: DeviceWithStatus; sparkline?: (number | null)[]; onClick: () => void }) {
@@ -224,6 +239,7 @@ function DeviceOverviewCard({ device, sparkline, onClick }: { device: DeviceWith
   const isOnline = status?.isOnline ?? false;
   const ping = status?.pingMs;
   const isInstavel = isOnline && (ping ?? 0) > 150;
+  const isAcknowledged = !isOnline && !!device.offlineAcknowledgedAt;
   const TypeIcon = DEVICE_TYPE_ICON[device.type];
 
 
@@ -235,7 +251,7 @@ function DeviceOverviewCard({ device, sparkline, onClick }: { device: DeviceWith
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
       className="cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <Card className={`bg-card border shadow-none hover:shadow-md transition-all hover:-translate-y-0.5 h-full overflow-hidden border-l-4 ${
-        isInstavel ? "border-l-warning" : isOnline ? "border-l-success" : "border-l-destructive"
+        isInstavel ? "border-l-warning" : isAcknowledged ? "border-l-border" : isOnline ? "border-l-success" : "border-l-destructive"
       }`}>
         <CardContent className="p-4 space-y-2.5">
           {/* Header */}
@@ -252,6 +268,10 @@ function DeviceOverviewCard({ device, sparkline, onClick }: { device: DeviceWith
             {isInstavel ? (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning/10 text-warning border border-warning/20 shrink-0">
                 Instável
+              </span>
+            ) : isAcknowledged ? (
+              <span className="text-[10px] font-semibold shrink-0 text-muted-foreground">
+                Reconhecido
               </span>
             ) : (
               <span className={`text-xs font-semibold shrink-0 ${isOnline ? "text-success" : "text-destructive"}`}>
@@ -270,6 +290,12 @@ function DeviceOverviewCard({ device, sparkline, onClick }: { device: DeviceWith
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <MapPin className="h-2.5 w-2.5" />
                 {device.location}
+              </span>
+            )}
+            {device.macAddress && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" title="Monitoramento Wi-Fi ativo">
+                <Wifi className="h-2.5 w-2.5" />
+                Wi-Fi
               </span>
             )}
           </div>
@@ -297,6 +323,24 @@ function DeviceOverviewCard({ device, sparkline, onClick }: { device: DeviceWith
               <span className="text-[10px] text-muted-foreground/40 shrink-0">sem histórico</span>
             )}
           </div>
+
+          {/* Wi-Fi signal row */}
+          {device.wifiSignal && (
+            <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+              <Wifi className="h-3 w-3 text-muted-foreground shrink-0" />
+              <span className={`text-[11px] font-bold tabular-nums ${rssiColor(device.wifiSignal.signal)}`}>
+                {device.wifiSignal.signal != null ? `${device.wifiSignal.signal} dBm` : "—"}
+              </span>
+              {device.wifiSignal.snr != null && (
+                <span className={`text-[11px] font-semibold tabular-nums ${snrColor(device.wifiSignal.snr)}`}>
+                  SNR {device.wifiSignal.snr} dB
+                </span>
+              )}
+              <span className="text-[10px] text-muted-foreground truncate ml-auto">
+                {device.wifiSignal.apName}
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
