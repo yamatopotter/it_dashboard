@@ -9,7 +9,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatUptime, fmtTime } from "@/lib/format";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_ICON_BG, DEVICE_TYPE_LABEL } from "@/lib/device-constants";
-import { MapPin, History, Zap, X } from "lucide-react";
+import { MapPin, History, Zap, X, CheckCheck, Undo2, Wifi } from "lucide-react";
+import { StatusBadge } from "@/components/status-badge";
+import type { WifiSignalResult } from "@/app/api/devices/[id]/wifi-signal/route";
 import { PingSparkline } from "@/components/ping-sparkline";
 import { MetricTile, InfoRow } from "@/components/drawer-primitives";
 import type { Device, DeviceStatus, StatusHistory } from "@prisma/client";
@@ -49,6 +51,7 @@ function buildSegments(history: StatusHistory[], now: number): Seg[] {
 interface Props {
   deviceId: string | null;
   onClose: () => void;
+  userRole?: string;
 }
 
 const HOUR_OPTIONS = [
@@ -59,11 +62,15 @@ const HOUR_OPTIONS = [
 ] as const;
 type HourOption = typeof HOUR_OPTIONS[number]["value"];
 
-export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
+export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }: Props) {
   const [device, setDevice] = useState<DeviceWithStatus | null>(null);
   const [history, setHistory] = useState<StatusHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [acknowledging, setAcknowledging] = useState(false);
+  const [ackNote, setAckNote] = useState("");
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [wifiSignal, setWifiSignal] = useState<WifiSignalResult | null>(null);
   const [hours, setHours] = useState<HourOption>(24);
   const [now, setNow] = useState(0); // 0 on SSR, set after mount to avoid hydration mismatch
 
@@ -76,6 +83,12 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
       ]);
       setDevice(dev);
       setHistory(Array.isArray(hist) ? hist : []);
+
+      // Always try to fetch Wi-Fi signal — endpoint matches by MAC (if set) then IP
+      fetch(`/api/devices/${id}/wifi-signal`, { signal })
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (!signal?.aborted) setWifiSignal(data ?? null); })
+        .catch(() => {});
     } catch (err) {
       // Ignore aborts (param changed mid-flight); only reset on real errors
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
@@ -90,6 +103,14 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
   }, []);
 
   useEffect(() => {
+    if (userRoleProp) { setSessionRole(userRoleProp); return; }
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((s) => setSessionRole((s?.user as { role?: string })?.role ?? null))
+      .catch(() => {});
+  }, [userRoleProp]);
+
+  useEffect(() => {
     if (!deviceId) { setDevice(null); setHistory([]); return; }
     const controller = new AbortController();
     fetchData(deviceId, hours, controller.signal);
@@ -102,6 +123,27 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
     await fetch(`/api/devices/${deviceId}/check`, { method: "POST" }).catch(() => {});
     await fetchData(deviceId, hours);
     setTesting(false);
+  }
+
+  async function handleAcknowledge() {
+    if (!deviceId) return;
+    setAcknowledging(true);
+    await fetch(`/api/devices/${deviceId}/acknowledge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: ackNote.trim() || undefined }),
+    }).catch(() => {});
+    setAckNote("");
+    await fetchData(deviceId, hours);
+    setAcknowledging(false);
+  }
+
+  async function handleUnacknowledge() {
+    if (!deviceId) return;
+    setAcknowledging(true);
+    await fetch(`/api/devices/${deviceId}/acknowledge`, { method: "DELETE" }).catch(() => {});
+    await fetchData(deviceId, hours);
+    setAcknowledging(false);
   }
 
   // ── Computed metrics ────────────────────────────────────────────────────────
@@ -134,7 +176,7 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="sm:max-w-[420px] w-full p-0 flex flex-col gap-0 overflow-y-auto"
+        className="sm:max-w-105 w-full p-0 flex flex-col gap-0 overflow-y-auto"
       >
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="px-5 pt-5 pb-4 border-b border-border shrink-0">
@@ -167,14 +209,52 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
                       </>
                     )}
                   </div>
-                  <div className="mt-2">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
-                      status?.isOnline
-                        ? "bg-success/10 text-success border-success/20"
-                        : "bg-destructive/10 text-destructive border-destructive/20"
-                    }`}>
-                      {status?.isOnline ? "Online" : "Offline"}
-                    </span>
+                  <div className="mt-2 space-y-2">
+                    <StatusBadge
+                      isOnline={status?.isOnline ?? false}
+                      acknowledged={!!device.offlineAcknowledgedAt}
+                    />
+
+                    {/* Acknowledge section — only for offline devices */}
+                    {!status?.isOnline && (sessionRole === "OPERADOR" || sessionRole === "ADMIN") && (
+                      <div className="space-y-1.5">
+                        {device.offlineAcknowledgedAt ? (
+                          <div className="space-y-1">
+                            {device.offlineAcknowledgedNote && (
+                              <p className="text-[11px] text-muted-foreground italic leading-snug">
+                                &ldquo;{device.offlineAcknowledgedNote}&rdquo;
+                              </p>
+                            )}
+                            <button
+                              onClick={handleUnacknowledge}
+                              disabled={acknowledging}
+                              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                            >
+                              <Undo2 className="h-3 w-3" />
+                              Remover reconhecimento
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <input
+                              type="text"
+                              value={ackNote}
+                              onChange={(e) => setAckNote(e.target.value)}
+                              placeholder="Motivo (opcional)"
+                              className="w-full text-[11px] px-2 py-1 rounded-md border border-border bg-muted/40 placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                            <button
+                              onClick={handleAcknowledge}
+                              disabled={acknowledging}
+                              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                            >
+                              <CheckCheck className="h-3 w-3" />
+                              Reconhecer offline
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -199,6 +279,62 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
             <MetricTile label="Pico"              value={pingPeak}              unit="ms" loading={loading} />
             <MetricTile label="Perda de pacote"   value={`${packetLoss}%`}      loading={loading} />
           </div>
+
+          {/* Wi-Fi signal tile — only when device has MAC and AP data is available */}
+          {device?.macAddress && wifiSignal && (
+            <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Wifi className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Sinal Wi-Fi
+                </p>
+                <span className="ml-auto text-[10px] text-muted-foreground/70 truncate max-w-35">
+                  via {wifiSignal.apName}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {/* RSSI */}
+                <div className="rounded-lg bg-background border border-border p-2.5 space-y-0.5">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">RSSI</p>
+                  <p className={`text-xl font-extrabold leading-none tabular-nums ${
+                    wifiSignal.signal == null ? "text-muted-foreground" :
+                    wifiSignal.signal >= -65 ? "text-success" :
+                    wifiSignal.signal >= -75 ? "text-warning" : "text-destructive"
+                  }`}>
+                    {wifiSignal.signal != null ? wifiSignal.signal : "—"}
+                    {wifiSignal.signal != null && <span className="text-xs font-normal ml-0.5 text-muted-foreground">dBm</span>}
+                  </p>
+                </div>
+                {/* SNR or SSID */}
+                {wifiSignal.snr != null ? (
+                  <div className="rounded-lg bg-background border border-border p-2.5 space-y-0.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">SNR</p>
+                    <p className={`text-xl font-extrabold leading-none tabular-nums ${
+                      wifiSignal.snr >= 25 ? "text-success" :
+                      wifiSignal.snr >= 15 ? "text-warning" : "text-destructive"
+                    }`}>
+                      {wifiSignal.snr}
+                      <span className="text-xs font-normal ml-0.5 text-muted-foreground">dB</span>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-background border border-border p-2.5 space-y-0.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">SSID</p>
+                    <p className="text-sm font-bold leading-tight truncate">{wifiSignal.ssid ?? "—"}</p>
+                  </div>
+                )}
+              </div>
+              {/* Band + SSID row */}
+              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                {wifiSignal.ssid && wifiSignal.snr != null && (
+                  <span>SSID: <span className="text-foreground font-medium">{wifiSignal.ssid}</span></span>
+                )}
+                {wifiSignal.band && (
+                  <span>Banda: <span className="text-foreground font-medium">{wifiSignal.band}</span></span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Latency chart */}
           <div className="space-y-2">
@@ -353,6 +489,12 @@ export function DeviceDetailDrawer({ deviceId, onClose }: Props) {
               <div>
                 <InfoRow label="Tipo"              value={DEVICE_TYPE_LABEL[device.type]} />
                 <InfoRow label="Endereço IP"       value={device.ip} />
+                {device.macAddress && (
+                  <InfoRow label="MAC Address"     value={device.macAddress} />
+                )}
+                {wifiSignal && (
+                  <InfoRow label="AP conectado"    value={`${wifiSignal.apName} (${wifiSignal.apIp})`} />
+                )}
                 {status?.uptime != null && (
                   <InfoRow label="Uptime"          value={formatUptime(status.uptime)} />
                 )}

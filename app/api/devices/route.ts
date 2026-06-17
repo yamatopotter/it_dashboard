@@ -8,6 +8,7 @@ import { deviceConfigSchema } from "@/lib/schemas/device";
 import { encrypt } from "@/lib/crypto";
 import { parseAndValidate } from "@/lib/parse-body";
 import { sanitizeDevice } from "@/lib/device-utils";
+import { buildWifiSignalMap, resolveSignal } from "@/lib/wifi-signal-map";
 import { writeAudit } from "@/lib/audit";
 import { createHash } from "crypto";
 
@@ -34,11 +35,13 @@ export async function GET(req: NextRequest) {
   const page  = Math.max(parseInt(rawPage  ?? "1",  10) || 1, 1);
 
   if (paginate) {
-    const [devices, total] = await Promise.all([
+    const [devices, total, signalMaps] = await Promise.all([
       db.device.findMany({ where, include: { currentStatus: true }, orderBy: { name: "asc" }, skip: (page - 1) * limit, take: limit }),
       db.device.count({ where }),
+      buildWifiSignalMap(),
     ]);
-    return NextResponse.json(devices.map(sanitizeDevice), { headers: { "X-Total-Count": String(total) } });
+    const body = devices.map((d) => ({ ...sanitizeDevice(d), wifiSignal: resolveSignal(signalMaps, d.macAddress, d.ip) }));
+    return NextResponse.json(body, { headers: { "X-Total-Count": String(total) } });
   }
 
   // ETag: cheap aggregate instead of full fetch — only on unfiltered, non-paginated list.
@@ -55,12 +58,12 @@ export async function GET(req: NextRequest) {
     if (req.headers.get("if-none-match") === etag) {
       return new NextResponse(null, { status: 304, headers: { ETag: etag } });
     }
-    const devices = await db.device.findMany({
-      where,
-      include: { currentStatus: true },
-      orderBy: { name: "asc" },
-    });
-    return NextResponse.json(devices.map(sanitizeDevice), { headers: { ETag: etag } });
+    const [devices, signalMaps] = await Promise.all([
+      db.device.findMany({ where, include: { currentStatus: true }, orderBy: { name: "asc" } }),
+      buildWifiSignalMap(),
+    ]);
+    const body = devices.map((d) => ({ ...sanitizeDevice(d), wifiSignal: resolveSignal(signalMaps, d.macAddress, d.ip) }));
+    return NextResponse.json(body, { headers: { ETag: etag } });
   }
 
   const devices = await db.device.findMany({

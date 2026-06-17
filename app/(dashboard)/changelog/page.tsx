@@ -18,10 +18,29 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.2.3",
+    date: "17 Jun 2026",
+    label: "Sinal Wi-Fi por cliente",
+    latest: true,
+    changes: [
+      { type: "feat", text: "Câmeras e outros clientes Wi-Fi exibem RSSI, SNR, SSID e AP conectado no drawer — basta cadastrar o MAC Address do dispositivo; o sistema localiza automaticamente nos dados de qualquer AP Omada ou UniFi monitorado" },
+      { type: "feat", text: "Cards de dispositivos com MAC cadastrado exibem indicador Wi-Fi para sinalizar que o monitoramento de sinal está ativo" },
+    ],
+  },
+  {
+    version: "0.2.2",
+    date: "17 Jun 2026",
+    label: "Reconhecimento de offline",
+    latest: false,
+    changes: [
+      { type: "feat", text: "Dispositivos offline podem ser marcados como 'Offline reconhecido' por OPERADOR ou ADMIN — a badge muda para cinza e o motivo pode ser registrado; o reconhecimento é removido automaticamente quando o dispositivo volta online" },
+    ],
+  },
+  {
     version: "0.2.1",
     date: "14 Jun 2026",
     label: "Hardening de segurança e estabilidade",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "Ordenação de dispositivos por tipo, nome, IP, status, ping ou local — seletor visível em todos os modos de visualização (tabela, cards, compacto) com preferência salva entre sessões" },
       { type: "refactor", text: "Favicon do app atualizado para o farol da marca (WatchIT Tower) na aba do navegador, substituindo o ícone padrão" },

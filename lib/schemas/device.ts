@@ -73,6 +73,10 @@ export const deviceConfigSchema = z.object({
   omadaSiteId:          z.string().optional().nullable(),
   omadaTlsVerify:       z.boolean().default(true),
   omadaControllerIp:    controllerIpSchema.optional().nullable(),
+  macAddress: z.string()
+    .regex(/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/, "Formato inválido")
+    .optional()
+    .nullable(),
   checkInterval: z.number().int().min(10).max(3600).default(60),
   maintenanceUntil: z.string().datetime({ offset: true }).optional().nullable(),
   alertWebhookUrl: z.string().url("URL inválida").optional().nullable(),

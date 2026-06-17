@@ -60,6 +60,11 @@ const schema = z.object({
   omadaSiteId:       z.string().optional().nullable(),
   omadaTlsVerify:    z.boolean(),
   omadaControllerIp: z.string().optional().nullable(),
+  macAddress: z.string()
+    .regex(/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/, "Formato inválido (ex: AA:BB:CC:DD:EE:FF)")
+    .or(z.literal(""))
+    .optional()
+    .nullable(),
   checkInterval:   z.number().min(10).max(3600),
   maintenanceUntil: z.string().optional().nullable(),
   alertWebhookUrl: z.string().url("URL inválida").or(z.literal("")).optional().nullable(),
@@ -114,6 +119,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
           omadaSiteId:       device.omadaSiteId ?? "",
           omadaTlsVerify:    device.omadaTlsVerify,
           omadaControllerIp: device.omadaControllerIp ?? "",
+          macAddress:      device.macAddress ?? "",
           checkInterval:   device.checkInterval,
           maintenanceUntil: device.maintenanceUntil
             ? new Date(device.maintenanceUntil).toISOString().slice(0, 16)
@@ -146,6 +152,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
           omadaSiteId:       "",
           omadaTlsVerify:    true,
           omadaControllerIp: "",
+          macAddress:      "",
           checkInterval:   60,
           maintenanceUntil: "",
           alertWebhookUrl: "",
@@ -174,6 +181,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
       const { unifiMode: _uMode, ...rest } = data;
       const payload = {
         ...rest,
+        macAddress: data.macAddress?.trim().toUpperCase() || null,
         maintenanceUntil: data.maintenanceUntil ? new Date(data.maintenanceUntil).toISOString() : null,
         // "" is not a valid URL for the server schema — send null when no webhook is set
         alertWebhookUrl: data.alertWebhookUrl || null,
@@ -264,6 +272,18 @@ export function DeviceForm({ device }: DeviceFormProps) {
                 <Label htmlFor="location">Localização</Label>
                 <Input id="location" {...register("location")} placeholder="Sala de TI" />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="macAddress">MAC Address <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+              <Input
+                id="macAddress"
+                {...register("macAddress", { onBlur: () => trigger("macAddress") })}
+                placeholder="AA:BB:CC:DD:EE:FF"
+                className="font-mono uppercase"
+              />
+              {errors.macAddress && <p className="text-xs text-destructive">{errors.macAddress.message}</p>}
+              <p className="text-xs text-muted-foreground">Preencha para exibir sinal Wi-Fi (RSSI/SNR) quando o dispositivo estiver conectado a um AP cadastrado.</p>
             </div>
 
             <div className="space-y-2">
