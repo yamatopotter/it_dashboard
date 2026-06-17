@@ -69,6 +69,9 @@ describe("DeviceForm", () => {
       alertWebhookUrl: null,
       alertThreshold: 3,
       lastAlertAt: null,
+      offlineAcknowledgedAt: null,
+      offlineAcknowledgedBy: null,
+      offlineAcknowledgedNote: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       hasRouterosCredentials: true,
@@ -94,6 +97,7 @@ describe("DeviceForm", () => {
       omadaClientIdEnc: null, omadaClientSecretEnc: null, omadacId: null,
       omadaSite: null, omadaSiteId: null, omadaTlsVerify: true, omadaControllerIp: null,
       checkInterval: 60, maintenanceUntil: null, alertWebhookUrl: null, alertThreshold: 3, lastAlertAt: null,
+      offlineAcknowledgedAt: null, offlineAcknowledgedBy: null, offlineAcknowledgedNote: null,
       createdAt: new Date(), updatedAt: new Date(),
       hasRouterosCredentials: true, hasUnifiApiKey: false, hasUnifiCredentials: false, hasOmadaCredentials: false,
     };
@@ -127,6 +131,7 @@ describe("DeviceForm", () => {
       omadaClientIdEnc: null, omadaClientSecretEnc: null, omadacId: null,
       omadaSite: null, omadaSiteId: null, omadaTlsVerify: true, omadaControllerIp: null,
       checkInterval: 60, maintenanceUntil: null, alertWebhookUrl: null, alertThreshold: 3, lastAlertAt: null,
+      offlineAcknowledgedAt: null, offlineAcknowledgedBy: null, offlineAcknowledgedNote: null,
       createdAt: new Date(), updatedAt: new Date(),
       hasRouterosCredentials: false, hasUnifiApiKey: false, hasUnifiCredentials: false, hasOmadaCredentials: false,
     };

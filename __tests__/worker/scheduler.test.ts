@@ -89,6 +89,9 @@ const baseDevice: Device = {
   alertWebhookUrl: null,
   alertThreshold:  3,
   lastAlertAt:     null,
+  offlineAcknowledgedAt:   null,
+  offlineAcknowledgedBy:   null,
+  offlineAcknowledgedNote: null,
   createdAt:       new Date("2026-01-01"),
   updatedAt:       new Date("2026-01-01"),
 };

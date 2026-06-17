@@ -300,6 +300,13 @@ function scheduleDevice(device: Device) {
         if (prev >= BACKOFF_THRESHOLD) {
           log("info", "[Backoff] dispositivo recuperado, voltando ao intervalo normal", { device: device.name });
         }
+        // Auto-clear offline acknowledgement when device comes back online
+        if (device.offlineAcknowledgedAt) {
+          await db.device.update({
+            where: { id: device.id },
+            data: { offlineAcknowledgedAt: null, offlineAcknowledgedNote: null },
+          });
+        }
       } else {
         const fails = (consecutiveFailures.get(device.id) ?? 0) + 1;
         consecutiveFailures.set(device.id, fails);

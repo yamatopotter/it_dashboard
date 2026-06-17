@@ -56,10 +56,17 @@ model Device {
   omadaTlsVerify       Boolean @default(true)
   omadaControllerIp    String? // IP do Omada Controller
 
+  macAddress    String? // optional MAC for Wi-Fi client signal lookup on parent AP
+
   checkInterval Int @default(60)
 
   // Maintenance window — worker skips incident generation while active
   maintenanceUntil DateTime?
+
+  // Offline acknowledgement — set by operator, auto-cleared when device comes back online
+  offlineAcknowledgedAt   DateTime?
+  offlineAcknowledgedBy   String?
+  offlineAcknowledgedNote String?
 
   // Alert notifications
   alertWebhookUrl String?

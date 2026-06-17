@@ -58,6 +58,9 @@ const DEVICE_WITH_STATUS = {
   alertWebhookUrl: null,
   alertThreshold: 3,
   lastAlertAt: null,
+  offlineAcknowledgedAt:   null,
+  offlineAcknowledgedBy:   null,
+  offlineAcknowledgedNote: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   currentStatus: {
@@ -78,10 +81,18 @@ const DEVICE_WITH_STATUS = {
   },
 };
 
+const SESSION_MOCK = { user: { name: "admin", role: "ADMIN" } };
+
 beforeEach(() => {
-  global.fetch = jest.fn()
-    .mockResolvedValueOnce({ ok: true, json: async () => DEVICE_WITH_STATUS })
-    .mockResolvedValueOnce({ ok: true, json: async () => [] });
+  global.fetch = jest.fn().mockImplementation((url: string) => {
+    if (url.includes("/api/auth/session")) {
+      return Promise.resolve({ ok: true, json: async () => SESSION_MOCK });
+    }
+    if (url.includes("/api/status/")) {
+      return Promise.resolve({ ok: true, json: async () => [] });
+    }
+    return Promise.resolve({ ok: true, json: async () => DEVICE_WITH_STATUS });
+  });
 });
 
 afterEach(() => jest.clearAllMocks());
