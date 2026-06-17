@@ -12,8 +12,15 @@ import { EmptyState } from "@/components/empty-state";
 import { PingSparkline } from "@/components/ping-sparkline";
 import {
   Plus, Layers, Pencil, MapPin, Server, Wifi,
-  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List, AlignJustify,
+  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List, AlignJustify, ArrowUpDown,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Topbar } from "@/components/topbar";
 import { formatResponseTime, formatUptime, formatPercent } from "@/lib/format";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL, DEVICE_TYPE_ICON_BG } from "@/lib/device-constants";
@@ -134,8 +141,17 @@ function DeviceCard({
   );
 }
 
-type SortField = "name" | "ip" | "status" | "ping" | "location";
+type SortField = "name" | "ip" | "type" | "status" | "ping" | "location";
 type SortDir = "asc" | "desc";
+
+const SORT_LABELS: Record<SortField, string> = {
+  name:     "Nome",
+  ip:       "IP",
+  type:     "Tipo",
+  status:   "Status",
+  ping:     "Ping",
+  location: "Local",
+};
 
 function SortableHeader({
   field,
@@ -196,6 +212,23 @@ export default function DevicesPage() {
     setViewMode(mode);
     localStorage.setItem("devices-view-mode", mode);
   }
+
+  const VALID_SORT_FIELDS: SortField[] = ["name", "ip", "type", "status", "ping", "location"];
+  useEffect(() => {
+    const f = localStorage.getItem("devices-sort-field") as SortField | null;
+    const d = localStorage.getItem("devices-sort-dir") as SortDir | null;
+    if (f && VALID_SORT_FIELDS.includes(f)) setSortField(f);
+    if (d === "asc" || d === "desc") setSortDir(d);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleSort(field: SortField) {
+    const newDir = sortField === field ? (sortDir === "asc" ? "desc" : "asc") : "asc";
+    setSortField(field);
+    setSortDir(newDir);
+    localStorage.setItem("devices-sort-field", field);
+    localStorage.setItem("devices-sort-dir", newDir);
+  }
   // USA-U005: initialize filters from URL params so they survive navigation
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ONLINE" | "OFFLINE">("ALL");
   const [typeFilter, setTypeFilter] = useState<DeviceType | "ALL">("ALL");
@@ -238,15 +271,6 @@ export default function DevicesPage() {
   async function handleEnableNotifications() {
     await requestPermission();
     if ("Notification" in window) setNotifPermission(Notification.permission);
-  }
-
-  function handleSort(field: SortField) {
-    if (sortField === field) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortDir("asc");
-    }
   }
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -309,6 +333,9 @@ export default function DevicesPage() {
           cmp = ap - bp;
           break;
         }
+        case "type":
+          cmp = DEVICE_TYPE_LABEL[a.type].localeCompare(DEVICE_TYPE_LABEL[b.type], "pt-BR");
+          break;
         case "location":
           cmp = (a.location ?? "").localeCompare(b.location ?? "", "pt-BR");
           break;
@@ -393,6 +420,39 @@ export default function DevicesPage() {
         {/* Search + Filter chips */}
         <div className="flex flex-wrap gap-2 items-center">
           <DeviceSearchInput value={searchQuery} onChange={setSearchQuery} />
+
+          {/* Sort selector — visible in all view modes */}
+          <div className="flex items-center gap-1">
+            <Select
+              value={sortField}
+              onValueChange={(v) => handleSort(v as SortField)}
+            >
+              <SelectTrigger size="sm" className="gap-1.5 text-xs font-medium" aria-label="Ordenar por">
+                <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {(Object.entries(SORT_LABELS) as [SortField, string][]).map(([f, label]) => (
+                  <SelectItem key={f} value={f}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              onClick={() => {
+                const newDir = sortDir === "asc" ? "desc" : "asc";
+                setSortDir(newDir);
+                localStorage.setItem("devices-sort-dir", newDir);
+              }}
+              className="flex items-center justify-center h-7 w-7 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              aria-label={sortDir === "asc" ? "Ordem crescente — clique para decrescente" : "Ordem decrescente — clique para crescente"}
+              title={sortDir === "asc" ? "Crescente" : "Decrescente"}
+            >
+              {sortDir === "asc"
+                ? <ChevronUp className="h-3.5 w-3.5" />
+                : <ChevronDown className="h-3.5 w-3.5" />
+              }
+            </button>
+          </div>
           <div className="w-px bg-border mx-0.5 self-stretch" />
           <FilterChip active={statusFilter === "ALL"} onClick={() => setStatusFilter("ALL")}>
             Todos os status
@@ -537,6 +597,11 @@ export default function DevicesPage() {
                     className="text-left px-4 py-3"
                   />
                   <SortableHeader
+                    field="type" label="Tipo"
+                    sortField={sortField} sortDir={sortDir} onSort={handleSort}
+                    className="hidden md:table-cell text-left px-4 py-3"
+                  />
+                  <SortableHeader
                     field="ip" label="IP"
                     sortField={sortField} sortDir={sortDir} onSort={handleSort}
                     className="text-left px-4 py-3"
@@ -590,6 +655,16 @@ export default function DevicesPage() {
                               {DEVICE_TYPE_LABEL[device.type]}
                             </p>
                           </div>
+                        </div>
+                      </td>
+
+                      {/* Tipo */}
+                      <td className="hidden md:table-cell px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${DEVICE_TYPE_ICON_BG[device.type]}`}>
+                            <TypeIcon className="h-3 w-3" />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{DEVICE_TYPE_LABEL[device.type]}</span>
                         </div>
                       </td>
 
