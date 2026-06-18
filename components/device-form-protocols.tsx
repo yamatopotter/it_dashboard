@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, useFieldArray } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Trash2, Plus } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -28,10 +29,15 @@ interface DeviceFormProtocolsProps {
 }
 
 export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
-  const { register, watch, setValue, trigger } = useFormContext<FormData>();
+  const { register, watch, setValue, trigger, control } = useFormContext<FormData>();
 
   const [unifiTest, setUnifiTest] = useState<UnifiTestState>({ status: "idle" });
   const [omadaTest, setOmadaTest] = useState<OmadaTestState>({ status: "idle" });
+
+  const { fields: oidFields, append: appendOid, remove: removeOid } = useFieldArray({
+    control,
+    name: "snmpCustomOids",
+  });
 
   const deviceType      = watch("type");
   const httpEnabled     = watch("httpEnabled");
@@ -159,19 +165,94 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
           />
         </div>
         {snmpEnabled && (
-          <div className="grid grid-cols-2 gap-3 pl-4 border-l-2 border-muted">
-            <div className="space-y-1">
-              <Label htmlFor="snmpCommunity" className="text-xs">Community</Label>
-              <Input id="snmpCommunity" placeholder="public" {...register("snmpCommunity", { onBlur: () => trigger("snmpCommunity") })} />
+          <div className="space-y-4 pl-4 border-l-2 border-muted">
+            {/* Community + Port */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="snmpCommunity" className="text-xs">Community</Label>
+                <Input id="snmpCommunity" placeholder="public" {...register("snmpCommunity", { onBlur: () => trigger("snmpCommunity") })} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="snmpPort" className="text-xs">Porta SNMP</Label>
+                <Input id="snmpPort" type="number" placeholder="161" {...register("snmpPort", { valueAsNumber: true })} />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="snmpPort" className="text-xs">Porta SNMP</Label>
-              <Input
-                id="snmpPort"
-                type="number"
-                placeholder="161"
-                {...register("snmpPort", { valueAsNumber: true })}
-              />
+
+            {/* OID table */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">OIDs monitorados</p>
+
+              {/* Header */}
+              <div className="grid text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-1"
+                style={{ gridTemplateColumns: "2rem 1fr 2.5fr 1fr 3rem 2rem" }}>
+                <span></span>
+                <span>Label</span>
+                <span>OID</span>
+                <span>Unidade</span>
+                <span>Divisor</span>
+                <span></span>
+              </div>
+
+              {oidFields.map((field, i) => (
+                <div key={field.id} className="grid items-center gap-1.5 px-1"
+                  style={{ gridTemplateColumns: "2rem 1fr 2.5fr 1fr 3rem 2rem" }}>
+                  {/* Enable toggle */}
+                  <Switch
+                    checked={watch(`snmpCustomOids.${i}.enabled`)}
+                    onCheckedChange={(v) => setValue(`snmpCustomOids.${i}.enabled`, v)}
+                  />
+                  {/* Label */}
+                  <Input
+                    {...register(`snmpCustomOids.${i}.label`)}
+                    placeholder="CPU"
+                    className="h-7 text-xs"
+                  />
+                  {/* OID principal + OID total opcional (para métricas de razão) */}
+                  <div className="space-y-1">
+                    <Input
+                      {...register(`snmpCustomOids.${i}.oid`)}
+                      placeholder="1.3.6.1.2.1…"
+                      className="h-7 text-xs font-mono"
+                    />
+                    <Input
+                      {...register(`snmpCustomOids.${i}.oidTotal`)}
+                      placeholder="OID total (razão, opcional)"
+                      className="h-6 text-[10px] font-mono text-muted-foreground"
+                    />
+                  </div>
+                  {/* Unit */}
+                  <Input
+                    {...register(`snmpCustomOids.${i}.unit`)}
+                    placeholder="%"
+                    className="h-7 text-xs"
+                  />
+                  {/* Divisor */}
+                  <Input
+                    {...register(`snmpCustomOids.${i}.divisor`, { valueAsNumber: true, setValueAs: v => v === "" || isNaN(Number(v)) ? undefined : Number(v) })}
+                    placeholder="—"
+                    type="number"
+                    className="h-7 text-xs"
+                  />
+                  {/* Remove */}
+                  <button
+                    type="button"
+                    onClick={() => removeOid(i)}
+                    className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    aria-label="Remover OID"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => appendOid({ key: `custom_${Date.now()}`, label: "", oid: "", unit: "", enabled: true })}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Adicionar OID
+              </button>
             </div>
           </div>
         )}

@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { requireAuth, requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { deviceConfigSchema } from "@/lib/schemas/device";
@@ -39,7 +40,12 @@ export async function PUT(
   const body = await parseAndValidate(req, updateSchema);
   if (!body.ok) return body.response;
 
-  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, ...rest } = body.data;
+  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, snmpCustomOids, ...rest } = body.data;
+  // Prisma 7: nullable JSON fields require Prisma.DbNull to clear (plain null is not accepted)
+  const snmpCustomOidsUpdate: { snmpCustomOids?: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue } =
+    snmpCustomOids !== undefined
+      ? { snmpCustomOids: snmpCustomOids === null ? Prisma.DbNull : snmpCustomOids as Prisma.InputJsonValue }
+      : {};
 
   const credentialUpdate: {
     snmpCommunityEnc?:    string | null;
@@ -79,7 +85,7 @@ export async function PUT(
   try {
     const device = await db.device.update({
       where: { id },
-      data: { ...rest, ...credentialUpdate },
+      data: { ...rest, ...snmpCustomOidsUpdate, ...credentialUpdate },
     });
     void writeAudit({ action: "UPDATE", entity: "Device", entityId: device.id, entityName: device.name, details: { fields: Object.keys({ ...rest, ...credentialUpdate }) } });
     return NextResponse.json(sanitizeDevice(device));

@@ -9,6 +9,7 @@ import { checkLinkTraffic } from "./monitors/link-traffic";
 import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
 import { sendAlert, ALERT_COOLDOWN_MS } from "./monitors/alert";
+import { resolveSnmpOids } from "../lib/snmp-defaults";
 import type { Device, Link } from "@prisma/client";
 
 const timers          = new Map<string, ReturnType<typeof setInterval>>();
@@ -100,7 +101,7 @@ export async function runChecks(device: Device): Promise<boolean> {
       ? checkHttp(device.ip, device.httpPort ?? 80, device.httpPath)
       : Promise.resolve(null),
     device.snmpEnabled
-      ? checkSnmp(device.ip, resolveSnmpCommunity(device), device.snmpPort)
+      ? checkSnmp(device.ip, resolveSnmpCommunity(device), device.snmpPort, resolveSnmpOids(device.snmpCustomOids))
       : Promise.resolve(null),
     (() => {
       if (!device.routerosEnabled) return Promise.resolve(null);
@@ -240,11 +241,15 @@ export async function runChecks(device: Device): Promise<boolean> {
       : { omadaError }
     : {};
 
+  const snmpUpdate = device.snmpEnabled && snmpResult && snmpResult.snmpData && Object.keys(snmpResult.snmpData).length > 0
+    ? { snmpData: snmpResult.snmpData as unknown as import("@prisma/client").Prisma.InputJsonValue }
+    : {};
+
   await db.$transaction([
     db.deviceStatus.upsert({
       where: { deviceId: device.id },
-      update: { isOnline, pingMs, httpOk, uptime, cpuLoad, memoryUsed, ...routerosUpdate, ...unifiUpdate, ...omadaUpdate, checkedAt: now },
-      create: { deviceId: device.id, isOnline, pingMs, httpOk, uptime, cpuLoad, memoryUsed, ...routerosUpdate, ...unifiUpdate, ...omadaUpdate, checkedAt: now },
+      update: { isOnline, pingMs, httpOk, uptime, cpuLoad, memoryUsed, ...routerosUpdate, ...unifiUpdate, ...omadaUpdate, ...snmpUpdate, checkedAt: now },
+      create: { deviceId: device.id, isOnline, pingMs, httpOk, uptime, cpuLoad, memoryUsed, ...routerosUpdate, ...unifiUpdate, ...omadaUpdate, ...snmpUpdate, checkedAt: now },
     }),
     db.statusHistory.create({
       data: { deviceId: device.id, isOnline, pingMs, cpuLoad, memoryUsed, timestamp: now },

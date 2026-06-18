@@ -1,16 +1,13 @@
 import * as snmp from "net-snmp";
 import { log } from "../../lib/logger";
+import { type SnmpOidEntry, DEFAULT_SNMP_OIDS } from "../../lib/snmp-defaults";
 
 export interface SnmpResult {
-  cpuLoad: number | null;
+  cpuLoad:    number | null;
   memoryUsed: number | null;
-  uptime: number | null;
+  uptime:     number | null;
+  snmpData:   Record<string, number | null>;
 }
-
-const OID_CPU_LOAD = "1.3.6.1.2.1.25.3.3.1.2.1";
-const OID_SYSUPTIME = "1.3.6.1.2.1.1.3.0";
-const OID_STORAGE_USED = "1.3.6.1.2.1.25.2.3.1.6.65536";
-const OID_STORAGE_SIZE = "1.3.6.1.2.1.25.2.3.1.5.65536";
 
 function getOids(
   session: snmp.Session,
@@ -19,8 +16,6 @@ function getOids(
   return new Promise((resolve, reject) => {
     const results = new Map<string, number>();
     session.get(oids, (error, varbinds) => {
-      // A request-level error (timeout, no response) means the device is unreachable
-      // via SNMP — surface it instead of silently returning an empty result set.
       if (error) return reject(error);
       if (varbinds) {
         for (const vb of varbinds) {
@@ -37,7 +32,8 @@ function getOids(
 export async function checkSnmp(
   ip: string,
   community: string = "public",
-  port: number = 161
+  port: number = 161,
+  oidConfig: SnmpOidEntry[] = DEFAULT_SNMP_OIDS,
 ): Promise<SnmpResult> {
   const session = snmp.createSession(ip, community, {
     port,
@@ -47,31 +43,52 @@ export async function checkSnmp(
   });
 
   try {
-    const values = await getOids(session, [
-      OID_CPU_LOAD,
-      OID_SYSUPTIME,
-      OID_STORAGE_USED,
-      OID_STORAGE_SIZE,
-    ]);
+    const enabled = oidConfig.filter((e) => e.enabled);
 
-    const uptimeTicks = values.get(OID_SYSUPTIME);
-    const uptime = uptimeTicks != null ? Math.floor(uptimeTicks / 100) : null;
+    // Collect all unique OIDs to query in one request
+    const oidsToQuery = new Set<string>();
+    for (const entry of enabled) {
+      oidsToQuery.add(entry.oid);
+      if (entry.oidTotal) oidsToQuery.add(entry.oidTotal);
+    }
 
-    const cpuLoad = values.get(OID_CPU_LOAD) ?? null;
+    const raw = await getOids(session, [...oidsToQuery]);
 
-    const storageUsed = values.get(OID_STORAGE_USED);
-    const storageSize = values.get(OID_STORAGE_SIZE);
-    const memoryUsed =
-      storageUsed != null && storageSize != null && storageSize > 0
-        ? (storageUsed / storageSize) * 100
-        : null;
+    const snmpData: Record<string, number | null> = {};
+    let cpuLoad:    number | null = null;
+    let memoryUsed: number | null = null;
+    let uptime:     number | null = null;
 
-    return { cpuLoad, memoryUsed, uptime };
+    for (const entry of enabled) {
+      const primary = raw.get(entry.oid) ?? null;
+      let value: number | null = null;
+
+      if (primary !== null) {
+        if (entry.oidTotal) {
+          // Ratio metric: value = (primary / total) * 100
+          const total = raw.get(entry.oidTotal) ?? null;
+          value = total != null && total > 0
+            ? (primary / total) * 100
+            : null;
+        } else if (entry.divisor != null && entry.divisor > 0) {
+          value = primary / entry.divisor;
+        } else {
+          value = primary;
+        }
+      }
+
+      snmpData[entry.key] = value;
+
+      // Map well-known keys to dedicated DeviceStatus columns
+      if (entry.key === "cpu")    cpuLoad    = value;
+      if (entry.key === "memory") memoryUsed = value;
+      if (entry.key === "uptime") uptime     = value != null ? Math.floor(value) : null;
+    }
+
+    return { cpuLoad, memoryUsed, uptime, snmpData };
   } catch (err) {
-    // SNMP is metrics-only (não afeta isOnline); log the failure for observability
-    // but keep returning nulls so the contract stays "always resolves a result".
     log("warn", "[SNMP] consulta falhou", { ip, error: err instanceof Error ? err.message : String(err) });
-    return { cpuLoad: null, memoryUsed: null, uptime: null };
+    return { cpuLoad: null, memoryUsed: null, uptime: null, snmpData: {} };
   } finally {
     session.close();
   }

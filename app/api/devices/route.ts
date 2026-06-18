@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { requireAuth, requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
@@ -80,11 +81,13 @@ export async function POST(req: NextRequest) {
   const body = await parseAndValidate(req, deviceConfigSchema);
   if (!body.ok) return body.response;
 
-  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, ...rest } = body.data;
+  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, snmpCustomOids, ...rest } = body.data;
 
   const device = await db.device.create({
     data: {
       ...rest,
+      // Prisma 7: null on nullable JSON — omit to let DB default to null
+      snmpCustomOids: snmpCustomOids == null ? undefined : snmpCustomOids as Prisma.InputJsonValue,
       snmpCommunityEnc:    snmpCommunity    ? encrypt(snmpCommunity)    : null,
       routerosUserEnc:     routerosUser     ? encrypt(routerosUser)     : null,
       routerosPassEnc:     routerosPass     ? encrypt(routerosPass)     : null,

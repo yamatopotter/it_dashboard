@@ -92,6 +92,8 @@ const baseDevice: Device = {
   offlineAcknowledgedAt:   null,
   offlineAcknowledgedBy:   null,
   offlineAcknowledgedNote: null,
+  macAddress:      null,
+  snmpCustomOids:  null,
   createdAt:       new Date("2026-01-01"),
   updatedAt:       new Date("2026-01-01"),
 };
@@ -162,11 +164,14 @@ describe("runChecks", () => {
   });
 
   it("calls checkSnmp when snmpEnabled", async () => {
-    mockCheckSnmp.mockResolvedValue({ uptime: 3600, cpuLoad: 10, memoryUsed: 50 });
+    mockCheckSnmp.mockResolvedValue({ uptime: 3600, cpuLoad: 10, memoryUsed: 50, snmpData: {} });
 
     await runChecks({ ...baseDevice, pingEnabled: false, snmpEnabled: true });
 
-    expect(mockCheckSnmp).toHaveBeenCalledWith("192.168.1.1", "public", 161);
+    expect(mockCheckSnmp).toHaveBeenCalledWith(
+      "192.168.1.1", "public", 161,
+      expect.arrayContaining([expect.objectContaining({ key: "cpu" })])
+    );
   });
 
   it("calls checkRouterOS when routerosEnabled and credentials resolved", async () => {
