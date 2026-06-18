@@ -59,6 +59,7 @@ const baseDevice: Device = {
   checkInterval: 60, maintenanceUntil: null,
   alertWebhookUrl: "https://hook.example/alert", alertThreshold: 2, lastAlertAt: null,
   offlineAcknowledgedAt: null, offlineAcknowledgedBy: null, offlineAcknowledgedNote: null,
+  macAddress: null, snmpCustomOids: null,
   createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
 };
 

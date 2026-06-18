@@ -9,9 +9,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatUptime, fmtTime } from "@/lib/format";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_ICON_BG, DEVICE_TYPE_LABEL } from "@/lib/device-constants";
-import { MapPin, History, Zap, X, CheckCheck, Undo2, Wifi } from "lucide-react";
+import { MapPin, History, Zap, X, CheckCheck, Undo2, Wifi, Activity } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import type { WifiSignalResult } from "@/app/api/devices/[id]/wifi-signal/route";
+import { resolveSnmpOids } from "@/lib/snmp-defaults";
 import { PingSparkline } from "@/components/ping-sparkline";
 import { MetricTile, InfoRow } from "@/components/drawer-primitives";
 import type { Device, DeviceStatus, StatusHistory } from "@prisma/client";
@@ -439,6 +440,43 @@ export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }
               </div>
             </>
           )}
+
+          {/* Custom SNMP metrics — only non-standard keys (cpu/memory/uptime have dedicated charts) */}
+          {device?.snmpEnabled && status?.snmpData && (() => {
+            const snmpData = status.snmpData as Record<string, number | null>;
+            const oidConfig = resolveSnmpOids(device.snmpCustomOids);
+            const customMetrics = oidConfig.filter(
+              (e) => e.enabled && !["cpu", "memory", "uptime"].includes(e.key) && snmpData[e.key] != null
+            );
+            if (customMetrics.length === 0) return null;
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Activity className="h-3 w-3 text-muted-foreground" />
+                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Métricas SNMP
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {customMetrics.map((entry) => {
+                    const val = snmpData[entry.key];
+                    const display = val != null ? `${Number(val).toFixed(entry.unit === "%" ? 1 : 0)}` : "—";
+                    return (
+                      <div key={entry.key} className="rounded-lg bg-muted/30 border border-border p-2.5 space-y-0.5">
+                        <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{entry.label}</p>
+                        <p className="text-lg font-extrabold leading-none tabular-nums">
+                          {display}
+                          {val != null && entry.unit && (
+                            <span className="text-xs font-normal ml-0.5 text-muted-foreground">{entry.unit}</span>
+                          )}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Availability bar */}
           <div className="space-y-2">

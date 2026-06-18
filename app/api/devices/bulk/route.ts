@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { bulkDeviceSchema } from "@/lib/schemas/device";
@@ -27,7 +28,10 @@ export async function POST(req: NextRequest) {
   const body = await parseAndValidate(req, bulkDeviceSchema);
   if (!body.ok) return body.response;
 
-  const { ipStart, ipEnd, name, snmpCommunity, routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, ...config } = body.data;
+  const { ipStart, ipEnd, name, snmpCommunity, routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCustomOids, ...config } = body.data;
+  // Prisma 7: nullable JSON must not be null — omit when null so the column defaults to null in DB
+  const snmpCustomOidsVal: Prisma.InputJsonValue | undefined =
+    snmpCustomOids != null ? snmpCustomOids as Prisma.InputJsonValue : undefined;
 
   const startInt = ipToInt(ipStart);
   const endInt = ipToInt(ipEnd);
@@ -54,6 +58,7 @@ export async function POST(req: NextRequest) {
       ...config,
       ip,
       name: `${name} ${ip.split(".").pop()}`,
+      ...(snmpCustomOidsVal !== undefined && { snmpCustomOids: snmpCustomOidsVal }),
       // SEC-031: encrypt SNMP community at rest (the plaintext column keeps its default)
       snmpCommunityEnc: snmpCommunity ? encrypt(snmpCommunity) : null,
       routerosUserEnc: routerosUser ? encrypt(routerosUser) : null,

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, FormProvider } from "react-hook-form";
+import { DEFAULT_SNMP_OIDS, type SnmpOidEntry } from "@/lib/snmp-defaults";
+import { useForm, FormProvider, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,15 @@ const schema = z.object({
     .or(z.literal(""))
     .optional()
     .nullable(),
+  snmpCustomOids: z.array(z.object({
+    key:      z.string(),
+    label:    z.string(),
+    oid:      z.string(),
+    oidTotal: z.string().optional(),
+    divisor:  z.number().optional(),
+    unit:     z.string(),
+    enabled:  z.boolean(),
+  })).optional().nullable(),
   checkInterval:   z.number().min(10).max(3600),
   maintenanceUntil: z.string().optional().nullable(),
   alertWebhookUrl: z.string().url("URL inválida").or(z.literal("")).optional().nullable(),
@@ -120,6 +130,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
           omadaTlsVerify:    device.omadaTlsVerify,
           omadaControllerIp: device.omadaControllerIp ?? "",
           macAddress:      device.macAddress ?? "",
+          snmpCustomOids:  Array.isArray(device.snmpCustomOids) ? device.snmpCustomOids as unknown as SnmpOidEntry[] : DEFAULT_SNMP_OIDS,
           checkInterval:   device.checkInterval,
           maintenanceUntil: device.maintenanceUntil
             ? new Date(device.maintenanceUntil).toISOString().slice(0, 16)
@@ -153,6 +164,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
           omadaTlsVerify:    true,
           omadaControllerIp: "",
           macAddress:      "",
+          snmpCustomOids:  DEFAULT_SNMP_OIDS,
           checkInterval:   60,
           maintenanceUntil: "",
           alertWebhookUrl: "",
@@ -182,6 +194,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
       const payload = {
         ...rest,
         macAddress: data.macAddress?.trim().toUpperCase() || null,
+        snmpCustomOids: data.snmpCustomOids ?? null,
         maintenanceUntil: data.maintenanceUntil ? new Date(data.maintenanceUntil).toISOString() : null,
         // "" is not a valid URL for the server schema — send null when no webhook is set
         alertWebhookUrl: data.alertWebhookUrl || null,
@@ -223,7 +236,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
+      <form onSubmit={handleSubmit(onSubmit as SubmitHandler<FormData>)} className="space-y-6 max-w-2xl">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Informações Básicas</CardTitle>

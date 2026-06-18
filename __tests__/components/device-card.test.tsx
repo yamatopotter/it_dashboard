@@ -57,6 +57,8 @@ const baseDevice = {
   offlineAcknowledgedAt:   null,
   offlineAcknowledgedBy:   null,
   offlineAcknowledgedNote: null,
+  macAddress:      null,
+  snmpCustomOids:  null,
   createdAt: new Date("2026-01-01"),
   updatedAt: new Date("2026-01-01"),
 };
@@ -93,6 +95,7 @@ describe("DeviceCard", () => {
             omadaData: null,
             omadaError: null,
             routerosData: null,
+            snmpData: null,
             checkedAt: new Date(),
           },
         }}
@@ -120,6 +123,7 @@ describe("DeviceCard", () => {
             omadaData: null,
             omadaError: null,
             routerosData: null,
+            snmpData: null,
             checkedAt: new Date(),
           },
         }}
@@ -147,6 +151,7 @@ describe("DeviceCard", () => {
             omadaData: null,
             omadaError: null,
             routerosData: null,
+            snmpData: null,
             checkedAt: new Date(),
           },
         }}
@@ -174,6 +179,7 @@ describe("DeviceCard", () => {
             omadaData: null,
             omadaError: null,
             routerosData: null,
+            snmpData: null,
             checkedAt: new Date(),
           },
         }}
@@ -207,6 +213,7 @@ describe("DeviceCard", () => {
             omadaData: null,
             omadaError: null,
             routerosData: null,
+            snmpData: null,
             checkedAt: new Date(),
           },
         }}

@@ -32,6 +32,7 @@ model Device {
   snmpCommunity     String  @default("public") // plaintext fallback for existing records
   snmpCommunityEnc  String? // AES-256-GCM encrypted
   snmpPort          Int     @default(161)
+  snmpCustomOids    Json?   // SnmpOidEntry[] — null = use DEFAULT_SNMP_OIDS
   routerosEnabled Boolean @default(false)
   routerosUserEnc String? // AES-256-GCM encrypted
   routerosPassEnc String? // AES-256-GCM encrypted
@@ -95,6 +96,7 @@ model DeviceStatus {
   uptime     Int?
   cpuLoad    Float?
   memoryUsed Float?
+  snmpData     Json?   // { [key]: number | null } for all queried SNMP OIDs
   routerosData Json?
   unifiData    Json?
   unifiError   String?

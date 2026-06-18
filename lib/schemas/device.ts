@@ -77,6 +77,15 @@ export const deviceConfigSchema = z.object({
     .regex(/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/, "Formato inválido")
     .optional()
     .nullable(),
+  snmpCustomOids: z.array(z.object({
+    key:      z.string().min(1),
+    label:    z.string().min(1),
+    oid:      z.string().min(1),
+    oidTotal: z.string().optional(),
+    divisor:  z.number().positive().optional(),
+    unit:     z.string(),
+    enabled:  z.boolean(),
+  })).optional().nullable(),
   checkInterval: z.number().int().min(10).max(3600).default(60),
   maintenanceUntil: z.string().datetime({ offset: true }).optional().nullable(),
   alertWebhookUrl: z.string().url("URL inválida").optional().nullable(),
