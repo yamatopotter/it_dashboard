@@ -18,10 +18,21 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.2.4",
+    date: "18 Jun 2026",
+    label: "OIDs SNMP personalizáveis",
+    latest: true,
+    changes: [
+      { type: "feat", text: "OIDs SNMP agora são configuráveis por dispositivo — os valores padrão (CPU, Memória, Uptime) vêm pré-preenchidos, mas podem ser editados, desabilitados ou substituídos por OIDs proprietários do fabricante" },
+      { type: "feat", text: "Suporte a métricas de razão (numerador/denominador) e escalonamento por divisor — permite exibir qualquer OID como porcentagem ou unidade adequada" },
+      { type: "feat", text: "Métricas customizadas aparecem como tiles no drawer do dispositivo, ao lado dos gráficos de CPU e Memória" },
+    ],
+  },
+  {
     version: "0.2.3",
     date: "17 Jun 2026",
     label: "Sinal Wi-Fi por cliente",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "Câmeras e outros clientes Wi-Fi exibem RSSI, SNR, SSID e AP conectado no drawer — basta cadastrar o MAC Address do dispositivo; o sistema localiza automaticamente nos dados de qualquer AP Omada ou UniFi monitorado" },
       { type: "feat", text: "Cards de dispositivos com MAC cadastrado exibem indicador Wi-Fi para sinalizar que o monitoramento de sinal está ativo" },
