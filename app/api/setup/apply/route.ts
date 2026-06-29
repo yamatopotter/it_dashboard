@@ -77,11 +77,17 @@ export async function POST(req: NextRequest) {
     const hash = bcrypt.hashSync(adminPassword, 12);
 
     fs.mkdirSync(path.dirname(tmpScript), { recursive: true });
+    const clientInit =
+      provider === "postgresql"
+        ? `const { PrismaPg } = require('@prisma/adapter-pg');
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });`
+        : `const db = new PrismaClient();`;
+
     fs.writeFileSync(
       tmpScript,
       `
 const { PrismaClient } = require('@prisma/client');
-const db = new PrismaClient();
+${clientInit}
 db.user.create({
   data: {
     username: ${JSON.stringify(adminUsername)},
