@@ -2,12 +2,15 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { db } from "@/lib/db";
+import { isSetupComplete } from "@/lib/setup";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  if (!isSetupComplete()) redirect("/setup");
+
   const session = await auth();
   if (!session) redirect("/login");
 

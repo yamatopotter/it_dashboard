@@ -61,8 +61,16 @@ export async function middleware(req: NextRequest) {
 
   let response: NextResponse;
 
+  const pathname = req.nextUrl.pathname;
+  const isSetupRoute =
+    pathname === "/setup" ||
+    pathname.startsWith("/setup/") ||
+    pathname.startsWith("/api/setup/");
+
   // Rate limit login attempts before NextAuth processes them
-  if (req.method === "POST" && req.nextUrl.pathname === "/api/auth/callback/credentials") {
+  if (isSetupRoute) {
+    response = passThrough();
+  } else if (req.method === "POST" && pathname === "/api/auth/callback/credentials") {
     const ip =
       req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
       req.headers.get("x-real-ip") ??

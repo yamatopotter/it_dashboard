@@ -43,9 +43,16 @@ next-env.d.ts
 
 /app/generated/prisma
 
-# SQLite (legado — não usado mais)
+# SQLite database files
 prisma/*.db
 prisma/*.db-journal
+/data/*.db
+/data/*.db-journal
+/data/*.db-shm
+/data/*.db-wal
+
+# Setup lock (generated on first run)
+/data/setup.lock
 
 # env
 .env.local
