@@ -55,7 +55,7 @@ COPY --from=builder /app/tsconfig.json ./
 # Node modules (prod + tsx for worker runtime)
 COPY --from=builder /app/node_modules ./node_modules
 
-RUN chown -R app:app /app
+RUN mkdir -p /app/data && chown -R app:app /app
 USER app
 EXPOSE 3000
 
