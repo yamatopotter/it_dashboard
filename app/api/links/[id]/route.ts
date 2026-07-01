@@ -3,10 +3,11 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { z } from "zod";
-import { requireAuth, requireRole } from "@/lib/with-auth";
+import { requireAuth, requireRole, getSessionRole } from "@/lib/with-auth";
 import { parseAndValidate } from "@/lib/parse-body";
 import { notFoundOnP2025 } from "@/lib/prisma-error";
 import { writeAudit } from "@/lib/audit";
+import { generateWebhookToken } from "@/lib/webhook";
 
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -24,7 +25,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const link = await db.link.findUnique({ where: { id } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(link);
+  const role = await getSessionRole();
+  const canSeeToken = role === "ADMIN" || role === "OPERADOR";
+  return NextResponse.json(canSeeToken ? { ...link, webhookToken: generateWebhookToken(id) } : link);
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

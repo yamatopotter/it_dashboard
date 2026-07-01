@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/with-auth";
+import { requireAuth, getSessionRole } from "@/lib/with-auth";
+import { generateWebhookToken } from "@/lib/webhook";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const unauth = await requireAuth();
@@ -30,5 +31,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     orderBy: { timestamp: "desc" },
   });
 
-  return NextResponse.json({ link, events, lastBefore: lastBefore ?? null, since });
+  const role = await getSessionRole();
+  const canSeeToken = role === "ADMIN" || role === "OPERADOR";
+  const linkWithToken = canSeeToken ? { ...link, webhookToken: generateWebhookToken(id) } : link;
+
+  return NextResponse.json({ link: linkWithToken, events, lastBefore: lastBefore ?? null, since });
 }

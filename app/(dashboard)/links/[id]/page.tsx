@@ -41,6 +41,7 @@ interface LinkData {
   uploadBps: number | null;
   latencyMs: number | null;
   mikrotikInterface: string | null;
+  webhookToken?: string;
 }
 
 interface EventsResponse {
@@ -238,28 +239,33 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       />
 
     <div className="p-7 space-y-6">
-      {/* Webhook URLs */}
-      <Card>
-        <CardHeader className="pb-2 pt-4">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Webhooks para o Mikrotik</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 pb-4">
-          {(["down", "up"] as const).map((type) => (
-            <div key={type} className="flex items-center gap-2">
-              <Badge variant={type === "down" ? "destructive" : "default"} className="w-12 justify-center shrink-0">
-                {type.toUpperCase()}
-              </Badge>
-              <code className="text-xs bg-muted px-2 py-1 rounded flex-1 truncate">
-                POST {origin}/api/links/{id}/{type}
-              </code>
-              <CopyButton text={`${origin}/api/links/${id}/${type}`} />
-            </div>
-          ))}
-          <p className="text-xs text-muted-foreground pt-1">
-            Configure no Mikrotik via <code className="bg-muted px-1 rounded">/tool fetch</code> em scripts de detecção de queda de WAN.
-          </p>
-        </CardContent>
-      </Card>
+      {/* Webhook URLs — only shown when token is available (OPERADOR+) */}
+      {link.webhookToken && (
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Webhooks para o Mikrotik</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 pb-4">
+            {(["down", "up"] as const).map((type) => {
+              const url = `${origin}/api/links/${id}/${type}?token=${link.webhookToken}`;
+              return (
+                <div key={type} className="flex items-center gap-2">
+                  <Badge variant={type === "down" ? "destructive" : "default"} className="w-12 justify-center shrink-0">
+                    {type.toUpperCase()}
+                  </Badge>
+                  <code className="text-xs bg-muted px-2 py-1 rounded flex-1 truncate">
+                    {url}
+                  </code>
+                  <CopyButton text={url} />
+                </div>
+              );
+            })}
+            <p className="text-xs text-muted-foreground pt-1">
+              Configure no Mikrotik via <code className="bg-muted px-1 rounded">/tool fetch</code> em scripts de detecção de queda de WAN.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
