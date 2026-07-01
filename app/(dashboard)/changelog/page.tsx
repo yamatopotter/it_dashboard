@@ -18,10 +18,26 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.2.5",
+    date: "1 Jul 2026",
+    label: "Setup zero-intervenção e imagem Docker menor",
+    latest: true,
+    changes: [
+      { type: "feat", text: "Setup wizard gera automaticamente os segredos de criptografia (NEXTAUTH_SECRET, ENCRYPTION_KEY e WEBHOOK_SECRET) — não é mais necessário criar o .env manualmente antes da primeira execução" },
+      { type: "fix", text: "Setup lock (setup.lock) sobrevive a reinícios de container — volume persistente /app/data no docker-compose.prod.yml evita que o wizard se repita desnecessariamente" },
+      { type: "fix", text: "Container de produção inicia o servidor correto (npm run start em vez de npm run dev:all com hot-reload)" },
+      { type: "fix", text: "Separadores entre seções de protocolos no formulário de dispositivo agora somem junto com a seção — não ficam mais visíveis quando o tipo selecionado não tem aquela seção" },
+      { type: "feat", text: "Intervalo de monitoramento global — modal na tela de dispositivos permite ajustar o tempo de polling de todos os dispositivos (ou de um tipo específico) em lote, sem editar um a um" },
+      { type: "fix", text: "URL de webhook copiada nos detalhes do link agora inclui o token de autenticação (?token=…) — chamadas externas (Zabbix, NetWatch, scripts) paravam com erro 401" },
+      { type: "fix", text: "Toast de confirmação ao copiar URL de webhook na tela de links e na página de detalhes do link" },
+      { type: "perf", text: "Imagem Docker de 677 MB → 332 MB (-51%) — stage de prod-deps elimina devDependencies e COPY --chown evita camada duplicada do chown" },
+    ],
+  },
+  {
     version: "0.2.4",
     date: "18 Jun 2026",
     label: "OIDs SNMP personalizáveis",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "OIDs SNMP agora são configuráveis por dispositivo — os valores padrão (CPU, Memória, Uptime) vêm pré-preenchidos, mas podem ser editados, desabilitados ou substituídos por OIDs proprietários do fabricante" },
       { type: "feat", text: "Suporte a métricas de razão (numerador/denominador) e escalonamento por divisor — permite exibir qualquer OID como porcentagem ou unidade adequada" },

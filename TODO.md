@@ -4,23 +4,23 @@
 
 ### Setup / Infraestrutura
 
-- [ ] **Setup wizard: geração automática de segredos**
+- [x] **Setup wizard: geração automática de segredos** ✅ _2026-07-01_
   Auto-gerar `NEXTAUTH_SECRET`, `ENCRYPTION_KEY` e `WEBHOOK_SECRET` se ausentes e gravá-los no `.env` antes que qualquer validação de módulo seja executada. Atualmente `lib/auth.config.ts` lança exceção no carregamento do módulo se `NEXTAUTH_SECRET` não estiver definido, tornando o wizard inacessível.
 
-- [ ] **Setup wizard: volume persistente no Docker**
+- [x] **Setup wizard: volume persistente no Docker** ✅ _2026-07-01_
   Montar `/app/data` como volume no `docker-compose.prod.yml` para que o `setup.lock` sobreviva a reinícios de container. Sem o volume, o container reinicia após o wizard e perde o lock, repetindo o setup.
 
-- [ ] **`start.sh`: servidor de produção correto**
+- [x] **`start.sh`: servidor de produção correto** ✅ _2026-07-01_
   Substituir `npm run dev:all` por `npm run start` após o `prisma migrate deploy`. O script atual mistura migração de produção com servidor de desenvolvimento (hot-reload).
 
 ### Interface
 
-- [ ] **Separadores órfãos no formulário de equipamento**
+- [x] **Separadores órfãos no formulário de equipamento** ✅ _2026-07-01_
   Ocultar os `<hr>` / dividers entre seções de protocolos quando o tipo de equipamento selecionado esconde todas as opções daquela seção (ex: ao selecionar MikroTik, as seções Omada e UniFi somem mas os separadores ficam visíveis).
 
 ### Features
 
-- [ ] **Intervalo de monitoramento global**
+- [x] **Intervalo de monitoramento global** ✅ _2026-07-01_
   Tela ou modal para ajustar o `checkInterval` de todos os dispositivos em massa, com filtros opcionais por tipo de dispositivo. Elimina a necessidade de editar cada dispositivo individualmente para ajustar o tempo de polling.
 
 ---
