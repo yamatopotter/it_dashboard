@@ -258,7 +258,7 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
         )}
       </div>
 
-      <Separator />
+      {deviceType === "MIKROTIK" && <Separator />}
 
       {/* RouterOS — apenas para Mikrotik */}
       {deviceType === "MIKROTIK" && <div className="space-y-3">
@@ -295,7 +295,7 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
         )}
       </div>}
 
-      <Separator />
+      {deviceType === "UNIFI_AP" && <Separator />}
 
       {/* UniFi — apenas para UniFi AP */}
       {deviceType === "UNIFI_AP" && <div className="space-y-3">
@@ -489,7 +489,7 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
         )}
       </div>}
 
-      <Separator />
+      {deviceType === "OMADA_AP" && <Separator />}
 
       {/* Omada — apenas para Omada AP */}
       {deviceType === "OMADA_AP" && <div className="space-y-3">
