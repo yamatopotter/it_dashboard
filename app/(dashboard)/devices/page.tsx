@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { usePolling } from "@/hooks/use-polling";
 import Link from "next/link";
 import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SkeletonList } from "@/components/skeleton-list";
@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PingSparkline } from "@/components/ping-sparkline";
 import {
   Plus, Layers, Pencil, MapPin, Server, Wifi,
-  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List, AlignJustify, ArrowUpDown,
+  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List, AlignJustify, ArrowUpDown, Timer,
 } from "lucide-react";
 import {
   Select,
@@ -21,6 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter, DialogClose,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import { Topbar } from "@/components/topbar";
 import { formatResponseTime, formatUptime, formatPercent } from "@/lib/format";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL, DEVICE_TYPE_ICON_BG } from "@/lib/device-constants";
@@ -37,6 +42,122 @@ type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null; wifiSigna
 
 const pingColor = getPingColor;
 const pingDot = getPingDot;
+
+const INTERVAL_PRESETS = [
+  { label: "30 segundos", value: 30 },
+  { label: "1 minuto",    value: 60 },
+  { label: "2 minutos",   value: 120 },
+  { label: "5 minutos",   value: 300 },
+  { label: "10 minutos",  value: 600 },
+  { label: "30 minutos",  value: 1800 },
+  { label: "1 hora",      value: 3600 },
+];
+
+const DEVICE_TYPE_OPTIONS = [
+  { label: "Todos os tipos", value: "" },
+  { label: "MikroTik",       value: "MIKROTIK" },
+  { label: "UniFi AP",       value: "UNIFI_AP" },
+  { label: "Omada AP",       value: "OMADA_AP" },
+  { label: "DVR",            value: "DVR" },
+  { label: "Câmera",         value: "CAMERA" },
+  { label: "Outro",          value: "OTHER" },
+];
+
+function GlobalIntervalModal() {
+  const [open, setOpen]         = useState(false);
+  const [interval, setInterval] = useState("60");
+  const [type, setType]         = useState("");
+  const [loading, setLoading]   = useState(false);
+
+  async function handleApply() {
+    const seconds = parseInt(interval, 10);
+    if (!seconds || seconds < 10 || seconds > 3600) {
+      toast.error("Intervalo deve ser entre 10 e 3600 segundos");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/devices/bulk-interval", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interval: seconds, ...(type ? { type } : {}) }),
+      });
+      const data = await res.json() as { ok?: boolean; count?: number; error?: string };
+      if (!res.ok) {
+        toast.error(data.error ?? "Erro ao atualizar intervalo");
+        return;
+      }
+      toast.success(`Intervalo atualizado em ${data.count} dispositivo${data.count !== 1 ? "s" : ""}`);
+      setOpen(false);
+    } catch {
+      toast.error("Erro de conexão");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
+        title="Ajustar intervalo de monitoramento em massa"
+      >
+        <Timer className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Intervalo</span>
+      </button>
+
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Intervalo de monitoramento global</DialogTitle>
+          <DialogDescription>
+            Ajusta o tempo entre verificações de todos os dispositivos selecionados.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Intervalo</label>
+            <Select value={interval} onValueChange={setInterval}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione o intervalo" />
+              </SelectTrigger>
+              <SelectContent>
+                {INTERVAL_PRESETS.map((p) => (
+                  <SelectItem key={p.value} value={String(p.value)}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Tipo de dispositivo</label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Todos os tipos" />
+              </SelectTrigger>
+              <SelectContent>
+                {DEVICE_TYPE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Deixe em &quot;Todos os tipos&quot; para aplicar a todos os dispositivos.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
+          <Button onClick={handleApply} disabled={loading}>
+            {loading ? "Aplicando..." : "Aplicar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function rssiColor(dbm: number | null) {
   if (dbm == null) return "text-muted-foreground";
@@ -443,6 +564,8 @@ export default function DevicesPage() {
             <span className="hidden sm:inline">Ativas</span>
           </span>
         )}
+
+        <GlobalIntervalModal />
 
         <Link
           href="/devices/new/bulk"
