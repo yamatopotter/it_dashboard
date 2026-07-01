@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
+import { randomBytes } from "crypto";
 import fs from "fs";
 import path from "path";
 import { parseBody } from "@/lib/parse-body";
@@ -11,6 +12,17 @@ import {
   buildConnectionUrl,
   type DbProvider,
 } from "@/lib/setup";
+
+function generateMissingSecrets(): Record<string, string> {
+  const vars: Record<string, string> = {};
+  if (!process.env.NEXTAUTH_SECRET)
+    vars.NEXTAUTH_SECRET = randomBytes(32).toString("base64");
+  if (!process.env.ENCRYPTION_KEY)
+    vars.ENCRYPTION_KEY = randomBytes(32).toString("hex");
+  if (!process.env.WEBHOOK_SECRET)
+    vars.WEBHOOK_SECRET = randomBytes(32).toString("hex");
+  return vars;
+}
 
 interface ApplyBody {
   provider: DbProvider;
@@ -55,9 +67,10 @@ export async function POST(req: NextRequest) {
   const tmpScript = path.join(process.cwd(), "data", "_setup_user.cjs");
 
   try {
-    // 1. Patch schema.prisma provider and persist DB settings in .env
+    // 1. Generate any missing secrets and persist all settings in .env
+    const generatedSecrets = generateMissingSecrets();
     patchSchema(provider);
-    writeEnvVars(dbEnv);
+    writeEnvVars({ ...dbEnv, ...generatedSecrets });
 
     // 2. Regenerate Prisma client for the selected provider
     run("npx prisma generate", dbEnv);

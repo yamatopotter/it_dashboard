@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-echo "IT Dashboard — iniciando..."
+echo "WatchIT Tower — iniciando..."
 
-# Run migrations on startup
+# Apply pending migrations before starting the server
 npx prisma migrate deploy 2>/dev/null || true
 
-npm run dev:all
+npm run start
