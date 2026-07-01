@@ -120,11 +120,26 @@ function calcTotalDowntime(events: LinkEvent[], lastBefore: LinkEvent | null, si
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  function copy() {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success("URL copiada para a área de transferência");
+  async function copy() {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for HTTP/insecure contexts where clipboard API is unavailable
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("URL copiada para a área de transferência");
+    } catch {
+      toast.error("Não foi possível copiar a URL");
+    }
   }
   return (
     <Button variant="ghost" size="icon" onClick={copy} aria-label="Copiar token" className="h-6 w-6 shrink-0">
