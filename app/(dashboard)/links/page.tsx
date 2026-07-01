@@ -90,6 +90,7 @@ function CopyIconButton({ text, label }: { text: string; label: string }) {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    toast.success(`URL ${label} copiada`);
   }
   return (
     <button

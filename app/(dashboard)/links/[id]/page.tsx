@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
 import { Copy, Check, Activity, Clock, AlertTriangle, ArrowDown, ArrowUp, MapPin, Play, Square, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Topbar } from "@/components/topbar";
 import { formatBps, formatDuration, fmtTime, fmtDateTime } from "@/lib/format";
 import {
@@ -123,6 +124,7 @@ function CopyButton({ text }: { text: string }) {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    toast.success("URL copiada para a área de transferência");
   }
   return (
     <Button variant="ghost" size="icon" onClick={copy} aria-label="Copiar token" className="h-6 w-6 shrink-0">
