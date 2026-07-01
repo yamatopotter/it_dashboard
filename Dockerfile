@@ -1,4 +1,4 @@
-# ── Stage 1: install all dependencies ─────────────────────────────────────────
+# ── Stage 1: install ALL dependencies (needed for build) ──────────────────────
 FROM node:20-alpine AS deps
 WORKDIR /app
 
@@ -8,7 +8,18 @@ COPY prisma.config.ts ./
 
 RUN npm ci && npx prisma generate
 
-# ── Stage 2: build Next.js ─────────────────────────────────────────────────────
+# ── Stage 2: install PRODUCTION-ONLY dependencies ─────────────────────────────
+FROM node:20-alpine AS prod-deps
+WORKDIR /app
+
+COPY package*.json ./
+COPY prisma ./prisma/
+COPY prisma.config.ts ./
+
+# Excludes devDependencies: jest, playwright, typescript, eslint, tailwindcss, etc.
+RUN npm ci --omit=dev && npx prisma generate
+
+# ── Stage 3: build Next.js ─────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
 
@@ -29,33 +40,32 @@ COPY . .
 # Regenerate with full source present (path aliases resolution)
 RUN npx prisma generate && npm run build
 
-# ── Stage 3: production runtime ───────────────────────────────────────────────
+# ── Stage 4: production runtime ───────────────────────────────────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app && mkdir -p /app/data && chown app:app /app/data
 
-# Next.js
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/SECURITY_REPORT.md ./
+# Copy files with --chown to avoid a separate RUN chown layer that duplicates all files
+COPY --chown=app:app --from=builder /app/public ./public
+COPY --chown=app:app --from=builder /app/.next ./.next
+COPY --chown=app:app --from=builder /app/package.json ./
+COPY --chown=app:app --from=builder /app/SECURITY_REPORT.md ./
 
 # Worker, scripts and shared libs
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/worker ./worker
-COPY --from=builder /app/lib ./lib
-COPY --from=builder /app/app/api ./app/api
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/prisma.config.ts ./
-COPY --from=builder /app/tsconfig.json ./
+COPY --chown=app:app --from=builder /app/scripts ./scripts
+COPY --chown=app:app --from=builder /app/worker ./worker
+COPY --chown=app:app --from=builder /app/lib ./lib
+COPY --chown=app:app --from=builder /app/app/api ./app/api
+COPY --chown=app:app --from=builder /app/prisma ./prisma
+COPY --chown=app:app --from=builder /app/prisma.config.ts ./
+COPY --chown=app:app --from=builder /app/tsconfig.json ./
 
-# Node modules (prod + tsx for worker runtime)
-COPY --from=builder /app/node_modules ./node_modules
+# Production-only node_modules (no jest, playwright, typescript, eslint, etc.)
+COPY --chown=app:app --from=prod-deps /app/node_modules ./node_modules
 
-RUN mkdir -p /app/data && chown -R app:app /app
 USER app
 EXPOSE 3000
 
