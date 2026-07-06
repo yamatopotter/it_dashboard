@@ -1,6 +1,8 @@
 /**
  * @jest-environment node
  */
+process.env.WEBHOOK_SECRET = "links-events-test-secret-at-least-32chars!!";
+
 jest.mock("@/lib/auth", () => ({
   auth: jest.fn().mockResolvedValue({ user: { id: "u1", role: "ADMIN" } }),
 }));

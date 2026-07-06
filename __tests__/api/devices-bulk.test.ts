@@ -1,6 +1,8 @@
 /**
  * @jest-environment node
  */
+process.env.ENCRYPTION_KEY = "0".repeat(64);
+
 import { POST } from "@/app/api/devices/bulk/route";
 import { NextRequest } from "next/server";
 
