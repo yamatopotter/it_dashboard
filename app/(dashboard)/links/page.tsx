@@ -85,12 +85,27 @@ type FormValues = z.infer<typeof formSchema>;
 
 function CopyIconButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
-  function copy(e: React.MouseEvent) {
+  async function copy(e: React.MouseEvent) {
     e.stopPropagation();
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success(`URL ${label} copiada`);
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for HTTP/insecure contexts where clipboard API is unavailable
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success(`URL ${label} copiada`);
+    } catch {
+      toast.error("Não foi possível copiar a URL");
+    }
   }
   return (
     <button
