@@ -18,10 +18,23 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.3.0",
+    date: "27 Jul 2026",
+    label: "Monitoramento de gravação NVR e alertas por e-mail",
+    latest: true,
+    changes: [
+      { type: "feat", text: "NVDs (gravadores de câmera Intelbras/Dahua) agora podem ser cadastrados como dispositivo e monitorados automaticamente: canais gravando, parados, com falha ou inacessíveis" },
+      { type: "feat", text: "E-mail de alerta (SMTP) quando um canal para de gravar — configurável em Sistema, com qualquer provedor (SSL ou TLS), sem repetir o aviso antes de 2 horas" },
+      { type: "feat", text: "Saúde de disco/armazenamento do NVD exibida na página de detalhe do dispositivo" },
+      { type: "feat", text: "Câmeras IP já cadastradas podem ser vinculadas a um canal do NVD, mostrando o status de ping ao lado do status de gravação do canal" },
+      { type: "feat", text: "A verificação de gravação roda numa cadência própria e ajustável (padrão 1x/dia), independente do intervalo normal de monitoramento do dispositivo" },
+    ],
+  },
+  {
     version: "0.2.5",
     date: "1 Jul 2026",
     label: "Setup zero-intervenção e imagem Docker menor",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "Setup wizard gera automaticamente os segredos de criptografia (NEXTAUTH_SECRET, ENCRYPTION_KEY e WEBHOOK_SECRET) — não é mais necessário criar o .env manualmente antes da primeira execução" },
       { type: "fix", text: "Setup lock (setup.lock) sobrevive a reinícios de container — volume persistente /app/data no docker-compose.prod.yml evita que o wizard se repita desnecessariamente" },
