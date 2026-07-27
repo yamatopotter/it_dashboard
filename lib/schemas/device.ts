@@ -73,6 +73,18 @@ export const deviceConfigSchema = z.object({
   omadaSiteId:          z.string().optional().nullable(),
   omadaTlsVerify:       z.boolean().default(true),
   omadaControllerIp:    controllerIpSchema.optional().nullable(),
+  // Monitor de gravação NVR (type = DVR) — cadência própria, ver nvrCheckIntervalMinutes
+  nvrEnabled: z.boolean().default(false),
+  nvrUser: z.string().optional().nullable(), // input only — encriptado para nvrUserEnc
+  nvrPass: z.string().optional().nullable(), // input only — encriptado para nvrPassEnc
+  nvrPort: z.number().int().min(1).max(65535).default(80),
+  nvrUseHttps: z.boolean().default(false),
+  nvrMaxGapMinutes: z.number().int().min(1).max(1440).default(5),
+  nvrHoursWindow: z.number().int().min(1).max(168).default(24),
+  nvrCheckIntervalMinutes: z.number().int().min(5).max(10080).default(1440),
+  // Vínculo canal↔câmera (type = CAMERA): aponta para o canal de um Device DVR
+  parentNvrId: z.string().optional().nullable(),
+  parentNvrChannel: z.number().int().min(0).max(255).optional().nullable(),
   macAddress: z.string()
     .regex(/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/, "Formato inválido")
     .optional()

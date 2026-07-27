@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const body = await parseAndValidate(req, bulkDeviceSchema);
   if (!body.ok) return body.response;
 
-  const { ipStart, ipEnd, name, snmpCommunity, routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCustomOids, ...config } = body.data;
+  const { ipStart, ipEnd, name, snmpCommunity, routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, nvrUser, nvrPass, snmpCustomOids, ...config } = body.data;
   // Prisma 7: nullable JSON must not be null — omit when null so the column defaults to null in DB
   const snmpCustomOidsVal: Prisma.InputJsonValue | undefined =
     snmpCustomOids != null ? snmpCustomOids as Prisma.InputJsonValue : undefined;
@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
       unifiPassEnc:    unifiPass    ? encrypt(unifiPass)    : null,
       omadaClientIdEnc:     omadaClientId     ? encrypt(omadaClientId)     : null,
       omadaClientSecretEnc: omadaClientSecret ? encrypt(omadaClientSecret) : null,
+      nvrUserEnc: nvrUser ? encrypt(nvrUser) : null,
+      nvrPassEnc: nvrPass ? encrypt(nvrPass) : null,
     })),
     skipDuplicates: true,
   });

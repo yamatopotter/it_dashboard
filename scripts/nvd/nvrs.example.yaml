@@ -1,0 +1,24 @@
+# Exemplo de configuração - copie para nvrs.yaml e preencha com os dados reais.
+# host: pode ser o IP local do NVD acessado via túnel WireGuard de cada site.
+nvrs:
+  - site: "Barra da Tijuca"
+    nvr_name: "NVD-Barra-01"
+    host: "10.0.10.10"     # ajuste para o IP real na sua rede WireGuard
+    port: 80
+    username: "api_readonly"   # recomendo criar um usuário dedicado, somente leitura
+    password: "SENHA_AQUI"
+    # channels: [0, 1, 2]   # opcional - se omitido, valida todos os canais detectados
+
+  - site: "Itaguaí"
+    nvr_name: "NVD-Itaguai-01"
+    host: "10.0.20.10"
+    port: 80
+    username: "api_readonly"
+    password: "SENHA_AQUI"
+
+  - site: "Botafogo"
+    nvr_name: "NVD-Botafogo-01"
+    host: "10.0.30.10"
+    port: 80
+    username: "api_readonly"
+    password: "SENHA_AQUI"

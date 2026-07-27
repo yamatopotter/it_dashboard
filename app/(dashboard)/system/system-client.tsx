@@ -5,6 +5,8 @@ import { Topbar } from "@/components/topbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { PasswordInput } from "@/components/ui/password-input";
 import { cn } from "@/lib/utils";
 import { fmtDateTime, formatBytes } from "@/lib/format";
 import {
@@ -16,6 +18,7 @@ import {
   CheckCircle,
   AlertCircle,
   Activity,
+  Mail,
 } from "lucide-react";
 
 interface TableStat {
@@ -105,6 +108,18 @@ export function SystemClient() {
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [cleanMsg, setCleanMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const [smtpEnabled, setSmtpEnabled] = useState(false);
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState(587);
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [smtpFrom, setSmtpFrom] = useState("");
+  const [alertEmailTo, setAlertEmailTo] = useState("");
+  const [hasSmtpPassword, setHasSmtpPassword] = useState(false);
+  const [smtpSaving, setSmtpSaving] = useState(false);
+  const [smtpMsg, setSmtpMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/stats", { cache: "no-store" });
@@ -128,6 +143,52 @@ export function SystemClient() {
     const interval = setInterval(load, 30_000);
     return () => clearInterval(interval);
   }, [load]);
+
+  const loadSmtp = useCallback(async () => {
+    const res = await fetch("/api/admin/config");
+    if (!res.ok) return;
+    const cfg = await res.json();
+    setSmtpEnabled(cfg.smtpEnabled ?? false);
+    setSmtpHost(cfg.smtpHost ?? "");
+    setSmtpPort(cfg.smtpPort ?? 587);
+    setSmtpSecure(cfg.smtpSecure ?? false);
+    setSmtpUser(cfg.smtpUser ?? "");
+    setSmtpFrom(cfg.smtpFrom ?? "");
+    setAlertEmailTo(cfg.alertEmailTo ?? "");
+    setHasSmtpPassword(!!cfg.hasSmtpPassword);
+  }, []);
+
+  useEffect(() => { loadSmtp(); }, [loadSmtp]);
+
+  async function saveSmtp() {
+    setSmtpSaving(true);
+    setSmtpMsg(null);
+    const res = await fetch("/api/admin/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        smtpEnabled,
+        smtpHost: smtpHost || null,
+        smtpPort,
+        smtpSecure,
+        smtpUser: smtpUser || null,
+        smtpFrom: smtpFrom || null,
+        alertEmailTo: alertEmailTo || null,
+        // Write-only: omitido quando em branco mantém a senha já salva
+        ...(smtpPassword ? { smtpPassword } : {}),
+      }),
+    });
+    if (res.ok) {
+      setSmtpMsg({ ok: true, text: "Configuração de e-mail salva com sucesso." });
+      setSmtpPassword("");
+      loadSmtp();
+    } else {
+      const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+      setSmtpMsg({ ok: false, text: err.error ?? "Erro ao salvar." });
+    }
+    setSmtpSaving(false);
+    setTimeout(() => setSmtpMsg(null), 4000);
+  }
 
   async function saveRetention() {
     setSaving(true);
@@ -381,6 +442,112 @@ export function SystemClient() {
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <Button onClick={saveRetention} disabled={saving} size="sm">
                 {saving ? "Salvando…" : "Salvar configuração"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* SMTP settings */}
+        <div className="rounded-xl border border-border bg-card">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[13px] font-semibold">E-mail (SMTP)</span>
+            </div>
+            <Switch checked={smtpEnabled} onCheckedChange={setSmtpEnabled} />
+          </div>
+          <div className="p-5 space-y-5">
+            <p className="text-[13px] text-muted-foreground">
+              Servidor SMTP genérico (qualquer provedor, SSL ou TLS) usado para alertas
+              de gravação NVR e outras notificações por e-mail do sistema.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-host" className="text-[13px]">Host</Label>
+                <Input
+                  id="smtp-host"
+                  placeholder="smtp.exemplo.com"
+                  value={smtpHost}
+                  onChange={(e) => setSmtpHost(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-port" className="text-[13px]">Porta</Label>
+                <Input
+                  id="smtp-port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={smtpPort}
+                  onChange={(e) => setSmtpPort(Number(e.target.value))}
+                  className="w-28 text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-user" className="text-[13px]">Usuário</Label>
+                <Input
+                  id="smtp-user"
+                  value={smtpUser}
+                  onChange={(e) => setSmtpUser(e.target.value)}
+                  className="text-[13px]"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-password" className="text-[13px]">
+                  Senha
+                  {hasSmtpPassword && (
+                    <span className="ml-2 text-muted-foreground font-normal">· já configurada</span>
+                  )}
+                </Label>
+                <PasswordInput
+                  id="smtp-password"
+                  placeholder={hasSmtpPassword ? "Deixe em branco para manter" : ""}
+                  value={smtpPassword}
+                  onChange={(e) => setSmtpPassword(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-from" className="text-[13px]">Remetente (From)</Label>
+                <Input
+                  id="smtp-from"
+                  placeholder="watchit@exemplo.com"
+                  value={smtpFrom}
+                  onChange={(e) => setSmtpFrom(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="alert-email-to" className="text-[13px]">Destinatário(s) de alerta</Label>
+                <Input
+                  id="alert-email-to"
+                  placeholder="ti@exemplo.com, ti2@exemplo.com"
+                  value={alertEmailTo}
+                  onChange={(e) => setAlertEmailTo(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch checked={smtpSecure} onCheckedChange={setSmtpSecure} />
+              <Label className="text-[13px]">TLS implícito (porta 465) — desligado usa STARTTLS (587)</Label>
+            </div>
+
+            {smtpMsg && (
+              <div className={cn("flex items-center gap-2 text-[13px] rounded-lg px-3 py-2",
+                smtpMsg.ok ? "bg-emerald-500/10 text-emerald-600" : "bg-destructive/10 text-destructive"
+              )}>
+                {smtpMsg.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                {smtpMsg.text}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Button onClick={saveSmtp} disabled={smtpSaving} size="sm">
+                {smtpSaving ? "Salvando…" : "Salvar configuração"}
               </Button>
             </div>
           </div>
