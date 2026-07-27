@@ -31,6 +31,7 @@ const RELEASES: Release[] = [
       { type: "fix", text: "URL de webhook copiada nos detalhes do link agora inclui o token de autenticação (?token=…) — chamadas externas (Zabbix, NetWatch, scripts) paravam com erro 401" },
       { type: "fix", text: "Toast de confirmação ao copiar URL de webhook na tela de links e na página de detalhes do link" },
       { type: "perf", text: "Imagem Docker de 677 MB → 332 MB (-51%) — stage de prod-deps elimina devDependencies e COPY --chown evita camada duplicada do chown" },
+      { type: "feat", text: "Script de auditoria de configuração Mikrotik (scripts/mikrotik_validate.py) — verifica firewall, NAT, DHCP, serviços de gerência expostos e NTP/DNS direto no roteador, sem depender do banco" },
     ],
   },
   {
