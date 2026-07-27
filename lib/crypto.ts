@@ -74,3 +74,19 @@ export function resolveOmadaCredentials(device: {
   if (!clientId || !clientSecret) return null;
   return { clientId, clientSecret };
 }
+
+export function resolveNvrCredentials(device: {
+  nvrUserEnc: string | null;
+  nvrPassEnc: string | null;
+}): { user: string; pass: string } | null {
+  const user = device.nvrUserEnc ? decrypt(device.nvrUserEnc) : null;
+  const pass = device.nvrPassEnc ? decrypt(device.nvrPassEnc) : null;
+  if (!user || !pass) return null;
+  return { user, pass };
+}
+
+export function resolveSmtpPassword(config: {
+  smtpPasswordEnc: string | null;
+}): string | null {
+  return config.smtpPasswordEnc ? decrypt(config.smtpPasswordEnc) : null;
+}

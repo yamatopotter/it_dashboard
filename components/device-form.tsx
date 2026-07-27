@@ -61,6 +61,16 @@ const schema = z.object({
   omadaSiteId:       z.string().optional().nullable(),
   omadaTlsVerify:    z.boolean(),
   omadaControllerIp: z.string().optional().nullable(),
+  nvrEnabled: z.boolean(),
+  nvrUser: z.string().optional().nullable(),
+  nvrPass: z.string().optional().nullable(),
+  nvrPort: z.number(),
+  nvrUseHttps: z.boolean(),
+  nvrMaxGapMinutes: z.number().int().min(1).max(1440),
+  nvrHoursWindow: z.number().int().min(1).max(168),
+  nvrCheckIntervalMinutes: z.number().int().min(5).max(10080),
+  parentNvrId: z.string().optional().nullable(),
+  parentNvrChannel: z.number().int().min(0).max(255).optional().nullable(),
   macAddress: z.string()
     .regex(/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/, "Formato inválido (ex: AA:BB:CC:DD:EE:FF)")
     .or(z.literal(""))
@@ -84,7 +94,7 @@ const schema = z.object({
 export type FormData = z.infer<typeof schema>;
 
 interface DeviceFormProps {
-  device?: Device & { hasUnifiApiKey?: boolean; hasUnifiCredentials?: boolean; hasOmadaCredentials?: boolean };
+  device?: Device & { hasUnifiApiKey?: boolean; hasUnifiCredentials?: boolean; hasOmadaCredentials?: boolean; hasNvrCredentials?: boolean };
 }
 
 export function DeviceForm({ device }: DeviceFormProps) {
@@ -129,6 +139,16 @@ export function DeviceForm({ device }: DeviceFormProps) {
           omadaSiteId:       device.omadaSiteId ?? "",
           omadaTlsVerify:    device.omadaTlsVerify,
           omadaControllerIp: device.omadaControllerIp ?? "",
+          nvrEnabled: device.nvrEnabled,
+          nvrUser: "",
+          nvrPass: "",
+          nvrPort: device.nvrPort,
+          nvrUseHttps: device.nvrUseHttps,
+          nvrMaxGapMinutes: device.nvrMaxGapMinutes,
+          nvrHoursWindow: device.nvrHoursWindow,
+          nvrCheckIntervalMinutes: device.nvrCheckIntervalMinutes,
+          parentNvrId: device.parentNvrId ?? "",
+          parentNvrChannel: device.parentNvrChannel ?? undefined,
           macAddress:      device.macAddress ?? "",
           snmpCustomOids:  Array.isArray(device.snmpCustomOids) ? device.snmpCustomOids as unknown as SnmpOidEntry[] : DEFAULT_SNMP_OIDS,
           checkInterval:   device.checkInterval,
@@ -163,6 +183,14 @@ export function DeviceForm({ device }: DeviceFormProps) {
           omadaSiteId:       "",
           omadaTlsVerify:    true,
           omadaControllerIp: "",
+          nvrEnabled: false,
+          nvrPort: 80,
+          nvrUseHttps: false,
+          nvrMaxGapMinutes: 5,
+          nvrHoursWindow: 24,
+          nvrCheckIntervalMinutes: 1440,
+          parentNvrId: "",
+          parentNvrChannel: undefined,
           macAddress:      "",
           snmpCustomOids:  DEFAULT_SNMP_OIDS,
           checkInterval:   60,
@@ -203,6 +231,8 @@ export function DeviceForm({ device }: DeviceFormProps) {
             ? data.unifiControllerIp
             : null,
         omadaControllerIp: data.omadaControllerIp || null,
+        parentNvrId: data.type === "CAMERA" ? (data.parentNvrId || null) : null,
+        parentNvrChannel: data.type === "CAMERA" ? (data.parentNvrChannel ?? null) : null,
         // Write-only credentials: omit when blank so the API keeps the stored value
         // on edit (sending "" would clear it). On create, omitted = no credential.
         snmpCommunity:     data.snmpCommunity || undefined,
@@ -210,6 +240,8 @@ export function DeviceForm({ device }: DeviceFormProps) {
         routerosPass:      data.routerosPass || undefined,
         omadaClientId:     data.omadaClientId || undefined,
         omadaClientSecret: data.omadaClientSecret || undefined,
+        nvrUser:           data.nvrUser || undefined,
+        nvrPass:           data.nvrPass || undefined,
         // Clear unused auth fields so the API can null them in DB
         unifiApiKey: data.unifiAuthMethod === "apikey" ? (data.unifiApiKey || undefined) : "",
         unifiUser:   data.unifiAuthMethod === "userpass" ? (data.unifiUser || undefined) : "",
@@ -266,6 +298,8 @@ export function DeviceForm({ device }: DeviceFormProps) {
                     if (v !== "MIKROTIK") setValue("routerosEnabled", false);
                     if (v !== "UNIFI_AP") setValue("unifiEnabled", false);
                     if (v !== "OMADA_AP") setValue("omadaEnabled", false);
+                    if (v !== "DVR") setValue("nvrEnabled", false);
+                    if (v !== "CAMERA") { setValue("parentNvrId", ""); setValue("parentNvrChannel", undefined); }
                   }}
                 >
                   <SelectTrigger id="type">

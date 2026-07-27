@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFormContext, useFieldArray } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +25,7 @@ type UnifiTestState = { status: "idle" | "testing" | "ok" | "error"; message?: s
 type OmadaTestState = { status: "idle" | "testing" | "ok" | "error"; message?: string; sites?: Array<{ siteId: string; name: string }> };
 
 interface DeviceFormProtocolsProps {
-  device?: Device & { hasUnifiApiKey?: boolean; hasUnifiCredentials?: boolean; hasOmadaCredentials?: boolean };
+  device?: Device & { hasUnifiApiKey?: boolean; hasUnifiCredentials?: boolean; hasOmadaCredentials?: boolean; hasNvrCredentials?: boolean };
 }
 
 export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
@@ -33,6 +33,7 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
 
   const [unifiTest, setUnifiTest] = useState<UnifiTestState>({ status: "idle" });
   const [omadaTest, setOmadaTest] = useState<OmadaTestState>({ status: "idle" });
+  const [dvrDevices, setDvrDevices] = useState<Array<{ id: string; name: string }>>([]);
 
   const { fields: oidFields, append: appendOid, remove: removeOid } = useFieldArray({
     control,
@@ -47,6 +48,15 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
   const unifiAuthMethod = watch("unifiAuthMethod");
   const unifiMode       = watch("unifiMode");
   const omadaEnabled    = watch("omadaEnabled");
+  const nvrEnabled      = watch("nvrEnabled");
+
+  useEffect(() => {
+    if (deviceType !== "CAMERA") return;
+    fetch("/api/devices?type=DVR")
+      .then((r) => r.json())
+      .then((devices: Array<{ id: string; name: string }>) => setDvrDevices(devices))
+      .catch(() => {});
+  }, [deviceType]);
 
   async function handleTestUnifi() {
     const values = watch();
@@ -293,6 +303,120 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
             </div>
           </div>
         )}
+      </div>}
+
+      {deviceType === "DVR" && <Separator />}
+
+      {/* Monitor NVR — apenas para DVR (NVD Intelbras/Dahua) */}
+      {deviceType === "DVR" && <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium text-sm">Gravação NVR</p>
+            <p className="text-xs text-muted-foreground">Canais gravando/parados, gaps e saúde de disco</p>
+          </div>
+          <Switch
+            checked={nvrEnabled}
+            onCheckedChange={(v) => setValue("nvrEnabled", v)}
+          />
+        </div>
+        {nvrEnabled && (
+          <div className="space-y-3 pl-4 border-l-2 border-muted">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="nvrUser" className="text-xs">
+                  Usuário
+                  {device?.hasNvrCredentials && (
+                    <span className="ml-2 text-muted-foreground font-normal">· já configurado</span>
+                  )}
+                </Label>
+                <Input
+                  id="nvrUser"
+                  placeholder={device?.hasNvrCredentials ? "Deixe em branco para manter" : "api_readonly"}
+                  {...register("nvrUser")}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="nvrPass" className="text-xs">Senha</Label>
+                <PasswordInput
+                  id="nvrPass"
+                  placeholder={device?.hasNvrCredentials ? "Deixe em branco para manter" : ""}
+                  {...register("nvrPass")}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="nvrPort" className="text-xs">Porta</Label>
+                <Input id="nvrPort" type="number" placeholder="80" {...register("nvrPort", { valueAsNumber: true })} />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={watch("nvrUseHttps")}
+                onCheckedChange={(v) => setValue("nvrUseHttps", v)}
+              />
+              <Label className="text-xs">Usar HTTPS</Label>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="nvrHoursWindow" className="text-xs">Janela de checagem (h)</Label>
+                <Input id="nvrHoursWindow" type="number" min={1} max={168} {...register("nvrHoursWindow", { valueAsNumber: true })} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="nvrMaxGapMinutes" className="text-xs">Gap máximo (min)</Label>
+                <Input id="nvrMaxGapMinutes" type="number" min={1} max={1440} {...register("nvrMaxGapMinutes", { valueAsNumber: true })} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="nvrCheckIntervalMinutes" className="text-xs">Cadência (min)</Label>
+                <Input id="nvrCheckIntervalMinutes" type="number" min={5} max={10080} {...register("nvrCheckIntervalMinutes", { valueAsNumber: true })} />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Cadência padrão: 1440 min (1x/dia). Aumente se o NVD não aguentar consultas frequentes.
+            </p>
+          </div>
+        )}
+      </div>}
+
+      {deviceType === "CAMERA" && <Separator />}
+
+      {/* Vínculo com canal de NVR — apenas para Câmera */}
+      {deviceType === "CAMERA" && <div className="space-y-3">
+        <div>
+          <p className="font-medium text-sm">Vínculo com NVR</p>
+          <p className="text-xs text-muted-foreground">Associa esta câmera a um canal de um DVR cadastrado, para cruzar ping com status de gravação</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="parentNvrId" className="text-xs">NVR (DVR)</Label>
+            <Select
+              value={watch("parentNvrId") || "none"}
+              onValueChange={(v) => setValue("parentNvrId", v === "none" ? "" : v)}
+            >
+              <SelectTrigger id="parentNvrId" className="h-9 text-xs">
+                <SelectValue placeholder="Nenhum" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-xs">Nenhum</SelectItem>
+                {dvrDevices.map((d) => (
+                  <SelectItem key={d.id} value={d.id} className="text-xs">{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="parentNvrChannel" className="text-xs">Número do canal</Label>
+            <Input
+              id="parentNvrChannel"
+              type="number"
+              min={0}
+              max={255}
+              placeholder="0"
+              {...register("parentNvrChannel", { valueAsNumber: true, setValueAs: v => v === "" || isNaN(Number(v)) ? undefined : Number(v) })}
+            />
+          </div>
+        </div>
       </div>}
 
       {deviceType === "UNIFI_AP" && <Separator />}

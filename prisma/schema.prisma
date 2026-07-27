@@ -58,6 +58,20 @@ model Device {
   omadaTlsVerify       Boolean @default(true)
   omadaControllerIp    String? // IP do Omada Controller
 
+  // Monitor de gravação NVR (type = DVR) — cadência própria, ver nvrCheckIntervalMinutes
+  nvrEnabled              Boolean @default(false)
+  nvrUserEnc              String? // AES-256-GCM encrypted
+  nvrPassEnc              String? // AES-256-GCM encrypted
+  nvrPort                 Int     @default(80)
+  nvrUseHttps             Boolean @default(false)
+  nvrMaxGapMinutes        Int     @default(5)
+  nvrHoursWindow          Int     @default(24)
+  nvrCheckIntervalMinutes Int     @default(1440) // 1x/dia; reduzir se sobrecarregar o NVD
+
+  // Vínculo canal↔câmera (type = CAMERA): a câmera aponta para o canal de um DVR
+  parentNvrId      String?
+  parentNvrChannel Int?
+
   macAddress    String? // optional MAC for Wi-Fi client signal lookup on parent AP
 
   checkInterval Int @default(60)
@@ -83,7 +97,12 @@ model Device {
 
   monitoredLinks Link[]          @relation("LinkMikrotik")
 
+  parentNvr        Device?           @relation("DeviceNvrChannel", fields: [parentNvrId], references: [id], onDelete: SetNull)
+  nvrChannels       Device[]          @relation("DeviceNvrChannel")
+  nvrChannelIssues  NvrChannelIssue[]
+
   @@index([type])
+  @@index([parentNvrId])
 }
 
 model DeviceStatus {
@@ -103,6 +122,10 @@ model DeviceStatus {
   unifiError   String?
   omadaData    Json?
   omadaError   String?
+  nvrDiskData      Json?
+  nvrDiskError     String?
+  nvrChannelsOk    Int?
+  nvrChannelsTotal Int?
 
   checkedAt DateTime @default(now())
 }
@@ -240,6 +263,38 @@ model SystemConfig {
   linkEventDays       Int      @default(90)
   lastCleanupAt       DateTime?
   updatedAt           DateTime @updatedAt
+
+  // E-mail (SMTP genérico — qualquer provedor, SSL ou TLS)
+  smtpEnabled     Boolean @default(false)
+  smtpHost        String?
+  smtpPort        Int     @default(587)
+  smtpSecure      Boolean @default(false) // true = TLS implícito (465), false = STARTTLS (587)
+  smtpUser        String?
+  smtpPasswordEnc String? // AES-256-GCM encrypted
+  smtpFrom        String?
+  alertEmailTo    String? // destinatário(s), separado por vírgula
+}
+
+model NvrChannelIssue {
+  id          String    @id @default(cuid())
+  deviceId    String
+  device      Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  channel     Int
+  channelName String
+  issueType   String    // "no_recordings" | "gap" | "not_recording_now" | "unreachable"
+  detail      String
+  gapMinutes  Float?
+  periodStart DateTime?
+  periodEnd   DateTime?
+  detectedAt  DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+  alertedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  // Índice único parcial (WHERE "resolvedAt" IS NULL) adicionado manualmente
+  // na migration — Prisma não representa índices parciais no schema.
+  @@index([deviceId, channel, detectedAt])
 }
 
 model RateLimit {

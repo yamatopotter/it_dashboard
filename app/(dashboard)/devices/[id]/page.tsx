@@ -31,7 +31,8 @@ import {
 } from "lucide-react";
 
 import { toast } from "sonner";
-import type { Device, DeviceStatus, StatusHistory } from "@prisma/client";
+import type { Device, DeviceStatus, StatusHistory, NvrChannelIssue } from "@prisma/client";
+import { HardDrive, Video } from "lucide-react";
 
 interface UnifiSSID {
   ssid: string;
@@ -152,6 +153,9 @@ export default function DeviceDetailPage({
   const [dhcpExpanded, setDhcpExpanded] = useState(false);
   const [clientSort, setClientSort] = useState<ClientSortKey>("signal");
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [nvrIssues, setNvrIssues] = useState<NvrChannelIssue[]>([]);
+  const [linkedCameras, setLinkedCameras] = useState<Device[]>([]);
+  const [parentNvr, setParentNvr] = useState<Device | null>(null);
 
   const load = useCallback(async (h: number, signal?: AbortSignal) => {
     try {
@@ -180,6 +184,36 @@ export default function DeviceDetailPage({
     const interval = setInterval(() => load(hours), 30_000);
     return () => clearInterval(interval);
   }, [id, hours, load]);
+
+  // Canais de gravação NVR (type = DVR) — issues abertas + câmeras vinculadas a este NVR
+  useEffect(() => {
+    if (!device || device.type !== "DVR") return;
+    const controller = new AbortController();
+    const loadNvr = () => {
+      Promise.all([
+        fetch(`/api/devices/${id}/nvr-issues?limit=100`, { cache: "no-store", signal: controller.signal })
+          .then((r) => (r.ok ? r.json() : null)),
+        fetch(`/api/devices?type=CAMERA`, { cache: "no-store", signal: controller.signal })
+          .then((r) => (r.ok ? r.json() : [])),
+      ]).then(([issuesRes, cameras]: [{ data: NvrChannelIssue[] } | null, Array<Device & { parentNvrId?: string | null }>]) => {
+        if (issuesRes) setNvrIssues(issuesRes.data.filter((i) => i.resolvedAt == null));
+        setLinkedCameras(cameras.filter((c) => c.parentNvrId === id));
+      }).catch(() => {});
+    };
+    loadNvr();
+    const interval = setInterval(loadNvr, 30_000);
+    return () => { controller.abort(); clearInterval(interval); };
+  }, [device, id]);
+
+  // Vínculo de câmera → NVR: busca o nome do NVR pai para exibição
+  useEffect(() => {
+    const parentId = (device as (Device & { parentNvrId?: string | null }) | null)?.parentNvrId;
+    if (!device || device.type !== "CAMERA" || !parentId) { setParentNvr(null); return; }
+    fetch(`/api/devices/${parentId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setParentNvr)
+      .catch(() => setParentNvr(null));
+  }, [device]);
 
   async function handleCheck() {
     setIsChecking(true);
@@ -400,7 +434,17 @@ export default function DeviceDetailPage({
               Omada API
             </Badge>
           )}
+          {device.nvrEnabled && <Badge variant="outline">Monitor NVR</Badge>}
         </div>
+
+        {/* Vínculo câmera → NVR */}
+        {device.type === "CAMERA" && parentNvr && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Video className="h-3.5 w-3.5" />
+            Vinculada ao canal {(device as Device & { parentNvrChannel?: number | null }).parentNvrChannel} de{" "}
+            <Link href={`/devices/${parentNvr.id}`} className="text-primary hover:underline">{parentNvr.name}</Link>
+          </div>
+        )}
 
         {/* UniFi connection error alert */}
         {unifiError && (
@@ -442,6 +486,97 @@ export default function DeviceDetailPage({
             </div>
           );
         })()}
+
+        {/* Monitor NVR: canais de gravação + saúde de disco */}
+        {device.type === "DVR" && device.nvrEnabled && (
+          <div className="space-y-3">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Video className="h-4 w-4" />
+              Canais de gravação
+              {status?.nvrChannelsTotal != null && (
+                <Badge variant="secondary" className="text-xs">
+                  {status.nvrChannelsOk ?? 0}/{status.nvrChannelsTotal} OK
+                </Badge>
+              )}
+            </h2>
+
+            {status?.nvrDiskError && (
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3">
+                <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-destructive">Saúde de disco indisponível</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 wrap-break-word">{status.nvrDiskError}</p>
+                </div>
+              </div>
+            )}
+
+            {!!status?.nvrDiskData && typeof status.nvrDiskData === "object" && (
+              <div className="rounded-lg border bg-card px-4 py-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-1.5">
+                  <HardDrive className="h-3.5 w-3.5" />
+                  Armazenamento (dados brutos do NVD)
+                </p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] font-mono">
+                  {Object.entries(status.nvrDiskData as Record<string, string>).slice(0, 12).map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-2 truncate">
+                      <span className="text-muted-foreground truncate">{k}</span>
+                      <span className="truncate">{String(v)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {nvrIssues.length === 0 ? (
+              <div className="rounded-lg border bg-card px-4 py-3 text-xs text-muted-foreground">
+                Nenhum problema em aberto nos canais.
+              </div>
+            ) : (
+              <div className="rounded-lg border bg-card overflow-x-auto">
+                <table className="w-full text-xs" aria-label="Canais com problema de gravação">
+                  <thead className="bg-muted/40 border-b">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-medium">Canal</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Problema</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Detalhe</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Detectado em</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Câmera vinculada</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {nvrIssues.map((issue) => {
+                      const camera = linkedCameras.find(
+                        (c) => (c as Device & { parentNvrChannel?: number | null }).parentNvrChannel === issue.channel
+                      );
+                      const severe = issue.issueType === "not_recording_now" || issue.issueType === "no_recordings" || issue.issueType === "unreachable";
+                      return (
+                        <tr key={issue.id} className="hover:bg-muted/10">
+                          <td className="px-4 py-2 font-medium">{issue.channel} · {issue.channelName}</td>
+                          <td className="px-4 py-2">
+                            <Badge variant="outline" className={severe ? "border-destructive text-destructive" : "border-warning text-warning"}>
+                              {issue.issueType}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-2 text-muted-foreground max-w-80 truncate" title={issue.detail}>{issue.detail}</td>
+                          <td className="px-4 py-2 font-mono text-muted-foreground">{fmtDateTime(issue.detectedAt)}</td>
+                          <td className="px-4 py-2">
+                            {camera ? (
+                              <Link href={`/devices/${camera.id}`} className="text-primary hover:underline">
+                                {camera.name}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         <Separator />
 

@@ -6,13 +6,16 @@ import { checkRouterOS } from "./monitors/routeros";
 import { checkUnifi } from "./monitors/unifi";
 import { checkOmada, resolveOmadaSiteId } from "./monitors/omada";
 import { checkLinkTraffic } from "./monitors/link-traffic";
-import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials } from "../lib/crypto";
+import { NvrClient, validateRecording } from "./monitors/nvr";
+import { processChannelIssues } from "./nvr-channels";
+import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials, resolveNvrCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
 import { sendAlert, ALERT_COOLDOWN_MS } from "./monitors/alert";
 import { resolveSnmpOids } from "../lib/snmp-defaults";
 import type { Device, Link } from "@prisma/client";
 
 const timers          = new Map<string, ReturnType<typeof setInterval>>();
+const nvrTimers       = new Map<string, ReturnType<typeof setInterval>>();
 const deviceSnapshots = new Map<string, Date>(); // deviceId -> last known updatedAt
 const pendingChecks   = new Set<Promise<unknown>>();
 const allIntervals    = new Set<ReturnType<typeof setInterval>>();
@@ -53,6 +56,11 @@ function trackAsync<T>(p: Promise<T>): Promise<T> {
 // slot forever, starving every other device. This guarantees the slot is released.
 export const CHECK_TIMEOUT_MS = 30_000;
 
+// Validação de gravação NVR envolve várias chamadas HTTP sequenciais (digest
+// auth de 2 requests cada, uma por canal) — cadência rara (padrão 1x/dia),
+// então vale a pena um teto bem mais alto que os monitores rápidos.
+export const NVR_CHECK_TIMEOUT_MS = 120_000;
+
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${label} excedeu ${ms}ms`)), ms);
@@ -71,6 +79,7 @@ export async function shutdown(timeoutMs = 10_000): Promise<void> {
   for (const id of allIntervals) clearInterval(id);
   allIntervals.clear();
   timers.clear();
+  nvrTimers.clear();
   consecutiveFailures.clear();
   skipUntil.clear();
   checkQueue.length = 0;
@@ -281,6 +290,53 @@ export async function runChecks(device: Device): Promise<boolean> {
   return isOnline;
 }
 
+export async function runNvrChecks(device: Device): Promise<void> {
+  const creds = resolveNvrCredentials(device);
+  if (!creds) {
+    log("warn", "[NVR] credenciais ausentes, pulando checagem", { device: device.name });
+    return;
+  }
+
+  const client = new NvrClient(device.ip, creds.user, creds.pass, device.nvrPort, device.nvrUseHttps);
+
+  try {
+    const result = await validateRecording(client, device.nvrHoursWindow, device.nvrMaxGapMinutes);
+    await processChannelIssues(device.id, device.name, result.issues);
+    await db.deviceStatus.upsert({
+      where: { deviceId: device.id },
+      update: { nvrChannelsOk: result.channelsOk, nvrChannelsTotal: result.channelsTotal },
+      create: { deviceId: device.id, nvrChannelsOk: result.channelsOk, nvrChannelsTotal: result.channelsTotal },
+    });
+    log("info", `[NVR] ${device.name}`, {
+      canaisOk: result.channelsOk,
+      canaisTotal: result.channelsTotal,
+      issues: result.issues.length,
+    });
+  } catch (err) {
+    log("error", "[NVR] validação de gravação falhou", {
+      device: device.name, ip: device.ip,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    const disk = await client.getStorageInfo();
+    await db.deviceStatus.upsert({
+      where: { deviceId: device.id },
+      update: { nvrDiskData: disk.raw as unknown as import("@prisma/client").Prisma.InputJsonValue, nvrDiskError: null },
+      create: { deviceId: device.id, nvrDiskData: disk.raw as unknown as import("@prisma/client").Prisma.InputJsonValue, nvrDiskError: null },
+    });
+  } catch (err) {
+    const nvrDiskError = err instanceof Error ? err.message : String(err);
+    await db.deviceStatus.upsert({
+      where: { deviceId: device.id },
+      update: { nvrDiskError },
+      create: { deviceId: device.id, nvrDiskError },
+    });
+    log("warn", "[NVR] saúde de disco indisponível", { device: device.name, error: nvrDiskError });
+  }
+}
+
 function scheduleDevice(device: Device) {
   const existing = timers.get(device.id);
   if (existing) {
@@ -368,6 +424,37 @@ function scheduleDevice(device: Device) {
 
   const timer = makeInterval(() => void trackAsync(safeRun()), intervalMs);
   timers.set(device.id, timer);
+
+  // Monitor NVR: cadência própria e ajustável, independente do checkInterval
+  // acima (que continua rodando ping/http/snmp/routeros na cadência normal).
+  const existingNvr = nvrTimers.get(device.id);
+  if (existingNvr) {
+    clearInterval(existingNvr);
+    allIntervals.delete(existingNvr);
+    nvrTimers.delete(device.id);
+  }
+
+  if (device.type === "DVR" && device.nvrEnabled) {
+    const nvrIntervalMs = Math.max(device.nvrCheckIntervalMinutes, 1) * 60_000;
+
+    const safeNvrRun = async () => {
+      await acquireSlot();
+      try {
+        await withTimeout(runNvrChecks(device), NVR_CHECK_TIMEOUT_MS, `runNvrChecks(${device.name})`);
+      } catch (err: unknown) {
+        log("error", "[NVR] checagem agendada falhou", {
+          device: device.name, ip: device.ip,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        releaseSlot();
+      }
+    };
+
+    void trackAsync(safeNvrRun());
+    const nvrTimer = makeInterval(() => void trackAsync(safeNvrRun()), nvrIntervalMs);
+    nvrTimers.set(device.id, nvrTimer);
+  }
 }
 
 function unscheduleDevice(deviceId: string) {
@@ -379,6 +466,13 @@ function unscheduleDevice(deviceId: string) {
     deviceSnapshots.delete(deviceId);
     consecutiveFailures.delete(deviceId);
     skipUntil.delete(deviceId);
+  }
+
+  const nvrTimer = nvrTimers.get(deviceId);
+  if (nvrTimer) {
+    clearInterval(nvrTimer);
+    allIntervals.delete(nvrTimer);
+    nvrTimers.delete(deviceId);
   }
 }
 

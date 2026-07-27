@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   const body = await parseAndValidate(req, deviceConfigSchema);
   if (!body.ok) return body.response;
 
-  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, snmpCustomOids, ...rest } = body.data;
+  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, snmpCustomOids, nvrUser, nvrPass, ...rest } = body.data;
 
   const device = await db.device.create({
     data: {
@@ -96,6 +96,8 @@ export async function POST(req: NextRequest) {
       unifiPassEnc:        unifiPass        ? encrypt(unifiPass)        : null,
       omadaClientIdEnc:    omadaClientId    ? encrypt(omadaClientId)    : null,
       omadaClientSecretEnc: omadaClientSecret ? encrypt(omadaClientSecret) : null,
+      nvrUserEnc:          nvrUser          ? encrypt(nvrUser)          : null,
+      nvrPassEnc:          nvrPass          ? encrypt(nvrPass)          : null,
     },
   });
 

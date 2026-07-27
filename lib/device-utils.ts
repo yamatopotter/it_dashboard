@@ -1,4 +1,4 @@
-import { resolveRouterosCredentials, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials } from "@/lib/crypto";
+import { resolveRouterosCredentials, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials, resolveNvrCredentials } from "@/lib/crypto";
 import type { Device } from "@prisma/client";
 
 export function sanitizeDevice(device: Device) {
@@ -6,6 +6,7 @@ export function sanitizeDevice(device: Device) {
     routerosUserEnc, routerosPassEnc,
     unifiApiKeyEnc, unifiUserEnc, unifiPassEnc,
     omadaClientIdEnc, omadaClientSecretEnc,
+    nvrUserEnc, nvrPassEnc,
     // SEC-031: never expose SNMP community — neither the encrypted blob nor the
     // legacy plaintext column (older rows still hold a real community there)
     snmpCommunity, snmpCommunityEnc,
@@ -17,6 +18,7 @@ export function sanitizeDevice(device: Device) {
     hasUnifiApiKey:          !!(resolveUnifiApiKey({ unifiApiKeyEnc })),
     hasUnifiCredentials:     !!(resolveUnifiCredentials({ unifiUserEnc, unifiPassEnc })),
     hasOmadaCredentials:     !!(resolveOmadaCredentials({ omadaClientIdEnc, omadaClientSecretEnc })),
+    hasNvrCredentials:       !!(resolveNvrCredentials({ nvrUserEnc, nvrPassEnc })),
     hasSnmpCredentials:      !!snmpCommunityEnc || (snmpCommunity != null && snmpCommunity !== "public"),
   };
 }

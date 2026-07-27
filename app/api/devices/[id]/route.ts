@@ -40,7 +40,7 @@ export async function PUT(
   const body = await parseAndValidate(req, updateSchema);
   if (!body.ok) return body.response;
 
-  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, snmpCustomOids, ...rest } = body.data;
+  const { routerosUser, routerosPass, unifiApiKey, unifiUser, unifiPass, omadaClientId, omadaClientSecret, snmpCommunity, snmpCustomOids, nvrUser, nvrPass, ...rest } = body.data;
   // Prisma 7: nullable JSON fields require Prisma.DbNull to clear (plain null is not accepted)
   const snmpCustomOidsUpdate: { snmpCustomOids?: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue } =
     snmpCustomOids !== undefined
@@ -56,6 +56,8 @@ export async function PUT(
     unifiPassEnc?:        string | null;
     omadaClientIdEnc?:    string | null;
     omadaClientSecretEnc?: string | null;
+    nvrUserEnc?:          string | null;
+    nvrPassEnc?:          string | null;
   } = {};
   if (snmpCommunity !== undefined) {
     credentialUpdate.snmpCommunityEnc = snmpCommunity ? encrypt(snmpCommunity) : null;
@@ -80,6 +82,12 @@ export async function PUT(
   }
   if (omadaClientSecret !== undefined) {
     credentialUpdate.omadaClientSecretEnc = omadaClientSecret ? encrypt(omadaClientSecret) : null;
+  }
+  if (nvrUser !== undefined) {
+    credentialUpdate.nvrUserEnc = nvrUser ? encrypt(nvrUser) : null;
+  }
+  if (nvrPass !== undefined) {
+    credentialUpdate.nvrPassEnc = nvrPass ? encrypt(nvrPass) : null;
   }
 
   try {
