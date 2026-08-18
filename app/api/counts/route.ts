@@ -10,11 +10,24 @@ export async function GET() {
   const unauth = await requireAuth();
   if (unauth) return unauth;
 
-  const [devicesTotal, devicesOnline, linksTotal, linksOnline] = await Promise.all([
+  const now = new Date();
+  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  const [devicesTotal, devicesOnline, linksTotal, linksOnline, phonesTotal, phonesLoyaltyExpiring] = await Promise.all([
     db.device.count(),
     db.device.count({ where: { currentStatus: { isOnline: true } } }),
     db.link.count(),
     db.link.count({ where: { isOnline: true } }),
+    db.phone.count(),
+    db.phone.count({
+      where: {
+        status: "ACTIVE",
+        loyaltyEndDate: {
+          lte: thirtyDaysFromNow,
+          gte: now,
+        },
+      },
+    }),
   ]);
 
   // A device with no status row yet counts as offline (matches the dashboard layout).
@@ -23,5 +36,7 @@ export async function GET() {
     devicesOffline: devicesTotal - devicesOnline,
     linksOnline,
     linksTotal,
+    phonesTotal,
+    phonesLoyaltyExpiring,
   });
 }
