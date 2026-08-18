@@ -18,10 +18,24 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.5.0",
+    date: "18 Aug 2026",
+    label: "Login corporativo via Zoho OAuth",
+    latest: true,
+    changes: [
+      { type: "security", text: "Autenticação corporativa via Zoho SSO — usuários podem fazer login com conta Zoho, reduzindo a necessidade de gerenciar senhas locais para contas corporativas" },
+      { type: "feat", text: "Allowlist de e-mails — ADMIN pré-cadastra o e-mail do usuário e seu nível de acesso; login Zoho é rejeitado se o e-mail não estiver pré-autorizado" },
+      { type: "feat", text: "Configuração do Zoho em Sistema (ADMIN) — Client ID, Client Secret (criptografado) e data center são armazenados no banco, sem depender de .env ou redeploy" },
+      { type: "feat", text: "Botão 'Entrar com Zoho' aparece automaticamente na tela de login quando a integração está habilitada; desaparece quando desabilitada sem precisar reiniciar" },
+      { type: "feat", text: "Gestão de usuários suporta dois tipos — Local (usuário/senha) e Zoho (e-mail), com UI clara na tela de criação e badges na tabela para diferenciar" },
+      { type: "feat", text: "2FA (TOTP) desabilitado para contas Zoho — login corporativo já vem autenticado e não precisa de segundo fator local" },
+    ],
+  },
+  {
     version: "0.4.0",
     date: "18 Aug 2026",
     label: "Inventário de celulares com sincronização Miradore",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "Inventário completo de celulares corporativos — cadastre número, proprietário, departamento, operadora, modelo, IMEI, valor da fatura e datas de contrato/fidelidade" },
       { type: "feat", text: "Sincronização automática com Miradore MDM — status técnico dos aparelhos (bateria, última conexão, S.O., compliance) é atualizado periodicamente via API sem sobrescrever os dados manuais" },
