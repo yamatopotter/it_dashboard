@@ -65,8 +65,8 @@ const DEVICE_TYPE_OPTIONS = [
 
 function GlobalIntervalModal() {
   const [open, setOpen]         = useState(false);
-  const [interval, setInterval] = useState("60");
-  const [type, setType]         = useState("");
+  const [interval, setInterval] = useState<string | null>("60");
+  const [type, setType]         = useState<string | null>("");
   const [loading, setLoading]   = useState(false);
 
   async function handleApply() {
