@@ -2,14 +2,14 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { db } from "@/lib/db";
-import { isSetupComplete } from "@/lib/setup";
+import { isSetupCompleteNode } from "@/lib/setup-node";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  if (!(await isSetupComplete())) redirect("/setup");
+  if (!isSetupCompleteNode()) redirect("/setup");
 
   const session = await auth();
   if (!session) redirect("/login");

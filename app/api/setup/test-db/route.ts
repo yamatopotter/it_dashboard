@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isSetupComplete, buildConnectionUrl, type DbProvider } from "@/lib/setup";
+import { buildConnectionUrl, type DbProvider } from "@/lib/setup";
+import { isSetupCompleteNode } from "@/lib/setup-node";
 import { parseBody } from "@/lib/parse-body";
 
 interface TestDbBody {
@@ -42,7 +43,7 @@ function testSqlite(sqlitePath: string): void {
 }
 
 export async function POST(req: NextRequest) {
-  if (await isSetupComplete()) {
+  if (isSetupCompleteNode()) {
     return NextResponse.json({ error: "Setup já concluído" }, { status: 403 });
   }
 
