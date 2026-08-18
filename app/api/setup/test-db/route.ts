@@ -42,7 +42,7 @@ function testSqlite(sqlitePath: string): void {
 }
 
 export async function POST(req: NextRequest) {
-  if (isSetupComplete()) {
+  if (await isSetupComplete()) {
     return NextResponse.json({ error: "Setup já concluído" }, { status: 403 });
   }
 

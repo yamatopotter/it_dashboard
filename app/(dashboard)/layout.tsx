@@ -9,7 +9,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  if (!isSetupComplete()) redirect("/setup");
+  if (!(await isSetupComplete())) redirect("/setup");
 
   const session = await auth();
   if (!session) redirect("/login");

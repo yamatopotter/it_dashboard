@@ -6,9 +6,9 @@ import path from "path";
 import { parseBody } from "@/lib/parse-body";
 import {
   isSetupComplete,
-  markSetupComplete,
-  writeEnvVars,
-  patchSchema,
+  markSetupCompleteAsync,
+  writeEnvVarsAsync,
+  patchSchemaAsync,
   buildConnectionUrl,
   type DbProvider,
 } from "@/lib/setup";
@@ -45,7 +45,7 @@ function run(cmd: string, extra?: Record<string, string>) {
 }
 
 export async function POST(req: NextRequest) {
-  if (isSetupComplete()) {
+  if (await isSetupComplete()) {
     return NextResponse.json({ error: "Setup já concluído" }, { status: 403 });
   }
 
@@ -69,8 +69,8 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Generate any missing secrets and persist all settings in .env
     const generatedSecrets = generateMissingSecrets();
-    patchSchema(provider);
-    writeEnvVars({ ...dbEnv, ...generatedSecrets });
+    await patchSchemaAsync(provider);
+    await writeEnvVarsAsync({ ...dbEnv, ...generatedSecrets });
 
     // 2. Regenerate Prisma client for the selected provider
     run("npx prisma generate", dbEnv);
@@ -117,7 +117,7 @@ db.user.create({
     run(`node "${tmpScript}"`, dbEnv);
 
     // 5. Write setup lock — from this point the system considers setup done
-    markSetupComplete(provider);
+    await markSetupCompleteAsync(provider);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

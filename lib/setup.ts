@@ -1,5 +1,5 @@
-import fs from "fs";
-import path from "path";
+// Tipos e exports seguros para Edge Runtime
+// Implementações que usam process.cwd() ou fs estão em lib/setup-node.ts
 
 export type DbProvider = "sqlite" | "mysql" | "postgresql";
 
@@ -8,79 +8,39 @@ export interface SetupLock {
   completedAt: string;
 }
 
-// ── Lazy path evaluation (prevents process.cwd() in Edge Runtime during build) ──
-
-function getLockFile(): string {
-  return path.join(process.cwd(), "data", "setup.lock");
-}
-
-function getEnvFile(): string {
-  return path.join(process.cwd(), ".env");
-}
-
-function getSchemaFile(): string {
-  return path.join(process.cwd(), "prisma", "schema.prisma");
-}
-
-// ── Lock file ─────────────────────────────────────────────────────────────────
-
-export function isSetupComplete(): boolean {
-  return fs.existsSync(getLockFile());
-}
-
-export function markSetupComplete(provider: DbProvider): void {
-  const lockFile = getLockFile();
-  const dir = path.dirname(lockFile);
-  fs.mkdirSync(dir, { recursive: true });
-  const lock: SetupLock = { provider, completedAt: new Date().toISOString() };
-  fs.writeFileSync(lockFile, JSON.stringify(lock, null, 2));
-}
-
-export function readSetupLock(): SetupLock | null {
-  const lockFile = getLockFile();
-  if (!fs.existsSync(lockFile)) return null;
+// Wrapper seguro para Edge Runtime
+// Tenta usar a implementação real em Node.js, volta false em Edge
+export async function isSetupComplete(): Promise<boolean> {
   try {
-    return JSON.parse(fs.readFileSync(lockFile, "utf8")) as SetupLock;
+    // Dynamic import evita análise estática do Next.js que reclama sobre process.cwd()
+    const setupNode = await import("./setup-node");
+    return setupNode.isSetupCompleteNode();
   } catch {
-    return null;
+    // Em Edge Runtime ou se houver erro, assume setup incompleto
+    return false;
   }
 }
 
-// ── .env writer ───────────────────────────────────────────────────────────────
-
-/** Upserts key=value pairs in the .env file without touching unrelated lines. */
-export function writeEnvVars(vars: Record<string, string>): void {
-  const envFile = getEnvFile();
-  let content = fs.existsSync(envFile) ? fs.readFileSync(envFile, "utf8") : "";
-
-  for (const [key, value] of Object.entries(vars)) {
-    const escaped = value.replace(/"/g, '\\"');
-    const line = `${key}="${escaped}"`;
-    const regex = new RegExp(`^${key}=.*$`, "m");
-    if (regex.test(content)) {
-      content = content.replace(regex, line);
-    } else {
-      content = content.trimEnd() + (content ? "\n" : "") + line + "\n";
-    }
-  }
-
-  fs.writeFileSync(envFile, content);
+// Re-exports das funções Node.js-only para uso em API routes e scripts
+export async function markSetupCompleteAsync(provider: DbProvider): Promise<void> {
+  const setupNode = await import("./setup-node");
+  return setupNode.markSetupComplete(provider);
 }
 
-// ── Schema patcher ────────────────────────────────────────────────────────
-
-/** Replaces the `provider = "..."` line in schema.prisma with the chosen provider. */
-export function patchSchema(provider: DbProvider): void {
-  const schemaFile = getSchemaFile();
-  const content = fs.readFileSync(schemaFile, "utf8");
-  const patched = content.replace(
-    /provider\s*=\s*"(postgresql|mysql|sqlite)"/,
-    `provider = "${provider}"`,
-  );
-  fs.writeFileSync(schemaFile, patched);
+export async function readSetupLockAsync(): Promise<SetupLock | null> {
+  const setupNode = await import("./setup-node");
+  return setupNode.readSetupLock();
 }
 
-// ── Connection string builder ─────────────────────────────────────────────────
+export async function writeEnvVarsAsync(vars: Record<string, string>): Promise<void> {
+  const setupNode = await import("./setup-node");
+  return setupNode.writeEnvVars(vars);
+}
+
+export async function patchSchemaAsync(provider: DbProvider): Promise<void> {
+  const setupNode = await import("./setup-node");
+  return setupNode.patchSchema(provider);
+}
 
 export function buildConnectionUrl(
   provider: DbProvider,

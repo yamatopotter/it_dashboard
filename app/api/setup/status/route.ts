@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { isSetupComplete, readSetupLock } from "@/lib/setup";
+import { isSetupComplete, readSetupLockAsync } from "@/lib/setup";
 
 export async function GET() {
-  const complete = isSetupComplete();
-  const lock = complete ? readSetupLock() : null;
+  const complete = await isSetupComplete();
+  const lock = complete ? await readSetupLockAsync() : null;
   return NextResponse.json({ complete, provider: lock?.provider ?? null });
 }
