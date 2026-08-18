@@ -37,13 +37,18 @@ export async function checkSnmp(
 ): Promise<SnmpResult> {
   const session = snmp.createSession(ip, community, {
     port,
-    timeout: 5000,
-    retries: 1,
+    timeout: 10000,
+    retries: 2,
     version: snmp.Version2c,
   });
 
   try {
     const enabled = oidConfig.filter((e) => e.enabled);
+
+    if (enabled.length === 0) {
+      log("warn", "[SNMP] nenhum OID habilitado", { ip });
+      return { cpuLoad: null, memoryUsed: null, uptime: null, snmpData: {} };
+    }
 
     // Collect all unique OIDs to query in one request
     const oidsToQuery = new Set<string>();
@@ -52,6 +57,7 @@ export async function checkSnmp(
       if (entry.oidTotal) oidsToQuery.add(entry.oidTotal);
     }
 
+    log("debug", "[SNMP] consultando OIDs", { ip, port, community: community === "public" ? "public" : "***", oidsToQuery: [...oidsToQuery] });
     const raw = await getOids(session, [...oidsToQuery]);
 
     const snmpData: Record<string, number | null> = {};
@@ -85,9 +91,24 @@ export async function checkSnmp(
       if (entry.key === "uptime") uptime     = value != null ? Math.floor(value) : null;
     }
 
+    log("debug", "[SNMP] sucesso", { ip, valuesCount: Object.keys(snmpData).length });
     return { cpuLoad, memoryUsed, uptime, snmpData };
   } catch (err) {
-    log("warn", "[SNMP] consulta falhou", { ip, error: err instanceof Error ? err.message : String(err) });
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorDetails = {
+      ip,
+      port,
+      community: community === "public" ? "public" : "***",
+      error: errorMsg,
+      hint: errorMsg.includes("RequestTimedOut")
+        ? "Timeout: verifique se o NVR está respondendo, se a porta SNMP está aberta e se a community está correta"
+        : errorMsg.includes("Unauthorized")
+        ? "Unauthorized: a community string está incorreta ou SNMP está desabilitado no NVR"
+        : errorMsg.includes("ECONNREFUSED")
+        ? "Connection refused: SNMP pode estar desabilitado no NVR ou a porta está fechada"
+        : "Consulte as configurações SNMP do NVR e verifique conectividade de rede",
+    };
+    log("error", "[SNMP] consulta falhou", errorDetails);
     return { cpuLoad: null, memoryUsed: null, uptime: null, snmpData: {} };
   } finally {
     session.close();

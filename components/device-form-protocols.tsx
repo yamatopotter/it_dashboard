@@ -205,7 +205,7 @@ export function DeviceFormProtocols({ device }: DeviceFormProtocolsProps) {
 
               {oidFields.map((field, i) => (
                 <div key={field.id} className="grid items-center gap-1.5 px-1"
-                  style={{ gridTemplateColumns: "2rem 1fr 2.5fr 1fr 3rem 2rem" }}>
+                  style={{ gridTemplateColumns: "2rem 1fr 2.5fr 1fr 4rem 2rem" }}>
                   {/* Enable toggle */}
                   <Switch
                     checked={watch(`snmpCustomOids.${i}.enabled`)}
