@@ -273,6 +273,14 @@ model SystemConfig {
   smtpPasswordEnc String? // AES-256-GCM encrypted
   smtpFrom        String?
   alertEmailTo    String? // destinatário(s), separado por vírgula
+
+  // Miradore MDM integration
+  miradoreSiteName                String?
+  miradoreApiKeyEnc               String? // AES-256-GCM encrypted
+  miradoreSyncEnabled             Boolean @default(false)
+  miradoreSyncIntervalMinutes     Int     @default(60)
+  miradoreLastSyncAt              DateTime?
+  miradoreLastSyncError           String?
 }
 
 model NvrChannelIssue {
@@ -303,5 +311,40 @@ model RateLimit {
   resetAt   DateTime
 
   @@index([resetAt])
+}
+
+enum PhoneStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELED
+}
+
+model Phone {
+  id                String      @id @default(cuid())
+  phoneNumber       String      @unique
+  owner             String
+  department        String?
+  carrier           String?
+  model             String?
+  imei              String?
+  status            PhoneStatus @default(ACTIVE)
+  invoiceAmountCents Int?
+  contractStartDate DateTime?
+  loyaltyEndDate    DateTime?
+  notes             String?
+
+  // Cache do status técnico vindo do Miradore (somente leitura, sync automático)
+  miradoreDeviceId       String?   @unique
+  miradoreLastSeenAt     DateTime?
+  miradoreBatteryLevel   Int?
+  miradoreOsVersion      String?
+  miradoreManufacturer   String?
+  miradoreComplianceOk   Boolean?
+  miradoreSyncedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([loyaltyEndDate])
 }
 

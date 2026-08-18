@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, History, ShieldCheck, BookOpen, Code2, FlaskConical } from "lucide-react";
+import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, History, ShieldCheck, BookOpen, Code2, FlaskConical, Smartphone } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LighthouseIcon } from "@/components/lighthouse-icon";
 
@@ -14,6 +14,8 @@ interface SidebarCounts {
   devicesOffline: number;
   linksOnline: number;
   linksTotal: number;
+  phonesTotal?: number;
+  phonesLoyaltyExpiring?: number;
 }
 
 function BrandMark() {
@@ -126,7 +128,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [counts, setCounts] = useState<SidebarCounts>(
-    initialCounts ?? { devicesTotal: 0, devicesOffline: 0, linksOnline: 0, linksTotal: 0 }
+    initialCounts ?? { devicesTotal: 0, devicesOffline: 0, linksOnline: 0, linksTotal: 0, phonesTotal: 0, phonesLoyaltyExpiring: 0 }
   );
   const [version, setVersion] = useState<string | null>(null);
 
@@ -199,6 +201,15 @@ export function Sidebar({
           icon={AlertCircle}
           active={pathname.startsWith("/incidents")}
           alertBadge={counts.devicesOffline}
+        />
+
+        <NavItem
+          href="/phones"
+          label="Celulares"
+          icon={Smartphone}
+          active={pathname.startsWith("/phones")}
+          badge={counts.phonesTotal ? counts.phonesTotal : undefined}
+          alertBadge={counts.phonesLoyaltyExpiring}
         />
 
         <NavSectionLabel>Painéis</NavSectionLabel>

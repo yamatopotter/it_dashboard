@@ -90,3 +90,9 @@ export function resolveSmtpPassword(config: {
 }): string | null {
   return config.smtpPasswordEnc ? decrypt(config.smtpPasswordEnc) : null;
 }
+
+export function resolveMiradoreApiKey(config: {
+  miradoreApiKeyEnc: string | null;
+}): string | null {
+  return config.miradoreApiKeyEnc ? decrypt(config.miradoreApiKeyEnc) : null;
+}

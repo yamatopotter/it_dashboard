@@ -8,6 +8,7 @@ import { checkOmada, resolveOmadaSiteId } from "./monitors/omada";
 import { checkLinkTraffic } from "./monitors/link-traffic";
 import { NvrClient, validateRecording } from "./monitors/nvr";
 import { processChannelIssues } from "./nvr-channels";
+import { syncMiradorePhones } from "./miradore-sync";
 import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials, resolveNvrCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
 import { sendAlert, ALERT_COOLDOWN_MS } from "./monitors/alert";
@@ -523,6 +524,7 @@ export async function startScheduler() {
   log("info", `${devices.length} dispositivo(s) agendado(s).`);
 
   void trackAsync(pollLinks());
+  void trackAsync(syncMiradorePhones());
 
   // Run history pruning at startup then every 24h
   void trackAsync(pruneHistory());
@@ -576,6 +578,15 @@ export async function startScheduler() {
   }, 30_000);
 
   makeInterval(() => void trackAsync(pollLinks()), 60_000);
+
+  // Sync Miradore phones on interval (reads interval from config)
+  const setupMiradoreSync = async () => {
+    const config = await db.systemConfig.findUnique({ where: { id: 1 } }).catch(() => null);
+    const intervalMs = (config?.miradoreSyncIntervalMinutes ?? 60) * 60_000;
+    makeInterval(() => void trackAsync(syncMiradorePhones()), intervalMs);
+    log("info", "Miradore sync interval scheduled", { intervalMinutes: config?.miradoreSyncIntervalMinutes ?? 60 });
+  };
+  void setupMiradoreSync();
 }
 
 export async function pollLinks() {

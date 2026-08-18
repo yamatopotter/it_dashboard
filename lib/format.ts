@@ -71,3 +71,8 @@ export function timeAgo(iso: string): string {
   const d = Math.floor(h / 24);
   return `há ${d}d`;
 }
+
+export function formatCurrency(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
