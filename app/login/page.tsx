@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   // SEC-009: track whether this user has TOTP enabled
   const [needsTotp, setNeedsTotp] = useState(false);
+  const [providers, setProviders] = useState<Record<string, any> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/providers")
+      .then((r) => r.json() as Promise<Record<string, any>>)
+      .then(setProviders)
+      .catch(() => setProviders({}));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -294,6 +302,27 @@ export default function LoginPage() {
               {loading ? "Verificando..." : needsTotp ? "Verificar código" : "Entrar"}
             </Button>
           </form>
+
+          {providers?.zoho && !needsTotp && (
+            <>
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground/50 font-semibold">Ou</span>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-11 font-bold text-[15px]"
+                onClick={() => signIn("zoho", { callbackUrl: "/" })}
+              >
+                Entrar com Zoho
+              </Button>
+            </>
+          )}
 
           <p className="mt-10 text-center text-[11px] text-muted-foreground/40 font-semibold tracking-wide uppercase">
             WatchIT Tower · Acesso restrito

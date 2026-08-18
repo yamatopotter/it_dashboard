@@ -31,10 +31,13 @@ import { fmtDate } from "@/lib/format";
 import { toast } from "sonner";
 
 type UserRole = "ADMIN" | "OPERADOR" | "VIEWER";
+type AuthProvider = "LOCAL" | "ZOHO";
 
 interface UserRow {
   id: string;
   username: string;
+  email: string | null;
+  authProvider: AuthProvider;
   role: UserRole;
   totpEnabled: boolean;
   createdAt: string;
@@ -64,7 +67,9 @@ export default function UsersClient() {
 
   // Create dialog
   const [showCreate, setShowCreate] = useState(false);
+  const [createAuthProvider, setCreateAuthProvider] = useState<AuthProvider>("LOCAL");
   const [createUsername, setCreateUsername] = useState("");
+  const [createEmail, setCreateEmail] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [createRole, setCreateRole] = useState<UserRole>("VIEWER");
   const [creating, setCreating] = useState(false);
@@ -99,15 +104,21 @@ export default function UsersClient() {
     e.preventDefault();
     setCreating(true);
     try {
+      const payload = createAuthProvider === "LOCAL"
+        ? { authProvider: "LOCAL", username: createUsername, password: createPassword, role: createRole }
+        : { authProvider: "ZOHO", email: createEmail, role: createRole };
+
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: createUsername, password: createPassword, role: createRole }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         toast.success("Usuário criado com sucesso");
         setShowCreate(false);
+        setCreateAuthProvider("LOCAL");
         setCreateUsername("");
+        setCreateEmail("");
         setCreatePassword("");
         setCreateRole("VIEWER");
         await load();
@@ -288,14 +299,19 @@ export default function UsersClient() {
                     return (
                       <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3 font-mono font-semibold">{u.username}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 flex items-center gap-2">
                           <Badge variant={ROLE_VARIANT[u.role]} className="gap-1.5">
                             <Icon className="h-3 w-3" />
                             {ROLE_LABEL[u.role]}
                           </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {u.authProvider === "LOCAL" ? "Local" : "Zoho"}
+                          </Badge>
                         </td>
                         <td className="px-4 py-3">
-                          {u.totpEnabled ? (
+                          {u.authProvider === "ZOHO" ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : u.totpEnabled ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-success bg-success/10 px-2 py-0.5 rounded-full">
                               <ShieldCheck className="h-3 w-3" aria-hidden="true" />Ativo
                             </span>
@@ -313,10 +329,12 @@ export default function UsersClient() {
                             <Button size="sm" variant="outline" onClick={() => openEdit(u)}>
                               <Key className="h-3.5 w-3.5 mr-1" aria-hidden="true" />Editar
                             </Button>
-                            <Button size="sm" variant="outline" aria-label={`Gerenciar 2FA de ${u.username}`}
-                              onClick={() => open2FA(u)}>
-                              <KeyRound className="h-3.5 w-3.5 mr-1" aria-hidden="true" />2FA
-                            </Button>
+                            {u.authProvider === "LOCAL" && (
+                              <Button size="sm" variant="outline" aria-label={`Gerenciar 2FA de ${u.username}`}
+                                onClick={() => open2FA(u)}>
+                                <KeyRound className="h-3.5 w-3.5 mr-1" aria-hidden="true" />2FA
+                              </Button>
+                            )}
                             <Button size="sm" variant="ghost" aria-label={`Remover usuário ${u.username}`}
                               className="text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() => setDeleteUser(u)}>
@@ -342,15 +360,43 @@ export default function UsersClient() {
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="new-username">Nome de usuário</Label>
-              <Input id="new-username" value={createUsername} onChange={e => setCreateUsername(e.target.value)}
-                placeholder="ex: joao.silva" required minLength={3} maxLength={32} />
+              <Label>Tipo de autenticação</Label>
+              <div className="flex gap-2">
+                {(["LOCAL", "ZOHO"] as AuthProvider[]).map((auth) => (
+                  <button key={auth} type="button"
+                    onClick={() => setCreateAuthProvider(auth)}
+                    className={`flex-1 rounded-lg border p-2.5 text-xs font-semibold transition-colors ${
+                      createAuthProvider === auth
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border text-muted-foreground hover:border-muted-foreground"
+                    }`}>
+                    {auth === "LOCAL" ? "Local" : "Zoho (SSO)"}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-password">Senha</Label>
-              <Input id="new-password" type="password" value={createPassword} onChange={e => setCreatePassword(e.target.value)}
-                placeholder="Mínimo 8 caracteres" required minLength={8} />
-            </div>
+
+            {createAuthProvider === "LOCAL" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-username">Nome de usuário</Label>
+                  <Input id="new-username" value={createUsername} onChange={e => setCreateUsername(e.target.value)}
+                    placeholder="ex: joao.silva" required minLength={3} maxLength={32} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-password">Senha</Label>
+                  <Input id="new-password" type="password" value={createPassword} onChange={e => setCreatePassword(e.target.value)}
+                    placeholder="Mínimo 8 caracteres" required minLength={8} />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="new-email">E-mail corporativo</Label>
+                <Input id="new-email" type="email" value={createEmail} onChange={e => setCreateEmail(e.target.value)}
+                  placeholder="usuario@empresa.com" required />
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label>Função</Label>
               <div className="flex gap-2">
@@ -391,12 +437,23 @@ export default function UsersClient() {
             <DialogTitle>Editar usuário — {editUser?.username}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSaveEdit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-password">Nova senha <span className="text-muted-foreground">(deixe em branco para não alterar)</span></Label>
-              <Input id="edit-password" type="password" value={editPassword}
-                onChange={e => setEditPassword(e.target.value)}
-                placeholder="Mínimo 8 caracteres" minLength={editPassword ? 8 : undefined} />
-            </div>
+            {editUser?.authProvider === "ZOHO" && (
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                <p className="text-xs font-semibold text-blue-900">
+                  Login via Zoho SSO — sem senha local
+                </p>
+              </div>
+            )}
+
+            {editUser?.authProvider === "LOCAL" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-password">Nova senha <span className="text-muted-foreground">(deixe em branco para não alterar)</span></Label>
+                <Input id="edit-password" type="password" value={editPassword}
+                  onChange={e => setEditPassword(e.target.value)}
+                  placeholder="Mínimo 8 caracteres" minLength={editPassword ? 8 : undefined} />
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label>Função</Label>
               <div className="flex gap-2">

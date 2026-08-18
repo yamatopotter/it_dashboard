@@ -149,17 +149,24 @@ model StatusHistory {
   @@index([timestamp])
 }
 
+enum AuthProvider {
+  LOCAL
+  ZOHO
+}
+
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  password  String
-  role      UserRole @default(ADMIN)
-  createdAt DateTime @default(now())
+  id        String       @id @default(cuid())
+  username  String       @unique
+  password  String?                      // nullable — contas ZOHO não têm senha
+  email     String?      @unique         // usado para casar login Zoho (allowlist)
+  authProvider AuthProvider @default(LOCAL)
+  role      UserRole     @default(ADMIN)
+  createdAt DateTime     @default(now())
   // SEC-027: optimistic locking — previne race condition em atualizações concorrentes
-  version   Int      @default(1)
+  version   Int          @default(1)
   // SEC-009: 2FA/TOTP opcional
   totpSecret    String?
-  totpEnabled   Boolean @default(false)
+  totpEnabled   Boolean   @default(false)
   // SEC-021: força revalidação após troca de senha
   passwordChangedAt DateTime?
 }
@@ -281,6 +288,12 @@ model SystemConfig {
   miradoreSyncIntervalMinutes     Int     @default(60)
   miradoreLastSyncAt              DateTime?
   miradoreLastSyncError           String?
+
+  // Zoho OAuth integration
+  zohoEnabled         Boolean @default(false)
+  zohoClientId        String?
+  zohoClientSecretEnc String? // AES-256-GCM encrypted
+  zohoAccountsUrl     String  @default("https://accounts.zoho.com")
 }
 
 model NvrChannelIssue {

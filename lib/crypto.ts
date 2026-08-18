@@ -96,3 +96,9 @@ export function resolveMiradoreApiKey(config: {
 }): string | null {
   return config.miradoreApiKeyEnc ? decrypt(config.miradoreApiKeyEnc) : null;
 }
+
+export function resolveZohoClientSecret(config: {
+  zohoClientSecretEnc: string | null;
+}): string | null {
+  return config.zohoClientSecretEnc ? decrypt(config.zohoClientSecretEnc) : null;
+}

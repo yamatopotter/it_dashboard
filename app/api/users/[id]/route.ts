@@ -50,6 +50,11 @@ export async function PUT(
   const user = await db.user.findUnique({ where: { id } });
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Contas Zoho não usam senha local
+  if (user.authProvider === "ZOHO" && password) {
+    return NextResponse.json({ error: "Contas Zoho não usam senha local" }, { status: 400 });
+  }
+
   // SEC-027: reject stale writes when caller sent a version that differs from DB
   if (version !== undefined && version !== user.version) {
     return NextResponse.json(

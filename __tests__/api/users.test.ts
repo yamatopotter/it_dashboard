@@ -63,7 +63,7 @@ describe("GET /api/users", () => {
 
 describe("POST /api/users", () => {
   it("creates a new user", async () => {
-    const res = await POST(makeReq({ username: "new_user", password: "password123", role: "OPERADOR" }));
+    const res = await POST(makeReq({ authProvider: "LOCAL", username: "new_user", password: "password123", role: "OPERADOR" }));
     const body = await res.json();
     expect(res.status).toBe(201);
     expect(body.username).toBe("new_user");
@@ -71,22 +71,22 @@ describe("POST /api/users", () => {
 
   it("returns 409 when username already exists", async () => {
     (mockDb.user.findUnique as jest.Mock).mockResolvedValue(USER);
-    const res = await POST(makeReq({ username: "admin", password: "password123", role: "ADMIN" }));
+    const res = await POST(makeReq({ authProvider: "LOCAL", username: "admin", password: "password123", role: "ADMIN" }));
     expect(res.status).toBe(409);
   });
 
   it("returns 400 for invalid username (too short)", async () => {
-    const res = await POST(makeReq({ username: "ab", password: "password123", role: "ADMIN" }));
+    const res = await POST(makeReq({ authProvider: "LOCAL", username: "ab", password: "password123", role: "ADMIN" }));
     expect(res.status).toBe(400);
   });
 
   it("returns 400 for invalid role", async () => {
-    const res = await POST(makeReq({ username: "validuser", password: "password123", role: "SUPERADMIN" }));
+    const res = await POST(makeReq({ authProvider: "LOCAL", username: "validuser", password: "password123", role: "SUPERADMIN" }));
     expect(res.status).toBe(400);
   });
 
   it("returns 400 for weak password (< 8 chars)", async () => {
-    const res = await POST(makeReq({ username: "validuser", password: "pass", role: "ADMIN" }));
+    const res = await POST(makeReq({ authProvider: "LOCAL", username: "validuser", password: "pass", role: "ADMIN" }));
     expect(res.status).toBe(400);
   });
 
@@ -103,7 +103,7 @@ describe("POST /api/users", () => {
   it("returns 401 when unauthenticated", async () => {
     const { auth } = require("@/lib/auth");
     auth.mockResolvedValueOnce(null);
-    const res = await POST(makeReq({ username: "newuser", password: "password123", role: "ADMIN" }));
+    const res = await POST(makeReq({ authProvider: "LOCAL", username: "newuser", password: "password123", role: "ADMIN" }));
     expect(res.status).toBe(401);
   });
 });

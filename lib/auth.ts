@@ -4,10 +4,10 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
 import { writeAudit, extractIp } from "@/lib/audit";
+import { resolveZohoClientSecret } from "@/lib/crypto";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  ...authConfig,
-  providers: [
+async function buildProviders() {
+  const providers = [
     Credentials({
       credentials: {
         username: { label: "Usuário", type: "text" },
@@ -31,7 +31,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           const valid = await bcrypt.compare(
             credentials.password as string,
-            user.password
+            user.password || ""
           );
 
           if (!valid) {
@@ -62,8 +62,51 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       },
     }),
-  ],
+  ];
+
+  const config = await db.systemConfig.findUnique({ where: { id: 1 } });
+  if (config?.zohoEnabled && config.zohoClientId && config.zohoClientSecretEnc) {
+    const clientSecret = resolveZohoClientSecret(config);
+    const accountsUrl = config.zohoAccountsUrl || "https://accounts.zoho.com";
+    if (clientSecret) {
+      providers.push({
+        id: "zoho",
+        name: "Zoho",
+        type: "oauth",
+        clientId: config.zohoClientId,
+        clientSecret,
+        authorization: {
+          url: `${accountsUrl}/oauth/v2/auth`,
+          params: { scope: "AaaServer.profile.Read", access_type: "offline", prompt: "consent" },
+        },
+        token: `${accountsUrl}/oauth/v2/token`,
+        userinfo: `${accountsUrl}/oauth/user/info`,
+        profile(profile: { ZUID: string; Email: string; Display_Name: string }) {
+          return { id: profile.ZUID, email: profile.Email, name: profile.Display_Name };
+        },
+      } as any);
+    }
+  }
+
+  return providers;
+}
+
+export const { handlers, auth, signIn, signOut } = NextAuth(async () => ({
+  ...authConfig,
+  providers: await buildProviders(),
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "zoho") {
+        if (!user.email) return false;
+        const existing = await db.user.findUnique({ where: { email: user.email } });
+        if (!existing || existing.authProvider !== "ZOHO") return false;
+        user.id = existing.id;
+        (user as { role?: string }).role = existing.role;
+        void writeAudit({ action: "LOGIN", entity: "Auth", entityId: existing.id, entityName: existing.username, userId: existing.id, username: existing.username });
+        return true;
+      }
+      return true;
+    },
     async jwt({ token, user }) {
       if (user) {
         token.role = (user as { role: string }).role;
@@ -99,4 +142,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-});
+}));

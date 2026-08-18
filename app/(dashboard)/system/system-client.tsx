@@ -19,6 +19,8 @@ import {
   AlertCircle,
   Activity,
   Mail,
+  Lock,
+  Copy,
 } from "lucide-react";
 
 interface TableStat {
@@ -120,6 +122,15 @@ export function SystemClient() {
   const [smtpSaving, setSmtpSaving] = useState(false);
   const [smtpMsg, setSmtpMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const [zohoEnabled, setZohoEnabled] = useState(false);
+  const [zohoClientId, setZohoClientId] = useState("");
+  const [zohoClientSecret, setZohoClientSecret] = useState("");
+  const [hasZohoClientSecret, setHasZohoClientSecret] = useState(false);
+  const [zohoAccountsUrl, setZohoAccountsUrl] = useState("https://accounts.zoho.com");
+  const [zohoSaving, setZohoSaving] = useState(false);
+  const [zohoMsg, setZohoMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [zohoUriCopied, setZohoUriCopied] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/stats", { cache: "no-store" });
@@ -158,7 +169,17 @@ export function SystemClient() {
     setHasSmtpPassword(!!cfg.hasSmtpPassword);
   }, []);
 
-  useEffect(() => { loadSmtp(); }, [loadSmtp]);
+  const loadZoho = useCallback(async () => {
+    const res = await fetch("/api/settings/zoho");
+    if (!res.ok) return;
+    const cfg = await res.json();
+    setZohoEnabled(cfg.zohoEnabled ?? false);
+    setZohoClientId(cfg.zohoClientId ?? "");
+    setZohoAccountsUrl(cfg.zohoAccountsUrl ?? "https://accounts.zoho.com");
+    setHasZohoClientSecret(!!cfg.hasClientSecret);
+  }, []);
+
+  useEffect(() => { loadSmtp(); loadZoho(); }, [loadSmtp, loadZoho]);
 
   async function saveSmtp() {
     setSmtpSaving(true);
@@ -188,6 +209,31 @@ export function SystemClient() {
     }
     setSmtpSaving(false);
     setTimeout(() => setSmtpMsg(null), 4000);
+  }
+
+  async function saveZoho() {
+    setZohoSaving(true);
+    setZohoMsg(null);
+    const res = await fetch("/api/settings/zoho", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        zohoEnabled,
+        zohoClientId: zohoClientId || null,
+        zohoAccountsUrl,
+        ...(zohoClientSecret ? { zohoClientSecret } : {}),
+      }),
+    });
+    if (res.ok) {
+      setZohoMsg({ ok: true, text: "Configuração do Zoho salva com sucesso." });
+      setZohoClientSecret("");
+      loadZoho();
+    } else {
+      const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+      setZohoMsg({ ok: false, text: err.error ?? "Erro ao salvar." });
+    }
+    setZohoSaving(false);
+    setTimeout(() => setZohoMsg(null), 4000);
   }
 
   async function saveRetention() {
@@ -442,6 +488,107 @@ export function SystemClient() {
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <Button onClick={saveRetention} disabled={saving} size="sm">
                 {saving ? "Salvando…" : "Salvar configuração"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Zoho OAuth settings */}
+        <div className="rounded-xl border border-border bg-card">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[13px] font-semibold">Login corporativo Zoho</span>
+            </div>
+            <Switch checked={zohoEnabled} onCheckedChange={setZohoEnabled} />
+          </div>
+          <div className="p-5 space-y-5">
+            <p className="text-[13px] text-muted-foreground">
+              Permite que usuários façam login via conta corporativa Zoho (SSO).
+              Pré-configure o e-mail do usuário em Usuários para liberar o acesso.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="zoho-client-id" className="text-[13px]">Client ID</Label>
+                <Input
+                  id="zoho-client-id"
+                  placeholder="12345678.1234567890"
+                  value={zohoClientId}
+                  onChange={(e) => setZohoClientId(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="zoho-client-secret" className="text-[13px]">
+                  Client Secret
+                  {hasZohoClientSecret && (
+                    <span className="ml-2 text-muted-foreground font-normal">· já configurado</span>
+                  )}
+                </Label>
+                <Input
+                  id="zoho-client-secret"
+                  type="password"
+                  placeholder={hasZohoClientSecret ? "Deixe em branco para manter" : ""}
+                  value={zohoClientSecret}
+                  onChange={(e) => setZohoClientSecret(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="zoho-accounts-url" className="text-[13px]">Data center (Accounts URL)</Label>
+                <select
+                  id="zoho-accounts-url"
+                  value={zohoAccountsUrl}
+                  onChange={(e) => setZohoAccountsUrl(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground text-[13px]"
+                >
+                  <option value="https://accounts.zoho.com">https://accounts.zoho.com (.com)</option>
+                  <option value="https://accounts.zoho.eu">https://accounts.zoho.eu (.eu)</option>
+                  <option value="https://accounts.zoho.in">https://accounts.zoho.in (.in)</option>
+                  <option value="https://accounts.zoho.com.cn">https://accounts.zoho.com.cn (.com.cn)</option>
+                  <option value="https://accounts.zoho.jp">https://accounts.zoho.jp (.jp)</option>
+                  <option value="https://accounts.zoho.sa">https://accounts.zoho.sa (.sa)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg bg-muted/40 p-3.5 border border-border">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase">Redirect URI</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-[12px] text-accent-foreground truncate">
+                  {typeof window !== "undefined" ? `${window.location.origin}/api/auth/callback/zoho` : ""}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/api/auth/callback/zoho`);
+                    setZohoUriCopied(true);
+                    setTimeout(() => setZohoUriCopied(false), 2000);
+                  }}
+                  aria-label="Copiar Redirect URI"
+                  className="p-2 rounded-lg border border-border hover:bg-muted transition-colors text-muted-foreground shrink-0"
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {zohoUriCopied ? "✓ Copiado para a área de transferência" : "Use este valor no Zoho API Console"}
+              </p>
+            </div>
+
+            {zohoMsg && (
+              <div className={cn("flex items-center gap-2 text-[13px] rounded-lg px-3 py-2",
+                zohoMsg.ok ? "bg-emerald-500/10 text-emerald-600" : "bg-destructive/10 text-destructive"
+              )}>
+                {zohoMsg.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                {zohoMsg.text}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Button onClick={saveZoho} disabled={zohoSaving} size="sm">
+                {zohoSaving ? "Salvando…" : "Salvar configuração"}
               </Button>
             </div>
           </div>
