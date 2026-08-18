@@ -18,10 +18,23 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.4.0",
+    date: "18 Aug 2026",
+    label: "Inventário de celulares com sincronização Miradore",
+    latest: true,
+    changes: [
+      { type: "feat", text: "Inventário completo de celulares corporativos — cadastre número, proprietário, departamento, operadora, modelo, IMEI, valor da fatura e datas de contrato/fidelidade" },
+      { type: "feat", text: "Sincronização automática com Miradore MDM — status técnico dos aparelhos (bateria, última conexão, S.O., compliance) é atualizado periodicamente via API sem sobrescrever os dados manuais" },
+      { type: "feat", text: "Filtros por status (Ativo/Suspenso/Cancelado) e por fidelidade vencendo nos próximos 30 dias — badge de alerta na sidebar para fidelidades próximas de expirar" },
+      { type: "feat", text: "Configuração da integração Miradore em Sistema (ADMIN) — site name e API key (criptografada) armazenadas, com controle de intervalo de sincronização" },
+      { type: "feat", text: "Botão 'Sincronizar agora' para forçar a sincronização sob demanda, útil para testar a configuração ou atualizar dados imediatamente" },
+    ],
+  },
+  {
     version: "0.3.0",
     date: "27 Jul 2026",
     label: "Monitoramento de gravação NVR e alertas por e-mail",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "NVDs (gravadores de câmera Intelbras/Dahua) agora podem ser cadastrados como dispositivo e monitorados automaticamente: canais gravando, parados, com falha ou inacessíveis" },
       { type: "feat", text: "E-mail de alerta (SMTP) quando um canal para de gravar — configurável em Sistema, com qualquer provedor (SSL ou TLS), sem repetir o aviso antes de 2 horas" },
