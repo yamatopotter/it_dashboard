@@ -70,6 +70,10 @@ function GlobalIntervalModal() {
   const [loading, setLoading]   = useState(false);
 
   async function handleApply() {
+    if (!interval) {
+      toast.error("Selecione um intervalo");
+      return;
+    }
     const seconds = parseInt(interval, 10);
     if (!seconds || seconds < 10 || seconds > 3600) {
       toast.error("Intervalo deve ser entre 10 e 3600 segundos");
