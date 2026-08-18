@@ -1,9 +1,6 @@
 import fs from "fs";
 import path from "path";
 
-const LOCK_FILE = path.join(process.cwd(), "data", "setup.lock");
-const ENV_FILE  = path.join(process.cwd(), ".env");
-
 export type DbProvider = "sqlite" | "mysql" | "postgresql";
 
 export interface SetupLock {
@@ -11,23 +8,39 @@ export interface SetupLock {
   completedAt: string;
 }
 
+// ── Lazy path evaluation (prevents process.cwd() in Edge Runtime during build) ──
+
+function getLockFile(): string {
+  return path.join(process.cwd(), "data", "setup.lock");
+}
+
+function getEnvFile(): string {
+  return path.join(process.cwd(), ".env");
+}
+
+function getSchemaFile(): string {
+  return path.join(process.cwd(), "prisma", "schema.prisma");
+}
+
 // ── Lock file ─────────────────────────────────────────────────────────────────
 
 export function isSetupComplete(): boolean {
-  return fs.existsSync(LOCK_FILE);
+  return fs.existsSync(getLockFile());
 }
 
 export function markSetupComplete(provider: DbProvider): void {
-  const dir = path.dirname(LOCK_FILE);
+  const lockFile = getLockFile();
+  const dir = path.dirname(lockFile);
   fs.mkdirSync(dir, { recursive: true });
   const lock: SetupLock = { provider, completedAt: new Date().toISOString() };
-  fs.writeFileSync(LOCK_FILE, JSON.stringify(lock, null, 2));
+  fs.writeFileSync(lockFile, JSON.stringify(lock, null, 2));
 }
 
 export function readSetupLock(): SetupLock | null {
-  if (!fs.existsSync(LOCK_FILE)) return null;
+  const lockFile = getLockFile();
+  if (!fs.existsSync(lockFile)) return null;
   try {
-    return JSON.parse(fs.readFileSync(LOCK_FILE, "utf8")) as SetupLock;
+    return JSON.parse(fs.readFileSync(lockFile, "utf8")) as SetupLock;
   } catch {
     return null;
   }
@@ -37,7 +50,8 @@ export function readSetupLock(): SetupLock | null {
 
 /** Upserts key=value pairs in the .env file without touching unrelated lines. */
 export function writeEnvVars(vars: Record<string, string>): void {
-  let content = fs.existsSync(ENV_FILE) ? fs.readFileSync(ENV_FILE, "utf8") : "";
+  const envFile = getEnvFile();
+  let content = fs.existsSync(envFile) ? fs.readFileSync(envFile, "utf8") : "";
 
   for (const [key, value] of Object.entries(vars)) {
     const escaped = value.replace(/"/g, '\\"');
@@ -50,21 +64,20 @@ export function writeEnvVars(vars: Record<string, string>): void {
     }
   }
 
-  fs.writeFileSync(ENV_FILE, content);
+  fs.writeFileSync(envFile, content);
 }
 
-// ── Schema patcher ────────────────────────────────────────────────────────────
-
-const SCHEMA_FILE = path.join(process.cwd(), "prisma", "schema.prisma");
+// ── Schema patcher ────────────────────────────────────────────────────────
 
 /** Replaces the `provider = "..."` line in schema.prisma with the chosen provider. */
 export function patchSchema(provider: DbProvider): void {
-  const content = fs.readFileSync(SCHEMA_FILE, "utf8");
+  const schemaFile = getSchemaFile();
+  const content = fs.readFileSync(schemaFile, "utf8");
   const patched = content.replace(
     /provider\s*=\s*"(postgresql|mysql|sqlite)"/,
     `provider = "${provider}"`,
   );
-  fs.writeFileSync(SCHEMA_FILE, patched);
+  fs.writeFileSync(schemaFile, patched);
 }
 
 // ── Connection string builder ─────────────────────────────────────────────────
