@@ -57,7 +57,7 @@ export async function checkSnmp(
       if (entry.oidTotal) oidsToQuery.add(entry.oidTotal);
     }
 
-    log("debug", "[SNMP] consultando OIDs", { ip, port, community: community === "public" ? "public" : "***", oidsToQuery: [...oidsToQuery] });
+    log("info", "[SNMP] consultando OIDs", { ip, port, community: community === "public" ? "public" : "***", oidsToQuery: [...oidsToQuery] });
     const raw = await getOids(session, [...oidsToQuery]);
 
     const snmpData: Record<string, number | null> = {};
@@ -91,7 +91,7 @@ export async function checkSnmp(
       if (entry.key === "uptime") uptime     = value != null ? Math.floor(value) : null;
     }
 
-    log("debug", "[SNMP] sucesso", { ip, valuesCount: Object.keys(snmpData).length });
+    log("info", "[SNMP] sucesso", { ip, valuesCount: Object.keys(snmpData).length });
     return { cpuLoad, memoryUsed, uptime, snmpData };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
