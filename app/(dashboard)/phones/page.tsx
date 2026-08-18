@@ -151,8 +151,7 @@ export default function PhonesPage() {
             icon={Smartphone}
             title="Nenhum celular cadastrado"
             description="Comece adicionando um novo celular ao inventário"
-            action={() => router.push("/phones/new")}
-            actionLabel="Novo Celular"
+            action={<Button onClick={() => router.push("/phones/new")}>Novo Celular</Button>}
           />
         ) : (
           <div className="space-y-2">
