@@ -29,6 +29,7 @@ const RELEASES: Release[] = [
       { type: "feat", text: "Botão 'Entrar com Zoho' aparece automaticamente na tela de login quando a integração está habilitada; desaparece quando desabilitada sem precisar reiniciar" },
       { type: "feat", text: "Gestão de usuários suporta dois tipos — Local (usuário/senha) e Zoho (e-mail), com UI clara na tela de criação e badges na tabela para diferenciar" },
       { type: "feat", text: "2FA (TOTP) desabilitado para contas Zoho — login corporativo já vem autenticado e não precisa de segundo fator local" },
+      { type: "fix", text: "Corrigida migração do banco de dados que deixava o login local (usuário/senha) fora do ar após a atualização — colunas do Zoho OAuth não haviam sido aplicadas por completo na tabela de usuários" },
     ],
   },
   {
