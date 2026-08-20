@@ -18,10 +18,20 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.5.1",
+    date: "20 Aug 2026",
+    label: "Tela de configuração da integração Miradore",
+    latest: true,
+    changes: [
+      { type: "feat", text: "Configuração da integração Miradore agora disponível na tela Sistema (ADMIN) — site name, API key (criptografada) e intervalo de sincronização podem ser cadastrados pela interface, sem precisar de acesso direto à API" },
+      { type: "feat", text: "Botão 'Sincronizar agora' na tela Sistema para forçar a sincronização Miradore sob demanda, com exibição de horário e erro da última sincronização" },
+    ],
+  },
+  {
     version: "0.5.0",
     date: "18 Aug 2026",
     label: "Login corporativo via Zoho OAuth",
-    latest: true,
+    latest: false,
     changes: [
       { type: "security", text: "Autenticação corporativa via Zoho SSO — usuários podem fazer login com conta Zoho, reduzindo a necessidade de gerenciar senhas locais para contas corporativas" },
       { type: "feat", text: "Allowlist de e-mails — ADMIN pré-cadastra o e-mail do usuário e seu nível de acesso; login Zoho é rejeitado se o e-mail não estiver pré-autorizado" },

@@ -21,6 +21,7 @@ import {
   Mail,
   Lock,
   Copy,
+  Smartphone,
 } from "lucide-react";
 
 interface TableStat {
@@ -131,6 +132,17 @@ export function SystemClient() {
   const [zohoMsg, setZohoMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [zohoUriCopied, setZohoUriCopied] = useState(false);
 
+  const [miradoreSiteName, setMiradoreSiteName] = useState("");
+  const [miradoreApiKey, setMiradoreApiKey] = useState("");
+  const [hasMiradoreApiKey, setHasMiradoreApiKey] = useState(false);
+  const [miradoreSyncEnabled, setMiradoreSyncEnabled] = useState(false);
+  const [miradoreSyncIntervalMinutes, setMiradoreSyncIntervalMinutes] = useState(60);
+  const [miradoreLastSyncAt, setMiradoreLastSyncAt] = useState<string | null>(null);
+  const [miradoreLastSyncError, setMiradoreLastSyncError] = useState<string | null>(null);
+  const [miradoreSaving, setMiradoreSaving] = useState(false);
+  const [miradoreSyncing, setMiradoreSyncing] = useState(false);
+  const [miradoreMsg, setMiradoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/stats", { cache: "no-store" });
@@ -179,7 +191,19 @@ export function SystemClient() {
     setHasZohoClientSecret(!!cfg.hasClientSecret);
   }, []);
 
-  useEffect(() => { loadSmtp(); loadZoho(); }, [loadSmtp, loadZoho]);
+  const loadMiradore = useCallback(async () => {
+    const res = await fetch("/api/settings/miradore");
+    if (!res.ok) return;
+    const cfg = await res.json();
+    setMiradoreSiteName(cfg.miradoreSiteName ?? "");
+    setHasMiradoreApiKey(!!cfg.hasApiKey);
+    setMiradoreSyncEnabled(cfg.miradoreSyncEnabled ?? false);
+    setMiradoreSyncIntervalMinutes(cfg.miradoreSyncIntervalMinutes ?? 60);
+    setMiradoreLastSyncAt(cfg.miradoreLastSyncAt ?? null);
+    setMiradoreLastSyncError(cfg.miradoreLastSyncError ?? null);
+  }, []);
+
+  useEffect(() => { loadSmtp(); loadZoho(); loadMiradore(); }, [loadSmtp, loadZoho, loadMiradore]);
 
   async function saveSmtp() {
     setSmtpSaving(true);
@@ -234,6 +258,42 @@ export function SystemClient() {
     }
     setZohoSaving(false);
     setTimeout(() => setZohoMsg(null), 4000);
+  }
+
+  async function saveMiradore() {
+    setMiradoreSaving(true);
+    setMiradoreMsg(null);
+    const res = await fetch("/api/settings/miradore", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        miradoreSiteName: miradoreSiteName || null,
+        miradoreSyncEnabled,
+        miradoreSyncIntervalMinutes,
+        ...(miradoreApiKey ? { miradoreApiKey } : {}),
+      }),
+    });
+    if (res.ok) {
+      setMiradoreMsg({ ok: true, text: "Configuração do Miradore salva com sucesso." });
+      setMiradoreApiKey("");
+      loadMiradore();
+    } else {
+      const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+      setMiradoreMsg({ ok: false, text: err.error ?? "Erro ao salvar." });
+    }
+    setMiradoreSaving(false);
+    setTimeout(() => setMiradoreMsg(null), 4000);
+  }
+
+  async function syncMiradoreNow() {
+    setMiradoreSyncing(true);
+    setMiradoreMsg(null);
+    const res = await fetch("/api/phones/sync", { method: "POST" });
+    const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
+    setMiradoreMsg({ ok: res.ok, text: data.message ?? (res.ok ? "Sincronização concluída." : "Erro ao sincronizar.") });
+    loadMiradore();
+    setMiradoreSyncing(false);
+    setTimeout(() => setMiradoreMsg(null), 6000);
   }
 
   async function saveRetention() {
@@ -589,6 +649,101 @@ export function SystemClient() {
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <Button onClick={saveZoho} disabled={zohoSaving} size="sm">
                 {zohoSaving ? "Salvando…" : "Salvar configuração"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Miradore MDM settings */}
+        <div className="rounded-xl border border-border bg-card">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Smartphone className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[13px] font-semibold">Integração Miradore MDM</span>
+            </div>
+            <Switch checked={miradoreSyncEnabled} onCheckedChange={setMiradoreSyncEnabled} />
+          </div>
+          <div className="p-5 space-y-5">
+            <p className="text-[13px] text-muted-foreground">
+              Sincroniza automaticamente o status técnico dos celulares (bateria, última
+              conexão, S.O., compliance) a partir do Miradore MDM, sem sobrescrever os
+              dados cadastrados manualmente no inventário.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="miradore-site-name" className="text-[13px]">Site name</Label>
+                <Input
+                  id="miradore-site-name"
+                  placeholder="minha-empresa"
+                  value={miradoreSiteName}
+                  onChange={(e) => setMiradoreSiteName(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="miradore-api-key" className="text-[13px]">
+                  API Key
+                  {hasMiradoreApiKey && (
+                    <span className="ml-2 text-muted-foreground font-normal">· já configurado</span>
+                  )}
+                </Label>
+                <Input
+                  id="miradore-api-key"
+                  type="password"
+                  placeholder={hasMiradoreApiKey ? "Deixe em branco para manter" : ""}
+                  value={miradoreApiKey}
+                  onChange={(e) => setMiradoreApiKey(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="miradore-interval" className="text-[13px]">Intervalo de sincronização (minutos)</Label>
+                <Input
+                  id="miradore-interval"
+                  type="number"
+                  min={5}
+                  max={1440}
+                  value={miradoreSyncIntervalMinutes}
+                  onChange={(e) => setMiradoreSyncIntervalMinutes(Number(e.target.value))}
+                  className="text-[13px]"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 rounded-lg bg-muted/40 p-3.5 border border-border text-[13px]">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Última sincronização</span>
+                <span className="font-medium">
+                  {miradoreLastSyncAt ? fmtDateTime(miradoreLastSyncAt) : "Nunca"}
+                </span>
+              </div>
+              {miradoreLastSyncError && (
+                <p className="text-destructive text-[12px] pt-1">{miradoreLastSyncError}</p>
+              )}
+            </div>
+
+            {miradoreMsg && (
+              <div className={cn("flex items-center gap-2 text-[13px] rounded-lg px-3 py-2",
+                miradoreMsg.ok ? "bg-emerald-500/10 text-emerald-600" : "bg-destructive/10 text-destructive"
+              )}>
+                {miradoreMsg.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                {miradoreMsg.text}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Button onClick={saveMiradore} disabled={miradoreSaving} size="sm">
+                {miradoreSaving ? "Salvando…" : "Salvar configuração"}
+              </Button>
+              <Button
+                onClick={syncMiradoreNow}
+                disabled={miradoreSyncing || !hasMiradoreApiKey}
+                variant="outline"
+                size="sm"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", miradoreSyncing && "animate-spin")} />
+                {miradoreSyncing ? "Sincronizando…" : "Sincronizar agora"}
               </Button>
             </div>
           </div>
