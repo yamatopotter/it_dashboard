@@ -22,6 +22,7 @@ import {
   Lock,
   Copy,
   Smartphone,
+  Monitor,
 } from "lucide-react";
 
 interface TableStat {
@@ -143,6 +144,19 @@ export function SystemClient() {
   const [miradoreSyncing, setMiradoreSyncing] = useState(false);
   const [miradoreMsg, setMiradoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const [dattoPlatform, setDattoPlatform] = useState("merlot");
+  const [dattoApiKey, setDattoApiKey] = useState("");
+  const [hasDattoApiKey, setHasDattoApiKey] = useState(false);
+  const [dattoSecretKey, setDattoSecretKey] = useState("");
+  const [hasDattoSecretKey, setHasDattoSecretKey] = useState(false);
+  const [dattoSyncEnabled, setDattoSyncEnabled] = useState(false);
+  const [dattoSyncIntervalMinutes, setDattoSyncIntervalMinutes] = useState(30);
+  const [dattoLastSyncAt, setDattoLastSyncAt] = useState<string | null>(null);
+  const [dattoLastSyncError, setDattoLastSyncError] = useState<string | null>(null);
+  const [dattoSaving, setDattoSaving] = useState(false);
+  const [dattoSyncing, setDattoSyncing] = useState(false);
+  const [dattoMsg, setDattoMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/stats", { cache: "no-store" });
@@ -203,7 +217,20 @@ export function SystemClient() {
     setMiradoreLastSyncError(cfg.miradoreLastSyncError ?? null);
   }, []);
 
-  useEffect(() => { loadSmtp(); loadZoho(); loadMiradore(); }, [loadSmtp, loadZoho, loadMiradore]);
+  const loadDatto = useCallback(async () => {
+    const res = await fetch("/api/settings/datto");
+    if (!res.ok) return;
+    const cfg = await res.json();
+    setDattoPlatform(cfg.dattoPlatform ?? "merlot");
+    setHasDattoApiKey(!!cfg.hasApiKey);
+    setHasDattoSecretKey(!!cfg.hasSecretKey);
+    setDattoSyncEnabled(cfg.dattoSyncEnabled ?? false);
+    setDattoSyncIntervalMinutes(cfg.dattoSyncIntervalMinutes ?? 30);
+    setDattoLastSyncAt(cfg.dattoLastSyncAt ?? null);
+    setDattoLastSyncError(cfg.dattoLastSyncError ?? null);
+  }, []);
+
+  useEffect(() => { loadSmtp(); loadZoho(); loadMiradore(); loadDatto(); }, [loadSmtp, loadZoho, loadMiradore, loadDatto]);
 
   async function saveSmtp() {
     setSmtpSaving(true);
@@ -294,6 +321,44 @@ export function SystemClient() {
     loadMiradore();
     setMiradoreSyncing(false);
     setTimeout(() => setMiradoreMsg(null), 6000);
+  }
+
+  async function saveDatto() {
+    setDattoSaving(true);
+    setDattoMsg(null);
+    const res = await fetch("/api/settings/datto", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dattoPlatform: dattoPlatform || null,
+        dattoSyncEnabled,
+        dattoSyncIntervalMinutes,
+        ...(dattoApiKey ? { dattoApiKey } : {}),
+        ...(dattoSecretKey ? { dattoSecretKey } : {}),
+      }),
+    });
+    if (res.ok) {
+      setDattoMsg({ ok: true, text: "Configuração do Datto RMM salva com sucesso." });
+      setDattoApiKey("");
+      setDattoSecretKey("");
+      loadDatto();
+    } else {
+      const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+      setDattoMsg({ ok: false, text: err.error ?? "Erro ao salvar." });
+    }
+    setDattoSaving(false);
+    setTimeout(() => setDattoMsg(null), 4000);
+  }
+
+  async function syncDattoNow() {
+    setDattoSyncing(true);
+    setDattoMsg(null);
+    const res = await fetch("/api/computers/sync", { method: "POST" });
+    const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
+    setDattoMsg({ ok: res.ok, text: data.message ?? (res.ok ? "Sincronização concluída." : "Erro ao sincronizar.") });
+    loadDatto();
+    setDattoSyncing(false);
+    setTimeout(() => setDattoMsg(null), 6000);
   }
 
   async function saveRetention() {
@@ -744,6 +809,123 @@ export function SystemClient() {
               >
                 <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", miradoreSyncing && "animate-spin")} />
                 {miradoreSyncing ? "Sincronizando…" : "Sincronizar agora"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Datto RMM settings */}
+        <div className="rounded-xl border border-border bg-card">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Monitor className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[13px] font-semibold">Integração Datto RMM</span>
+            </div>
+            <Switch checked={dattoSyncEnabled} onCheckedChange={setDattoSyncEnabled} />
+          </div>
+          <div className="p-5 space-y-5">
+            <p className="text-[13px] text-muted-foreground">
+              Sincroniza o inventário de computadores e servidores a partir do Datto RMM —
+              status online/offline, última vez visto e alertas abertos aparecem em
+              Computadores, sem que o WatchIT precise monitorar essas máquinas diretamente.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="datto-platform" className="text-[13px]">Plataforma / Região</Label>
+                <select
+                  id="datto-platform"
+                  value={dattoPlatform}
+                  onChange={(e) => setDattoPlatform(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground text-[13px]"
+                >
+                  <option value="merlot">merlot</option>
+                  <option value="pinotage">pinotage</option>
+                  <option value="concord">concord</option>
+                  <option value="vidal">vidal</option>
+                  <option value="zinfandel">zinfandel</option>
+                  <option value="syrah">syrah</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="datto-interval" className="text-[13px]">Intervalo de sincronização (minutos)</Label>
+                <Input
+                  id="datto-interval"
+                  type="number"
+                  min={5}
+                  max={1440}
+                  value={dattoSyncIntervalMinutes}
+                  onChange={(e) => setDattoSyncIntervalMinutes(Number(e.target.value))}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="datto-api-key" className="text-[13px]">
+                  API Key
+                  {hasDattoApiKey && (
+                    <span className="ml-2 text-muted-foreground font-normal">· já configurado</span>
+                  )}
+                </Label>
+                <Input
+                  id="datto-api-key"
+                  type="password"
+                  placeholder={hasDattoApiKey ? "Deixe em branco para manter" : ""}
+                  value={dattoApiKey}
+                  onChange={(e) => setDattoApiKey(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="datto-secret-key" className="text-[13px]">
+                  Secret Key
+                  {hasDattoSecretKey && (
+                    <span className="ml-2 text-muted-foreground font-normal">· já configurado</span>
+                  )}
+                </Label>
+                <Input
+                  id="datto-secret-key"
+                  type="password"
+                  placeholder={hasDattoSecretKey ? "Deixe em branco para manter" : ""}
+                  value={dattoSecretKey}
+                  onChange={(e) => setDattoSecretKey(e.target.value)}
+                  className="text-[13px]"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 rounded-lg bg-muted/40 p-3.5 border border-border text-[13px]">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Última sincronização</span>
+                <span className="font-medium">
+                  {dattoLastSyncAt ? fmtDateTime(dattoLastSyncAt) : "Nunca"}
+                </span>
+              </div>
+              {dattoLastSyncError && (
+                <p className="text-destructive text-[12px] pt-1">{dattoLastSyncError}</p>
+              )}
+            </div>
+
+            {dattoMsg && (
+              <div className={cn("flex items-center gap-2 text-[13px] rounded-lg px-3 py-2",
+                dattoMsg.ok ? "bg-emerald-500/10 text-emerald-600" : "bg-destructive/10 text-destructive"
+              )}>
+                {dattoMsg.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                {dattoMsg.text}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Button onClick={saveDatto} disabled={dattoSaving} size="sm">
+                {dattoSaving ? "Salvando…" : "Salvar configuração"}
+              </Button>
+              <Button
+                onClick={syncDattoNow}
+                disabled={dattoSyncing || !hasDattoApiKey || !hasDattoSecretKey}
+                variant="outline"
+                size="sm"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", dattoSyncing && "animate-spin")} />
+                {dattoSyncing ? "Sincronizando…" : "Sincronizar agora"}
               </Button>
             </div>
           </div>

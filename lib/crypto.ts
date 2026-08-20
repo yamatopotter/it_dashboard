@@ -102,3 +102,13 @@ export function resolveZohoClientSecret(config: {
 }): string | null {
   return config.zohoClientSecretEnc ? decrypt(config.zohoClientSecretEnc) : null;
 }
+
+export function resolveDattoCredentials(config: {
+  dattoApiKeyEnc:    string | null;
+  dattoSecretKeyEnc: string | null;
+}): { apiKey: string; secretKey: string } | null {
+  const apiKey    = config.dattoApiKeyEnc    ? decrypt(config.dattoApiKeyEnc)    : null;
+  const secretKey = config.dattoSecretKeyEnc ? decrypt(config.dattoSecretKeyEnc) : null;
+  if (!apiKey || !secretKey) return null;
+  return { apiKey, secretKey };
+}

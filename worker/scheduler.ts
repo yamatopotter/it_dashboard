@@ -9,6 +9,7 @@ import { checkLinkTraffic } from "./monitors/link-traffic";
 import { NvrClient, validateRecording } from "./monitors/nvr";
 import { processChannelIssues } from "./nvr-channels";
 import { syncMiradorePhones } from "./miradore-sync";
+import { syncDattoDevices } from "./datto-sync";
 import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials, resolveNvrCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
 import { sendAlert, ALERT_COOLDOWN_MS } from "./monitors/alert";
@@ -525,6 +526,7 @@ export async function startScheduler() {
 
   void trackAsync(pollLinks());
   void trackAsync(syncMiradorePhones());
+  void trackAsync(syncDattoDevices());
 
   // Run history pruning at startup then every 24h
   void trackAsync(pruneHistory());
@@ -587,6 +589,15 @@ export async function startScheduler() {
     log("info", "Miradore sync interval scheduled", { intervalMinutes: config?.miradoreSyncIntervalMinutes ?? 60 });
   };
   void setupMiradoreSync();
+
+  // Sync Datto RMM computers on interval (reads interval from config)
+  const setupDattoSync = async () => {
+    const config = await db.systemConfig.findUnique({ where: { id: 1 } }).catch(() => null);
+    const intervalMs = (config?.dattoSyncIntervalMinutes ?? 30) * 60_000;
+    makeInterval(() => void trackAsync(syncDattoDevices()), intervalMs);
+    log("info", "Datto RMM sync interval scheduled", { intervalMinutes: config?.dattoSyncIntervalMinutes ?? 30 });
+  };
+  void setupDattoSync();
 }
 
 export async function pollLinks() {

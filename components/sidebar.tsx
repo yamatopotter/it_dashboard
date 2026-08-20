@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, History, ShieldCheck, BookOpen, Code2, FlaskConical, Smartphone } from "lucide-react";
+import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, History, ShieldCheck, BookOpen, Code2, FlaskConical, Smartphone, Monitor } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LighthouseIcon } from "@/components/lighthouse-icon";
 
@@ -16,6 +16,8 @@ interface SidebarCounts {
   linksTotal: number;
   phonesTotal?: number;
   phonesLoyaltyExpiring?: number;
+  computersTotal?: number;
+  computersOffline?: number;
 }
 
 function BrandMark() {
@@ -128,7 +130,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [counts, setCounts] = useState<SidebarCounts>(
-    initialCounts ?? { devicesTotal: 0, devicesOffline: 0, linksOnline: 0, linksTotal: 0, phonesTotal: 0, phonesLoyaltyExpiring: 0 }
+    initialCounts ?? { devicesTotal: 0, devicesOffline: 0, linksOnline: 0, linksTotal: 0, phonesTotal: 0, phonesLoyaltyExpiring: 0, computersTotal: 0, computersOffline: 0 }
   );
   const [version, setVersion] = useState<string | null>(null);
 
@@ -210,6 +212,15 @@ export function Sidebar({
           active={pathname.startsWith("/phones")}
           badge={counts.phonesTotal ? counts.phonesTotal : undefined}
           alertBadge={counts.phonesLoyaltyExpiring}
+        />
+
+        <NavItem
+          href="/computers"
+          label="Computadores"
+          icon={Monitor}
+          active={pathname.startsWith("/computers")}
+          badge={counts.computersTotal ? counts.computersTotal : undefined}
+          alertBadge={counts.computersOffline}
         />
 
         <NavSectionLabel>Painéis</NavSectionLabel>
