@@ -18,10 +18,22 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.6.0",
+    date: "20 Aug 2026",
+    label: "Inventário de computadores via Datto RMM",
+    latest: true,
+    changes: [
+      { type: "feat", text: "Nova página Computadores — inventário de estações de trabalho e servidores sincronizado automaticamente do Datto RMM, com status online/offline e data da última vez visto" },
+      { type: "feat", text: "Alertas abertos do Datto RMM (antivírus, disco cheio, etc.) aparecem diretamente na máquina afetada, com selo de prioridade (Crítico, Alto, Moderado, Baixo)" },
+      { type: "feat", text: "Configuração da integração Datto RMM em Sistema (ADMIN) — plataforma/região, API Key e Secret Key (criptografados), intervalo de sincronização e botão 'Sincronizar agora'" },
+      { type: "feat", text: "Filtros por status (Online/Offline) e por presença de alertas na página Computadores; badge de máquinas offline na barra lateral" },
+    ],
+  },
+  {
     version: "0.5.1",
     date: "20 Aug 2026",
     label: "Tela de configuração da integração Miradore",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "Configuração da integração Miradore agora disponível na tela Sistema (ADMIN) — site name, API key (criptografada) e intervalo de sincronização podem ser cadastrados pela interface, sem precisar de acesso direto à API" },
       { type: "feat", text: "Botão 'Sincronizar agora' na tela Sistema para forçar a sincronização Miradore sob demanda, com exibição de horário e erro da última sincronização" },

@@ -13,7 +13,7 @@ export async function GET() {
   const now = new Date();
   const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  const [devicesTotal, devicesOnline, linksTotal, linksOnline, phonesTotal, phonesLoyaltyExpiring] = await Promise.all([
+  const [devicesTotal, devicesOnline, linksTotal, linksOnline, phonesTotal, phonesLoyaltyExpiring, computersTotal, computersOffline] = await Promise.all([
     db.device.count(),
     db.device.count({ where: { currentStatus: { isOnline: true } } }),
     db.link.count(),
@@ -28,6 +28,8 @@ export async function GET() {
         },
       },
     }),
+    db.computer.count({ where: { deletedInDatto: false } }),
+    db.computer.count({ where: { deletedInDatto: false, online: false } }),
   ]);
 
   // A device with no status row yet counts as offline (matches the dashboard layout).
@@ -38,5 +40,7 @@ export async function GET() {
     linksTotal,
     phonesTotal,
     phonesLoyaltyExpiring,
+    computersTotal,
+    computersOffline,
   });
 }

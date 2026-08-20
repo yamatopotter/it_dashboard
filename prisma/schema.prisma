@@ -294,6 +294,16 @@ model SystemConfig {
   zohoClientId        String?
   zohoClientSecretEnc String? // AES-256-GCM encrypted
   zohoAccountsUrl     String  @default("https://accounts.zoho.com")
+
+  // Datto RMM integration — inventário de computadores
+  dattoEnabled             Boolean @default(false)
+  dattoPlatform            String? // região/plataforma: "merlot", "pinotage", etc.
+  dattoApiKeyEnc           String? // AES-256-GCM encrypted
+  dattoSecretKeyEnc        String? // AES-256-GCM encrypted
+  dattoSyncEnabled         Boolean @default(false)
+  dattoSyncIntervalMinutes Int     @default(30)
+  dattoLastSyncAt          DateTime?
+  dattoLastSyncError       String?
 }
 
 model NvrChannelIssue {
@@ -359,5 +369,38 @@ model Phone {
   updatedAt DateTime @updatedAt
 
   @@index([loyaltyEndDate])
+}
+
+// Inventário de computadores/servidores — sincronizado do Datto RMM.
+// Diferente de Device (configurado manualmente, monitorado ativamente por nós),
+// aqui o Datto é a fonte primária de existência e status da máquina.
+model Computer {
+  id               String    @id @default(cuid())
+  dattoDeviceUid   String    @unique
+  hostname         String
+  siteName         String?
+  deviceType       String?   // categoria do Datto: Desktop, Laptop, Server, etc.
+  operatingSystem  String?
+  intIpAddress     String?
+  extIpAddress     String?
+  lastLoggedInUser String?
+  online           Boolean   @default(false)
+  lastSeenAt       DateTime?
+  lastRebootAt     DateTime?
+  lastAuditAt      DateTime?
+  deletedInDatto   Boolean   @default(false) // Datto marcou como removido — mantemos histórico, ocultamos da lista padrão
+
+  // Alertas abertos — snapshot da última sync (mesmo padrão de unifiData/omadaData
+  // em DeviceStatus: JSON bruto + colunas derivadas para ordenar/filtrar sem JSON query)
+  openAlerts            Json?
+  openAlertsCount       Int     @default(0)
+  highestAlertPriority  String? // "Critical" | "High" | "Moderate" | "Low" | "Information" | null
+
+  syncedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([online])
+  @@index([siteName])
 }
 
