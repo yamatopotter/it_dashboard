@@ -15,6 +15,8 @@ import {
 import { toast } from "sonner";
 import { fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { InterfaceSection } from "./interface-section";
+import type { UiKey } from "@/lib/modules";
 
 interface UserData {
   id: string;
@@ -22,6 +24,7 @@ interface UserData {
   role: "ADMIN" | "OPERADOR" | "VIEWER";
   totpEnabled: boolean;
   createdAt: Date;
+  uiPreference?: string | null;
 }
 
 const ROLE_LABEL = { ADMIN: "Administrador", OPERADOR: "Operador", VIEWER: "Viewer" };
@@ -38,7 +41,7 @@ interface SetupData {
   uri: string;
 }
 
-export default function ProfileClient({ user }: { user: UserData }) {
+export default function ProfileClient({ user, allowUserUi = true, defaultUi = "tower" }: { user: UserData; allowUserUi?: boolean; defaultUi?: UiKey }) {
   const router = useRouter();
   const [totpEnabled, setTotpEnabled] = useState(user.totpEnabled);
   const [step, setStep] = useState<Step>("idle");
@@ -384,6 +387,8 @@ export default function ProfileClient({ user }: { user: UserData }) {
             )}
           </CardContent>
         </Card>
+
+        <InterfaceSection initial={user.uiPreference ?? null} allowUserUi={allowUserUi} defaultUi={defaultUi} />
 
       </div>
     </>

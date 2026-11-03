@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import type { Device } from "@prisma/client";
 import { DeviceFormProtocols } from "@/components/device-form-protocols";
+import { SITE_KEYS, SITE_NAMES } from "@/lib/modules";
 
 const schema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
@@ -31,6 +32,7 @@ const schema = z.object({
     .refine(ip => ip.split(".").every(o => parseInt(o, 10) <= 255), "Octetos do IP devem estar entre 0 e 255"),
   type: z.enum(["MIKROTIK", "DVR", "CAMERA", "OTHER", "UNIFI_AP", "OMADA_AP"]),
   location: z.string().optional(),
+  site: z.string().optional(),
   notes: z.string().optional(),
   pingEnabled: z.boolean(),
   httpEnabled: z.boolean(),
@@ -87,7 +89,6 @@ const schema = z.object({
   })).optional().nullable(),
   checkInterval:   z.number().min(10).max(3600),
   maintenanceUntil: z.string().optional().nullable(),
-  alertWebhookUrl: z.string().url("URL inválida").or(z.literal("")).optional().nullable(),
   alertThreshold:  z.number().int().min(1).max(100),
 });
 
@@ -109,6 +110,7 @@ export function DeviceForm({ device }: DeviceFormProps) {
           ip: device.ip,
           type: device.type,
           location: device.location ?? "",
+          site: device.site ?? "",
           notes: device.notes ?? "",
           pingEnabled: device.pingEnabled,
           httpEnabled: device.httpEnabled,
@@ -155,7 +157,6 @@ export function DeviceForm({ device }: DeviceFormProps) {
           maintenanceUntil: device.maintenanceUntil
             ? new Date(device.maintenanceUntil).toISOString().slice(0, 16)
             : "",
-          alertWebhookUrl: device.alertWebhookUrl ?? "",
           alertThreshold:  device.alertThreshold ?? 3,
         }
       : {
@@ -195,7 +196,6 @@ export function DeviceForm({ device }: DeviceFormProps) {
           snmpCustomOids:  DEFAULT_SNMP_OIDS,
           checkInterval:   60,
           maintenanceUntil: "",
-          alertWebhookUrl: "",
           alertThreshold:  3,
         },
   });
@@ -225,7 +225,6 @@ export function DeviceForm({ device }: DeviceFormProps) {
         snmpCustomOids: data.snmpCustomOids ?? null,
         maintenanceUntil: data.maintenanceUntil ? new Date(data.maintenanceUntil).toISOString() : null,
         // "" is not a valid URL for the server schema — send null when no webhook is set
-        alertWebhookUrl: data.alertWebhookUrl || null,
         unifiControllerIp:
           data.unifiMode === "controller" && data.unifiControllerIp
             ? data.unifiControllerIp
@@ -319,6 +318,20 @@ export function DeviceForm({ device }: DeviceFormProps) {
                 <Label htmlFor="location">Localização</Label>
                 <Input id="location" {...register("location")} placeholder="Sala de TI" />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="site">Unidade</Label>
+                <Select value={watch("site") || "NONE"} onValueChange={(v) => setValue("site", v === "NONE" ? "" : (v as string), { shouldDirty: true })}>
+                  <SelectTrigger id="site">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">Não definida</SelectItem>
+                    {SITE_KEYS.map((k) => (
+                      <SelectItem key={k} value={k}>{SITE_NAMES[k]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -347,18 +360,6 @@ export function DeviceForm({ device }: DeviceFormProps) {
                 max={3600}
                 {...register("checkInterval", { valueAsNumber: true })}
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="alertWebhookUrl">Webhook de alerta (opcional)</Label>
-              <Input
-                id="alertWebhookUrl"
-                type="url"
-                placeholder="https://hooks.slack.com/services/..."
-                {...register("alertWebhookUrl")}
-              />
-              {errors.alertWebhookUrl && <p className="text-xs text-destructive">{errors.alertWebhookUrl.message}</p>}
-              <p className="text-xs text-muted-foreground">URL que recebe um POST JSON quando o dispositivo fica offline por N checks consecutivos.</p>
             </div>
 
             <div className="space-y-2">

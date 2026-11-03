@@ -46,6 +46,7 @@ import { BandwidthCell } from "@/components/bandwidth-cell";
 import { FilterChip } from "@/components/filter-chip";
 import { SkeletonList } from "@/components/skeleton-list";
 import { EmptyState } from "@/components/empty-state";
+import { SITE_KEYS, SITE_NAMES } from "@/lib/modules";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface LinkItem {
@@ -53,6 +54,7 @@ interface LinkItem {
   name: string;
   description: string | null;
   location: string | null;
+  site: string | null;
   isOnline: boolean;
   lastEventAt: string | null;
   createdAt: string;
@@ -76,6 +78,7 @@ const formSchema = z.object({
   name: z.string().min(1, "Nome obrigatório").max(100),
   description: z.string().max(500).optional().nullable(),
   location: z.string().max(100).optional().nullable(),
+  site: z.string().optional().nullable(),
   mikrotikDeviceId: z.string().optional().nullable(),
   mikrotikInterface: z.string().max(50).optional().nullable(),
   contractedDownloadMbps: z.number().positive("Deve ser maior que 0").optional().nullable(),
@@ -146,7 +149,7 @@ export default function LinksPage() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", description: "", location: "", mikrotikDeviceId: "", mikrotikInterface: "", contractedDownloadMbps: null, contractedUploadMbps: null },
+    defaultValues: { name: "", description: "", location: "", site: "", mikrotikDeviceId: "", mikrotikInterface: "", contractedDownloadMbps: null, contractedUploadMbps: null },
   });
 
   useEffect(() => {
@@ -172,7 +175,7 @@ export default function LinksPage() {
   function openCreate() {
     setEditing(null);
     setTrafficTest({ state: "idle" });
-    form.reset({ name: "", description: "", location: "", mikrotikDeviceId: "", mikrotikInterface: "", contractedDownloadMbps: null, contractedUploadMbps: null });
+    form.reset({ name: "", description: "", location: "", site: "", mikrotikDeviceId: "", mikrotikInterface: "", contractedDownloadMbps: null, contractedUploadMbps: null });
     setDialogOpen(true);
   }
 
@@ -184,6 +187,7 @@ export default function LinksPage() {
       name: link.name,
       description: link.description ?? "",
       location: link.location ?? "",
+      site: link.site ?? "",
       mikrotikDeviceId: link.mikrotikDeviceId ?? "",
       mikrotikInterface: link.mikrotikInterface ?? "",
       contractedDownloadMbps: link.contractedDownloadBps != null ? link.contractedDownloadBps / 1_000_000 : null,
@@ -490,6 +494,19 @@ export default function LinksPage() {
                   <MapPin className="inline h-3 w-3 mr-1 opacity-60" />Local (opcional)
                 </Label>
                 <Input id="location" {...form.register("location")} placeholder="Itaguaí, Recreio..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="site">Unidade</Label>
+                <select
+                  id="site"
+                  {...form.register("site")}
+                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                >
+                  <option value="">Não definida</option>
+                  {SITE_KEYS.map((k) => (
+                    <option key={k} value={k}>{SITE_NAMES[k]}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="description">Descrição (opcional)</Label>

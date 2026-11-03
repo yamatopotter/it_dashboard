@@ -8,6 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { PasswordInput } from "@/components/ui/password-input";
 import { cn } from "@/lib/utils";
+import { ModulesCard } from "@/components/settings/modules-card";
+import { CliqCard } from "@/components/settings/cliq-card";
+import { AppearanceCard } from "@/components/settings/appearance-card";
 import { fmtDateTime, formatBytes } from "@/lib/format";
 import {
   Database,
@@ -1069,6 +1072,12 @@ export function SystemClient() {
             </Button>
           </div>
         </div>
+      </div>
+
+      <div className="px-6 pb-6 grid gap-4 max-w-3xl">
+        <AppearanceCard />
+        <ModulesCard />
+        <CliqCard />
       </div>
     </div>
   );

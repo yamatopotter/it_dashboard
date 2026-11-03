@@ -229,3 +229,118 @@
   body { background: white !important; }
   @page { margin: 20mm 15mm; size: A4; }
 }
+
+/* ── Interfaces TUI (estilo btop): tokens mapeados para o tema do projeto (claro/escuro) ── */
+.tui {
+  --bg: var(--background);
+  --panel: var(--card);
+  --line: var(--border);
+  --line-hi: color-mix(in srgb, var(--foreground) 28%, var(--border));
+  --fg: var(--foreground);
+  --dim: var(--muted-foreground);
+  --faint: color-mix(in srgb, var(--foreground) 22%, var(--background));
+  --sel: var(--muted);
+  --ok: var(--success);
+  --warn: var(--warning);
+  --crit: var(--destructive);
+  --info: #2867b8;
+  --accent: var(--primary);
+  --accent-2: #12827e;
+  background: var(--bg); color: var(--fg);
+  font: 13px/1.55 var(--font-mono), ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  min-height: 100%; padding: 0 16px 8px;
+}
+.dark .tui { --info: #67b3ff; --accent-2: #5fd4d0; }
+.tui.tv { position: fixed; inset: 0; z-index: 40; overflow: auto; }
+.tui *, .tui *::before, .tui *::after { box-sizing: border-box; }
+.tui [hidden] { display: none !important; }
+.tui button { font: inherit; color: inherit; }
+.tui :focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
+.tui .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; padding-block: 10px; color: var(--dim); }
+.tui .brand { color: var(--accent); font-weight: 700; letter-spacing: .02em; }
+.tui .clock { color: var(--fg); }
+.tui .spacer { flex: 1; }
+.tui .chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.tui .chip { border: 1px solid var(--line); background: transparent; border-radius: 3px; padding: 0 7px; cursor: pointer; color: var(--dim); }
+.tui .chip kbd { color: var(--accent-2); }
+.tui .chip[aria-pressed="true"] { border-color: var(--accent-2); color: var(--fg); background: var(--sel); }
+.tui .alertcount { color: var(--crit); font-weight: 700; }
+.tui .frozen { display: flex; gap: 12px; align-items: center; justify-content: space-between; background: var(--crit); color: var(--bg); font-weight: 700; padding: 6px 10px; border-radius: 3px; margin-bottom: 10px; }
+.tui .box { position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 16px 12px 10px; background: var(--panel); }
+.tui .box.hot { border-color: var(--crit); }
+.tui .box.focus { border-color: var(--box, var(--info)); }
+.tui .box-t { position: absolute; top: -0.75em; left: 10px; margin: 0; display: flex; gap: 8px; align-items: baseline; background: var(--bg); padding: 0 6px; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.4; color: var(--box, var(--info)); letter-spacing: .03em; max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; }
+.tui .box-t .sub { color: var(--dim); font-weight: 400; }
+.tui .box-r { position: absolute; top: -0.75em; right: 10px; background: var(--bg); padding: 0 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.tui .box-r button { background: none; border: 0; cursor: pointer; color: var(--dim); padding: 0; }
+.tui .grid { display: grid; gap: 18px 14px; padding-block: 14px; }
+.tui .grid > .full { grid-column: 1 / -1; }
+.tui .rows { display: flex; flex-direction: column; }
+.tui .row { display: grid; align-items: center; gap: 10px; padding: 3px 6px; border-radius: 3px; cursor: pointer; min-width: 0; border-left: 2px solid transparent; }
+.tui .row:hover { background: var(--sel); }
+.tui .row.sel { background: var(--sel); border-left-color: var(--accent); }
+.tui .row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui .row.child { color: var(--dim); padding-left: 26px; display: block; white-space: pre; }
+.tui .row.muted { color: var(--dim); }
+.tui .ok { color: var(--ok); } .tui .warn { color: var(--warn); } .tui .crit { color: var(--crit); }
+.tui .info { color: var(--info); } .tui .dim { color: var(--dim); } .tui .faint { color: var(--faint); }
+.tui .sev { font-weight: 700; font-size: 11px; letter-spacing: .05em; }
+.tui .barwrap { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; }
+.tui .bar { --p: 0; --c: var(--ok); display: inline-block; position: relative; flex: none; min-width: 4ch; height: 9px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--faint) 0 1px, transparent 1px 10%); background-color: color-mix(in srgb, var(--faint) 35%, transparent); overflow: hidden; }
+.tui .bar > i { position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 1%); background: var(--c); border-radius: 2px; transition: width .6s ease; }
+.tui .bar.w { --c: var(--warn); } .tui .bar.c { --c: var(--crit); }
+.tui .bar.down { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--crit) 35%, transparent) 0 4px, transparent 4px 8px); }
+.tui .pct { min-width: 4ch; }
+.tui .dots { display: flex; flex-wrap: wrap; gap: 2px; }
+.tui .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.tui .dots i.crit { background: var(--crit); }
+.tui .dots i.sup { background: transparent; box-shadow: inset 0 0 0 1.5px var(--crit); }
+.tui .dots i.unk { background: var(--faint); }
+.tui .dots i.ack, .tui .dots i.maint { background: repeating-linear-gradient(135deg, var(--dim) 0 2px, transparent 2px 4px); }
+.tui svg.spark { display: block; width: 100%; height: 34px; overflow: visible; }
+.tui svg.spark .area { opacity: .22; }
+.tui svg.spark .grid-l { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 3; fill: none; }
+.tui kbd { font: inherit; font-size: 11px; color: var(--accent-2); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+.tui .keys { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 4px 14px; background: var(--bg); border-top: 1px solid var(--line); padding-block: 8px; color: var(--dim); font-size: 12px; }
+.tui .keys span { white-space: nowrap; }
+.tui .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.tui .btn { border: 1px solid var(--line-hi); background: transparent; border-radius: 3px; padding: 2px 8px; cursor: pointer; color: var(--fg); font-size: 12px; }
+.tui .btn:hover { background: var(--sel); }
+.tui .btn kbd { border: 0; padding: 0; margin-right: 4px; }
+.tui .btn[aria-pressed="true"] { border-color: var(--accent-2); background: var(--sel); }
+.tui .kv { display: grid; grid-template-columns: 9ch 1fr; gap: 3px 12px; margin: 0; }
+.tui .kv dt { color: var(--dim); }
+.tui .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.tui .toast { position: fixed; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 50; background: var(--fg); color: var(--bg); padding: 6px 14px; border-radius: 4px; font-size: 12px; box-shadow: 0 6px 20px rgb(0 0 0 / .35); max-width: calc(100vw - 32px); }
+.tui .overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 75%, transparent); padding: 16px; }
+.tui .help { display: grid; grid-template-columns: 10ch 1fr; gap: 4px 12px; }
+.tui .blink { animation: tui-blink 1.2s steps(2, start) infinite; }
+@keyframes tui-blink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .tui .blink { animation: none; } .tui .bar > i { transition: none; } }
+@media (max-width: 600px) { .tui .hide-sm { display: none !important; } }
+/* TOWER/1 */
+.tui .g-tower { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.tui .prob { grid-template-columns: 2ch 5ch 5ch 4ch minmax(12ch, 1.1fr) 9ch 8ch minmax(0, 2fr) auto; }
+.tui .prob .acts { display: flex; gap: 4px; overflow: visible; }
+.tui .prob .acts button { border: 1px solid var(--line); background: none; border-radius: 3px; padding: 0 5px; cursor: pointer; color: var(--accent-2); font-size: 11px; }
+.tui .prob.ackd { color: var(--dim); }
+.tui .allok { color: var(--dim); padding: 4px 6px; }
+.tui .allok b { color: var(--ok); font-weight: 600; }
+.tui .lnk { grid-template-columns: 4ch 12ch 5ch minmax(0, 1fr) 6ch; }
+.tui .unit { grid-template-columns: 10ch minmax(0, 1fr) 7ch; align-items: center; }
+.tui .unit .dots { overflow: visible; white-space: normal; }
+.tui .detail-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 24px; }
+.tui .actbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; padding: 6px 8px; border: 1px dashed var(--line-hi); border-radius: 4px; }
+.tui .actbar input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line-hi); border-radius: 3px; padding: 1px 6px; min-width: 24ch; }
+.tui .ev { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+.tui .ev span { white-space: nowrap; }
+.tui .only-problems .hide-f { display: none; }
+@media (max-width: 900px) {
+  .tui .g-tower { grid-template-columns: 1fr; }
+  .tui .grid > .full { grid-column: auto; }
+  .tui .prob { grid-template-columns: 2ch 4ch minmax(0, 1fr) 8ch; }
+  .tui .prob .c-sev, .tui .prob .c-kind, .tui .prob .c-what, .tui .prob .c-why { display: none; }
+  .tui .prob .acts { grid-column: 1 / -1; padding-left: 3ch; }
+  .tui .detail-body { grid-template-columns: 1fr; }
+}

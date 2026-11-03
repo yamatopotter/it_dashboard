@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, History, ShieldCheck, BookOpen, Code2, FlaskConical, Smartphone, Monitor } from "lucide-react";
+import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, Smartphone, Monitor } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LighthouseIcon } from "@/components/lighthouse-icon";
+import type { ModuleFlags } from "@/lib/modules";
 
 interface SidebarCounts {
   devicesTotal: number;
@@ -123,10 +124,12 @@ export function Sidebar({
   userName = "Usuário",
   userRole = "VIEWER",
   initialCounts,
+  modules = { telephony: false, computers: false, nvr: false },
 }: {
   userName?: string;
   userRole?: string;
   initialCounts?: SidebarCounts;
+  modules?: ModuleFlags;
 }) {
   const pathname = usePathname();
   const [counts, setCounts] = useState<SidebarCounts>(
@@ -171,7 +174,7 @@ export function Sidebar({
 
         <NavItem
           href="/"
-          label="Visão geral"
+          label="Painel"
           icon={LayoutDashboard}
           active={pathname === "/"}
         />
@@ -205,7 +208,8 @@ export function Sidebar({
           alertBadge={counts.devicesOffline}
         />
 
-        <NavItem
+        {modules.telephony && (
+          <NavItem
           href="/phones"
           label="Celulares"
           icon={Smartphone}
@@ -213,14 +217,24 @@ export function Sidebar({
           badge={counts.phonesTotal ? counts.phonesTotal : undefined}
           alertBadge={counts.phonesLoyaltyExpiring}
         />
+        )}
 
-        <NavItem
+        {modules.computers && (
+          <NavItem
           href="/computers"
           label="Computadores"
           icon={Monitor}
           active={pathname.startsWith("/computers")}
           badge={counts.computersTotal ? counts.computersTotal : undefined}
           alertBadge={counts.computersOffline}
+        />
+        )}
+
+        <NavItem
+          href="/overview"
+          label="Visão antiga"
+          icon={LayoutDashboard}
+          active={pathname.startsWith("/overview")}
         />
 
         <NavSectionLabel>Painéis</NavSectionLabel>
@@ -255,27 +269,6 @@ export function Sidebar({
           active={pathname.startsWith("/reports")}
         />
 
-        <NavItem
-          href="/security"
-          label="Segurança"
-          icon={ShieldCheck}
-          active={pathname.startsWith("/security")}
-        />
-
-        <NavItem
-          href="/changelog"
-          label="Changelog"
-          icon={History}
-          active={pathname.startsWith("/changelog")}
-        />
-
-        <NavItem
-          href="/manual"
-          label="Manual"
-          icon={BookOpen}
-          active={pathname.startsWith("/manual")}
-        />
-
         {userRole === "ADMIN" && (
           <>
             <NavSectionLabel>Administração</NavSectionLabel>
@@ -296,18 +289,6 @@ export function Sidebar({
               label="Logs de Alterações"
               icon={ClipboardList}
               active={pathname.startsWith("/audit")}
-            />
-            <NavItem
-              href="/dev-manual"
-              label="Manual Dev"
-              icon={Code2}
-              active={pathname.startsWith("/dev-manual")}
-            />
-            <NavItem
-              href="/test-manual"
-              label="Manual Testes"
-              icon={FlaskConical}
-              active={pathname.startsWith("/test-manual")}
             />
           </>
         )}
@@ -343,7 +324,7 @@ export function Sidebar({
       </div>
       {version && (
         <div className="pt-2 text-center text-[9.5px] text-muted-foreground font-mono tracking-wide select-none">
-          {version}
+          <Link href="/changelog" className="hover:text-foreground transition-colors">{version}</Link>
         </div>
       )}
     </aside>
