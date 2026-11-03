@@ -266,7 +266,7 @@ export default function ProfileClient({ user, allowUserUi = true, defaultUi = "t
                         Ou insira a chave manualmente
                       </p>
                       <div className="flex items-center gap-2">
-                        <code className="flex-1 font-mono text-[13px] bg-muted px-3 py-2 rounded-lg border border-border text-accent-foreground truncate">
+                        <code className="flex-1 font-mono text-[13px] bg-muted px-3 py-2 rounded-lg border border-border text-[var(--accent-2)] truncate">
                           {setupData.secret}
                         </code>
                         <button

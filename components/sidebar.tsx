@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
-import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, Smartphone, Monitor } from "lucide-react";
+import { LayoutDashboard, Server, Network, LogOut, AlertCircle, FileText, RadioTower, Wifi, Router, Users, Settings, ClipboardList, Smartphone, Monitor, Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LighthouseIcon } from "@/components/lighthouse-icon";
 import type { ModuleFlags } from "@/lib/modules";
@@ -21,41 +20,8 @@ interface SidebarCounts {
   computersOffline?: number;
 }
 
-function BrandMark() {
-  return (
-    <div
-      className="flex items-center justify-center w-[34px] h-[34px] rounded-[10px] shrink-0 text-white"
-      style={{
-        background: "linear-gradient(145deg, #6d5cf6 0%, #5b48e8 100%)",
-        boxShadow: "0 4px 12px rgba(109,92,246,.35), inset 0 1px 0 rgba(255,255,255,.25)",
-      }}
-    >
-      <LighthouseIcon size={18} />
-    </div>
-  );
-}
-
-function NavBadge({ count, alert }: { count: string | number; alert?: boolean }) {
-  return (
-    <span
-      className={cn(
-        "ml-auto text-[11px] font-bold rounded-full px-2 py-px min-w-[20px] text-center",
-        alert
-          ? "bg-destructive/10 text-destructive"
-          : "bg-muted text-muted-foreground"
-      )}
-    >
-      {count}
-    </span>
-  );
-}
-
 function NavSectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-2.5 pt-4 pb-1.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted-foreground select-none">
-      {children}
-    </div>
-  );
+  return <div className="tui-side-sec">{children}</div>;
 }
 
 function NavItem({
@@ -73,52 +39,24 @@ function NavItem({
   badge?: string | number;
   alertBadge?: number;
 }) {
+  const alert = alertBadge != null && alertBadge > 0;
   return (
-    <Link
-      href={href}
-      className={cn(
-        "flex items-center gap-2.5 px-2.5 py-[9px] rounded-[10px] text-[13.5px] font-semibold transition-colors duration-150",
-        active
-          ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:text-foreground hover:bg-muted"
-      )}
-    >
-      <span
-        className={cn(
-          "flex items-center justify-center transition-colors duration-150",
-          active ? "text-accent-foreground" : "text-muted-foreground"
-        )}
-      >
-        <Icon className="h-[18px] w-[18px]" />
-      </span>
+    <Link href={href} className="tui-side-link" aria-current={active ? "page" : undefined}>
+      <Icon aria-hidden="true" />
       {label}
-      {alertBadge != null && alertBadge > 0 && (
-        <NavBadge count={alertBadge} alert />
-      )}
-      {badge != null && !(alertBadge != null && alertBadge > 0) && (
-        <NavBadge count={badge} />
-      )}
+      {alert ? (
+        <span className="tui-side-n crit" title={`${alertBadge} com problema`}>
+          <span aria-hidden="true">✖ </span>
+          {alertBadge}
+        </span>
+      ) : badge != null ? (
+        <span className="tui-side-n">{badge}</span>
+      ) : null}
     </Link>
   );
 }
 
-function UserAvatar({ name }: { name: string }) {
-  const initials = name
-    .split(" ")
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
-  return (
-    <div
-      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[13px] font-bold shrink-0"
-      style={{ background: "linear-gradient(145deg, #2a2c38, #15161e)" }}
-    >
-      {initials}
-    </div>
-  );
-}
+const ROLE_LABEL: Record<string, string> = { ADMIN: "administrador", OPERADOR: "operador", VIEWER: "visualizador" };
 
 export function Sidebar({
   userName = "Usuário",
@@ -136,6 +74,7 @@ export function Sidebar({
     initialCounts ?? { devicesTotal: 0, devicesOffline: 0, linksOnline: 0, linksTotal: 0, phonesTotal: 0, phonesLoyaltyExpiring: 0, computersTotal: 0, computersOffline: 0 }
   );
   const [version, setVersion] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/version")
@@ -144,7 +83,7 @@ export function Sidebar({
       .catch(() => {});
   }, []);
 
-  // Keep the sidebar badges live (SSR initialCounts would otherwise freeze).
+  // Mantém os contadores vivos (initialCounts do SSR congelaria).
   useEffect(() => {
     let active = true;
     const refresh = () =>
@@ -157,176 +96,132 @@ export function Sidebar({
     return () => { active = false; clearInterval(id); };
   }, []);
 
+  // Esc fecha o menu no mobile.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
-    <aside aria-label="Menu lateral" className="w-60 shrink-0 bg-card border-r border-border flex flex-col pt-4.5 px-3.5 pb-3.5">
-      {/* Brand */}
-      <div className="flex items-center gap-2.5 px-2 pb-5">
-        <BrandMark />
-        <div>
-          <div className="font-extrabold text-[15px] tracking-tight leading-none">WatchIT Tower</div>
-          <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">Monitoramento</div>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav aria-label="Menu principal" className="flex flex-col gap-0.5 flex-1">
-        <NavSectionLabel>Monitoramento</NavSectionLabel>
-
-        <NavItem
-          href="/"
-          label="Painel"
-          icon={LayoutDashboard}
-          active={pathname === "/"}
-        />
-
-        <NavItem
-          href="/devices"
-          label="Dispositivos"
-          icon={Server}
-          active={pathname.startsWith("/devices")}
-          badge={counts.devicesTotal > 0 ? counts.devicesTotal : undefined}
-          alertBadge={counts.devicesOffline}
-        />
-
-        <NavItem
-          href="/links"
-          label="Links de Internet"
-          icon={Network}
-          active={pathname.startsWith("/links")}
-          badge={
-            counts.linksTotal > 0
-              ? `${counts.linksOnline}/${counts.linksTotal}`
-              : undefined
-          }
-        />
-
-        <NavItem
-          href="/incidents"
-          label="Incidentes"
-          icon={AlertCircle}
-          active={pathname.startsWith("/incidents")}
-          alertBadge={counts.devicesOffline}
-        />
-
-        {modules.telephony && (
-          <NavItem
-          href="/phones"
-          label="Celulares"
-          icon={Smartphone}
-          active={pathname.startsWith("/phones")}
-          badge={counts.phonesTotal ? counts.phonesTotal : undefined}
-          alertBadge={counts.phonesLoyaltyExpiring}
-        />
-        )}
-
-        {modules.computers && (
-          <NavItem
-          href="/computers"
-          label="Computadores"
-          icon={Monitor}
-          active={pathname.startsWith("/computers")}
-          badge={counts.computersTotal ? counts.computersTotal : undefined}
-          alertBadge={counts.computersOffline}
-        />
-        )}
-
-        <NavItem
-          href="/overview"
-          label="Visão antiga"
-          icon={LayoutDashboard}
-          active={pathname.startsWith("/overview")}
-        />
-
-        <NavSectionLabel>Painéis</NavSectionLabel>
-
-        <NavItem
-          href="/mikrotik"
-          label="Mikrotik"
-          icon={Router}
-          active={pathname.startsWith("/mikrotik")}
-        />
-
-        <NavItem
-          href="/omada"
-          label="Omada"
-          icon={RadioTower}
-          active={pathname.startsWith("/omada")}
-        />
-
-        <NavItem
-          href="/unifi"
-          label="UniFi"
-          icon={Wifi}
-          active={pathname.startsWith("/unifi")}
-        />
-
-        <NavSectionLabel>Sistema</NavSectionLabel>
-
-        <NavItem
-          href="/reports"
-          label="Relatórios"
-          icon={FileText}
-          active={pathname.startsWith("/reports")}
-        />
-
-        {userRole === "ADMIN" && (
-          <>
-            <NavSectionLabel>Administração</NavSectionLabel>
-            <NavItem
-              href="/users"
-              label="Usuários"
-              icon={Users}
-              active={pathname.startsWith("/users")}
-            />
-            <NavItem
-              href="/system"
-              label="Sistema"
-              icon={Settings}
-              active={pathname.startsWith("/system")}
-            />
-            <NavItem
-              href="/audit"
-              label="Logs de Alterações"
-              icon={ClipboardList}
-              active={pathname.startsWith("/audit")}
-            />
-          </>
-        )}
-      </nav>
-
-      {/* User footer */}
-      <div className="pt-3 border-t border-border/60">
-        <div className="flex items-center gap-2.5 p-2 rounded-[10px] transition-colors hover:bg-muted group">
-          <Link href="/profile" className="flex items-center gap-2.5 flex-1 min-w-0" aria-label="Minha conta">
-            <UserAvatar name={userName} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-bold leading-tight truncate">{userName}</div>
-              <div className="text-[11px] text-muted-foreground font-semibold">
-                {userRole === "ADMIN" ? "Administrador" : userRole === "OPERADOR" ? "Operador" : "Viewer"}
-              </div>
-            </div>
-          </Link>
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <ThemeToggle />
-            <button
-              onClick={async () => {
-                // SEC-021: blacklist the JWT before signing out
-                await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
-                await signOut({ callbackUrl: "/login" });
-              }}
-              className="p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
-              aria-label="Sair"
-            >
-              <LogOut className="h-4 w-4" aria-hidden="true" />
-            </button>
+    <>
+      <button
+        type="button"
+        className="tui-icon-btn tui-side-toggle"
+        aria-label={open ? "Fechar menu" : "Abrir menu"}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
+      </button>
+      <div className="tui-scrim" data-open={open} onClick={() => setOpen(false)} aria-hidden="true" />
+      <aside aria-label="Menu lateral" className="tui-side" data-open={open}>
+        <div className="tui-side-brand">
+          <LighthouseIcon size={20} />
+          <div>
+            <b>WatchIT Tower</b>
+            <small>monitoramento</small>
           </div>
         </div>
-      </div>
-      {version && (
-        <div className="pt-2 text-center text-[9.5px] text-muted-foreground font-mono tracking-wide select-none">
-          <Link href="/changelog" className="hover:text-foreground transition-colors">{version}</Link>
+
+        <nav aria-label="Menu principal" className="flex flex-col flex-1" onClick={() => setOpen(false)}>
+          <NavSectionLabel>Monitoramento</NavSectionLabel>
+
+          <NavItem href="/" label="Painel" icon={LayoutDashboard} active={pathname === "/"} />
+
+          <NavItem
+            href="/devices"
+            label="Dispositivos"
+            icon={Server}
+            active={pathname.startsWith("/devices")}
+            badge={counts.devicesTotal > 0 ? counts.devicesTotal : undefined}
+            alertBadge={counts.devicesOffline}
+          />
+
+          <NavItem
+            href="/links"
+            label="Links de Internet"
+            icon={Network}
+            active={pathname.startsWith("/links")}
+            badge={counts.linksTotal > 0 ? `${counts.linksOnline}/${counts.linksTotal}` : undefined}
+          />
+
+          <NavItem
+            href="/incidents"
+            label="Incidentes"
+            icon={AlertCircle}
+            active={pathname.startsWith("/incidents")}
+            alertBadge={counts.devicesOffline}
+          />
+
+          {modules.telephony && (
+            <NavItem
+              href="/phones"
+              label="Celulares"
+              icon={Smartphone}
+              active={pathname.startsWith("/phones")}
+              badge={counts.phonesTotal ? counts.phonesTotal : undefined}
+              alertBadge={counts.phonesLoyaltyExpiring}
+            />
+          )}
+
+          {modules.computers && (
+            <NavItem
+              href="/computers"
+              label="Computadores"
+              icon={Monitor}
+              active={pathname.startsWith("/computers")}
+              badge={counts.computersTotal ? counts.computersTotal : undefined}
+              alertBadge={counts.computersOffline}
+            />
+          )}
+
+          <NavItem href="/overview" label="Visão antiga" icon={LayoutDashboard} active={pathname.startsWith("/overview")} />
+
+          <NavSectionLabel>Painéis</NavSectionLabel>
+          <NavItem href="/mikrotik" label="Mikrotik" icon={Router} active={pathname.startsWith("/mikrotik")} />
+          <NavItem href="/omada" label="Omada" icon={RadioTower} active={pathname.startsWith("/omada")} />
+          <NavItem href="/unifi" label="UniFi" icon={Wifi} active={pathname.startsWith("/unifi")} />
+
+          <NavSectionLabel>Sistema</NavSectionLabel>
+          <NavItem href="/reports" label="Relatórios" icon={FileText} active={pathname.startsWith("/reports")} />
+
+          {userRole === "ADMIN" && (
+            <>
+              <NavSectionLabel>Administração</NavSectionLabel>
+              <NavItem href="/users" label="Usuários" icon={Users} active={pathname.startsWith("/users")} />
+              <NavItem href="/system" label="Sistema" icon={Settings} active={pathname.startsWith("/system")} />
+              <NavItem href="/audit" label="Logs de Alterações" icon={ClipboardList} active={pathname.startsWith("/audit")} />
+            </>
+          )}
+        </nav>
+
+        <div className="tui-side-user">
+          <Link href="/profile" aria-label="Minha conta">
+            <div className="truncate font-semibold">{userName}</div>
+            <div className="text-[11px] text-muted-foreground">{ROLE_LABEL[userRole] ?? "visualizador"}</div>
+          </Link>
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={async () => {
+              // SEC-021: blacklist the JWT before signing out
+              await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+              await signOut({ callbackUrl: "/login" });
+            }}
+            className="tui-icon-btn"
+            aria-label="Sair"
+          >
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
-      )}
-    </aside>
+        {version && (
+          <div className="pt-2 text-[11px] text-muted-foreground select-none">
+            <Link href="/changelog" className="hover:text-foreground">{version}</Link>
+          </div>
+        )}
+      </aside>
+    </>
   );
 }

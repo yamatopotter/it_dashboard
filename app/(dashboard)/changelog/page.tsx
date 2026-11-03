@@ -1,5 +1,6 @@
 import { Topbar } from "@/components/topbar";
-import { ShieldCheck, Sparkles, Wrench, RefreshCcw } from "lucide-react";
+import { Panel, type PanelColor } from "@/components/tui/panel";
+import { TuiPage } from "@/components/tui/page";
 
 type ChangeType = "feat" | "fix" | "security" | "refactor" | "perf";
 
@@ -23,6 +24,7 @@ const RELEASES: Release[] = [
     label: "Redesign: tela de operação, avisos no Zoho Cliq e relatório mensal",
     latest: true,
     changes: [
+      { type: "refactor", text: "Interface inteira padronizada no estilo TOWER: menu lateral, cabeçalhos, painéis, tabelas densas, formulários, botões e cores de estado iguais em todas as telas, em tema claro e escuro, com menu recolhível no celular" },
       { type: "feat", text: "Nova tela TOWER/1 em /tower — fila de problemas no topo (gravidade e idade), links com tráfego, unidades com o estado de cada equipamento e eventos recentes, tudo com atalhos de teclado e aviso quando os dados congelam" },
       { type: "feat", text: "Reconhecer (ack) e silenciar agora valem também para links e dispositivos — OPERADOR ou ADMIN reconhece com uma nota, ou silencia por 1 h, 4 h ou 12 h (até 24 h) para manutenção programada; o ack some sozinho quando o link volta" },
       { type: "feat", text: "Equipamentos que pararam de responder por causa de um link ou gateway caído aparecem agrupados sob o problema principal, em vez de gerar uma enxurrada de alertas" },
@@ -245,12 +247,12 @@ const RELEASES: Release[] = [
 
 const TYPE_ORDER: ChangeType[] = ["security", "feat", "refactor", "fix", "perf"];
 
-const TYPE_META: Record<ChangeType, { label: string; icon: React.ElementType; color: string }> = {
-  security: { label: "Segurança",             icon: ShieldCheck,  color: "text-destructive" },
-  feat:     { label: "Novas funcionalidades", icon: Sparkles,     color: "text-primary" },
-  refactor: { label: "Melhorias",             icon: RefreshCcw,   color: "text-foreground" },
-  fix:      { label: "Correções",             icon: Wrench,       color: "text-success" },
-  perf:     { label: "Performance",           icon: Sparkles,     color: "text-warning" },
+const TYPE_META: Record<ChangeType, { label: string; glyph: string; color: PanelColor; cls: string }> = {
+  security: { label: "Segurança", glyph: "✖", color: "crit", cls: "tui-crit" },
+  feat: { label: "Novas funcionalidades", glyph: "+", color: "accent2", cls: "tui-info" },
+  refactor: { label: "Melhorias", glyph: "~", color: "info", cls: "tui-dim" },
+  fix: { label: "Correções", glyph: "●", color: "ok", cls: "tui-ok" },
+  perf: { label: "Performance", glyph: "▲", color: "warn", cls: "tui-warn" },
 };
 
 function groupByType(changes: Change[]): [ChangeType, Change[]][] {
@@ -267,54 +269,39 @@ export default function ChangelogPage() {
     <>
       <Topbar title="Changelog" subtitle="Histórico de versões e alterações do sistema" />
 
-      <div className="p-8 max-w-3xl mx-auto divide-y divide-border">
-        {RELEASES.map((release) => (
-          <div key={release.version} className="py-10 first:pt-0 last:pb-0 flex flex-col md:flex-row gap-8 md:gap-12">
-
-            {/* Left — version meta */}
-            <div className="md:w-36 shrink-0">
-              <div className="md:sticky md:top-8 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[15px] font-bold tracking-tight">v{release.version}</span>
-                  {release.latest && (
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-primary border border-primary/30 rounded-full px-1.5 py-px">
-                      Atual
-                    </span>
-                  )}
-                </div>
-                {release.label && (
-                  <p className="text-[12px] text-muted-foreground font-medium">{release.label}</p>
-                )}
-                <p className="text-[11px] text-muted-foreground/50 pt-0.5">{release.date}</p>
-              </div>
-            </div>
-
-            {/* Right — changes */}
-            <div className="flex-1 space-y-7">
+      <TuiPage narrow>
+        <div className="tui-stack">
+          {RELEASES.map((release) => (
+            <Panel
+              key={release.version}
+              title={`v${release.version}`}
+              sub={`${release.date}${release.latest ? " · atual" : ""}`}
+              color={release.latest ? "accent2" : "dim"}
+            >
+              {release.label && <p style={{ margin: "0 0 12px", fontWeight: 600 }}>{release.label}</p>}
               {groupByType(release.changes).map(([type, items]) => {
-                const { label, icon: Icon, color } = TYPE_META[type];
+                const meta = TYPE_META[type];
                 return (
-                  <div key={type}>
-                    <h3 className={`flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest mb-3 ${color}`}>
-                      <Icon className="h-3.5 w-3.5" />
-                      {label}
+                  <section key={type} style={{ marginBottom: 16 }}>
+                    <h3 className={meta.cls} style={{ margin: "0 0 6px", fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase" }}>
+                      <span aria-hidden="true">{meta.glyph} </span>
+                      {meta.label} <span className="tui-dim">({items.length})</span>
                     </h3>
-                    <ul className="space-y-2.5">
+                    <ul className="tui-prose" style={{ margin: 0, paddingLeft: "2ch", listStyle: "none" }}>
                       {items.map((change, i) => (
-                        <li key={i} className="flex items-start gap-2.5 text-[13.5px] text-foreground/70 leading-relaxed">
-                          <span className="mt-2 shrink-0 w-1 h-1 rounded-full bg-muted-foreground/40" />
+                        <li key={i} style={{ marginBottom: 4, textIndent: "-2ch", paddingLeft: "2ch" }}>
+                          <span className="tui-faint" aria-hidden="true">· </span>
                           {change.text}
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </section>
                 );
               })}
-            </div>
-
-          </div>
-        ))}
-      </div>
+            </Panel>
+          ))}
+        </div>
+      </TuiPage>
     </>
   );
 }

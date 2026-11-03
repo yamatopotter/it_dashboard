@@ -1,401 +1,182 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { usePolling } from "@/hooks/use-polling";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
-import { buttonVariants, Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { SkeletonList } from "@/components/skeleton-list";
-import { EmptyState } from "@/components/empty-state";
 import { PingSparkline } from "@/components/ping-sparkline";
-import {
-  Plus, Layers, Pencil, MapPin, Server, Wifi,
-  WifiOff, ChevronsUpDown, ChevronUp, ChevronDown, LayoutGrid, List, AlignJustify, ArrowUpDown, Timer,
-} from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter, DialogClose,
-} from "@/components/ui/dialog";
-import { toast } from "sonner";
-import { Topbar } from "@/components/topbar";
+import { GlobalIntervalModal } from "@/components/device-interval-dialog";
+import { Panel } from "@/components/tui/panel";
+import { DevEmpty, DevError, DevLoading, DevPage, useListKeys } from "@/components/tui/dev-shell";
 import { formatResponseTime, formatUptime, formatPercent } from "@/lib/format";
-import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL, DEVICE_TYPE_ICON_BG } from "@/lib/device-constants";
-import { getPingColor, getPingDot } from "@/lib/device-colors";
-import { FilterChip } from "@/components/filter-chip";
-import { DeviceSearchInput } from "@/components/device-search-input";
+import { DEVICE_TYPE_LABEL } from "@/lib/device-constants";
+import { pctLevel } from "@/lib/tui-format";
 import { useDeviceNotifications } from "@/hooks/use-device-notifications";
-import { Bell, BellOff } from "lucide-react";
 import type { Device, DeviceStatus, DeviceType } from "@prisma/client";
 import type { OverviewData } from "@/app/api/overview/route";
 import type { WifiSignalData } from "@/lib/wifi-signal-map";
+import type { HelpRow } from "@/components/tui/help-overlay";
+import type { KeyHint } from "@/components/tui/key-hints";
 
 type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null; wifiSignal?: WifiSignalData | null };
-
-const pingColor = getPingColor;
-const pingDot = getPingDot;
-
-const INTERVAL_PRESETS = [
-  { label: "30 segundos", value: 30 },
-  { label: "1 minuto",    value: 60 },
-  { label: "2 minutos",   value: 120 },
-  { label: "5 minutos",   value: 300 },
-  { label: "10 minutos",  value: 600 },
-  { label: "30 minutos",  value: 1800 },
-  { label: "1 hora",      value: 3600 },
-];
-
-const DEVICE_TYPE_OPTIONS = [
-  { label: "Todos os tipos", value: "" },
-  { label: "MikroTik",       value: "MIKROTIK" },
-  { label: "UniFi AP",       value: "UNIFI_AP" },
-  { label: "Omada AP",       value: "OMADA_AP" },
-  { label: "DVR",            value: "DVR" },
-  { label: "Câmera",         value: "CAMERA" },
-  { label: "Outro",          value: "OTHER" },
-];
-
-function GlobalIntervalModal() {
-  const [open, setOpen]         = useState(false);
-  const [interval, setInterval] = useState<string | null>("60");
-  const [type, setType]         = useState<string | null>("");
-  const [loading, setLoading]   = useState(false);
-
-  async function handleApply() {
-    if (!interval) {
-      toast.error("Selecione um intervalo");
-      return;
-    }
-    const seconds = parseInt(interval, 10);
-    if (!seconds || seconds < 10 || seconds > 3600) {
-      toast.error("Intervalo deve ser entre 10 e 3600 segundos");
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await fetch("/api/devices/bulk-interval", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interval: seconds, ...(type ? { type } : {}) }),
-      });
-      const data = await res.json() as { ok?: boolean; count?: number; error?: string };
-      if (!res.ok) {
-        toast.error(data.error ?? "Erro ao atualizar intervalo");
-        return;
-      }
-      toast.success(`Intervalo atualizado em ${data.count} dispositivo${data.count !== 1 ? "s" : ""}`);
-      setOpen(false);
-    } catch {
-      toast.error("Erro de conexão");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
-        title="Ajustar intervalo de monitoramento em massa"
-      >
-        <Timer className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Intervalo</span>
-      </button>
-
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Intervalo de monitoramento global</DialogTitle>
-          <DialogDescription>
-            Ajusta o tempo entre verificações de todos os dispositivos selecionados.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">Intervalo</label>
-            <Select value={interval} onValueChange={setInterval}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o intervalo" />
-              </SelectTrigger>
-              <SelectContent>
-                {INTERVAL_PRESETS.map((p) => (
-                  <SelectItem key={p.value} value={String(p.value)}>{p.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">Tipo de dispositivo</label>
-            <Select value={type} onValueChange={setType}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Todos os tipos" />
-              </SelectTrigger>
-              <SelectContent>
-                {DEVICE_TYPE_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Deixe em &quot;Todos os tipos&quot; para aplicar a todos os dispositivos.
-            </p>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
-          <Button onClick={handleApply} disabled={loading}>
-            {loading ? "Aplicando..." : "Aplicar"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function rssiColor(dbm: number | null) {
-  if (dbm == null) return "text-muted-foreground";
-  if (dbm >= -65) return "text-success";
-  if (dbm >= -75) return "text-warning";
-  return "text-destructive";
-}
-
-function snrColor(db: number | null) {
-  if (db == null) return "text-muted-foreground";
-  if (db >= 25) return "text-success";
-  if (db >= 15) return "text-warning";
-  return "text-destructive";
-}
-
-function MiniBar({ value, colorClass }: { value: number; colorClass: string }) {
-  return (
-    <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
-      <div
-        className={`h-full rounded-full ${colorClass}`}
-        style={{ width: `${Math.min(Math.max(value, 0), 100)}%` }}
-      />
-    </div>
-  );
-}
-
-// ─── Compact device card (card view) ─────────────────────────────────────────
-
-function DeviceCard({
-  device,
-  sparkline,
-  onClick,
-}: {
-  device: DeviceWithStatus;
-  sparkline?: (number | null)[];
-  onClick: () => void;
-}) {
-  const status = device.currentStatus;
-  const isOnline = status?.isOnline ?? false;
-  const ping = status?.pingMs;
-  const isInstavel = isOnline && (ping ?? 0) > 150;
-  const TypeIcon = DEVICE_TYPE_ICON[device.type];
-
-  const isAcknowledged = !isOnline && !!device.offlineAcknowledgedAt;
-
-  const borderColor = isInstavel
-    ? "border-l-warning"
-    : isOnline
-    ? "border-l-success"
-    : isAcknowledged
-    ? "border-l-border"
-    : "border-l-destructive";
-
-  const pingColor = isInstavel
-    ? "text-warning"
-    : isOnline
-    ? "text-foreground"
-    : "text-muted-foreground";
-
-  return (
-    <div
-      onClick={onClick}
-      className={`cursor-pointer rounded-xl border bg-card border-l-4 ${borderColor} hover:shadow-md hover:-translate-y-0.5 transition-all overflow-hidden`}
-    >
-      <div className="p-3 space-y-2">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-1.5">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${DEVICE_TYPE_ICON_BG[device.type]}`}>
-              <TypeIcon className="h-3.5 w-3.5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold truncate leading-tight">{device.name}</p>
-              <p className="text-[10px] font-mono text-muted-foreground">{device.ip}</p>
-            </div>
-          </div>
-          {isInstavel ? (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-warning/10 text-warning border border-warning/20 shrink-0">
-              Instável
-            </span>
-          ) : isAcknowledged ? (
-            <span className="text-[9px] font-semibold shrink-0 text-muted-foreground">
-              Reconhecido
-            </span>
-          ) : (
-            <span className={`text-[10px] font-semibold shrink-0 ${isOnline ? "text-success" : "text-destructive"}`}>
-              {isOnline ? "Online" : "Offline"}
-            </span>
-          )}
-        </div>
-
-        {/* Ping + Sparkline */}
-        <div className="flex items-end justify-between gap-1">
-          <div>
-            <div className="flex items-baseline gap-0.5">
-              <span className={`text-xl font-extrabold leading-none tabular-nums ${pingColor}`}>
-                {ping ?? "—"}
-              </span>
-              {ping != null && (
-                <span className="text-[10px] text-muted-foreground font-medium">ms</span>
-              )}
-            </div>
-            <p className="text-[7.5px] text-muted-foreground uppercase tracking-widest font-bold mt-0.5">
-              ping
-            </p>
-          </div>
-          {sparkline && sparkline.length >= 3 ? (
-            <PingSparkline data={sparkline} uid={device.id} width={90} height={32} />
-          ) : (
-            <svg width={90} height={32} aria-hidden="true">
-              <line x1="3" y1="29" x2="87" y2="29" stroke="var(--border)" strokeWidth="1.5" strokeDasharray="3 3" />
-            </svg>
-          )}
-        </div>
-
-        {/* Wi-Fi signal row */}
-        {device.wifiSignal && (
-          <div className="flex items-center gap-2 pt-0.5 border-t border-border/50">
-            <Wifi className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-            <span className={`text-[10px] font-bold tabular-nums ${rssiColor(device.wifiSignal.signal)}`}>
-              {device.wifiSignal.signal != null ? `${device.wifiSignal.signal} dBm` : "—"}
-            </span>
-            {device.wifiSignal.snr != null && (
-              <span className={`text-[10px] font-semibold tabular-nums ${snrColor(device.wifiSignal.snr)}`}>
-                SNR {device.wifiSignal.snr} dB
-              </span>
-            )}
-            <span className="text-[9.5px] text-muted-foreground truncate ml-auto">
-              {device.wifiSignal.apName}
-            </span>
-          </div>
-        )}
-
-        {/* Location */}
-        {device.location && (
-          <p className="flex items-center gap-1 text-[10px] text-muted-foreground truncate">
-            <MapPin className="h-2.5 w-2.5 shrink-0" />
-            {device.location}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
+type ViewMode = "table" | "cards";
 type SortField = "name" | "ip" | "type" | "status" | "ping" | "location";
 type SortDir = "asc" | "desc";
 
+const TYPES = ["MIKROTIK", "OMADA_AP", "UNIFI_AP", "DVR", "CAMERA", "OTHER"] as const;
+
 const SORT_LABELS: Record<SortField, string> = {
-  name:     "Nome",
-  ip:       "IP",
-  type:     "Tipo",
-  status:   "Status",
-  ping:     "Ping",
-  location: "Local",
+  name: "Nome", ip: "IP", type: "Tipo", status: "Status", ping: "Ping", location: "Local",
 };
 
+const HELP: HelpRow[] = [
+  ["j k ↑ ↓", "mover a seleção"],
+  ["⏎", "abrir detalhe (painel lateral)"],
+  ["e", "editar o dispositivo selecionado"],
+  ["n", "novo dispositivo"],
+  ["v", "alternar tabela / cartões"],
+  ["/", "buscar por nome ou IP"],
+  ["esc", "sair da busca / fechar ajuda"],
+];
+
+const HINTS: KeyHint[] = [
+  { keys: ["j", "k"], label: "mover" },
+  { keys: ["⏎"], label: "abrir" },
+  { keys: ["e"], label: "editar", hideSm: true },
+  { keys: ["n"], label: "novo", hideSm: true },
+  { keys: ["v"], label: "visão", hideSm: true },
+  { keys: ["/"], label: "buscar" },
+  { keys: ["?"], label: "ajuda" },
+];
+
+function pingClass(ms: number | null | undefined, online: boolean): string {
+  if (!online || ms == null) return "dim";
+  return ms < 50 ? "ok" : ms < 150 ? "warn" : "crit";
+}
+
+function rssiClass(dbm: number | null) {
+  if (dbm == null) return "dim";
+  return dbm >= -65 ? "ok" : dbm >= -75 ? "warn" : "crit";
+}
+
+function snrClass(db: number | null) {
+  if (db == null) return "dim";
+  return db >= 25 ? "ok" : db >= 15 ? "warn" : "crit";
+}
+
+function UsageBar({ value, label }: { value: number; label: string }) {
+  const v = Math.max(0, Math.min(100, value));
+  const lvl = pctLevel(v);
+  return (
+    <span className="barwrap">
+      <span
+        className={`bar${lvl === "crit" ? " c" : lvl === "warn" ? " w" : ""}`}
+        style={{ "--p": Math.round(v), width: "7ch" } as React.CSSProperties}
+        role="meter"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(v)}
+      >
+        <i />
+      </span>
+      <span className={lvl}>{formatPercent(value)}</span>
+    </span>
+  );
+}
+
+function isUnstable(d: DeviceWithStatus) {
+  const s = d.currentStatus;
+  return !!s?.isOnline && (s.pingMs ?? 0) > 150;
+}
+
 function SortableHeader({
-  field,
-  label,
-  sortField,
-  sortDir,
-  onSort,
-  className,
+  field, label, sortField, sortDir, onSort, className,
 }: {
-  field: SortField;
-  label: string;
-  sortField: SortField;
-  sortDir: SortDir;
-  onSort: (f: SortField) => void;
-  className?: string;
+  field: SortField; label: string; sortField: SortField; sortDir: SortDir;
+  onSort: (f: SortField) => void; className?: string;
 }) {
   const active = sortField === field;
   return (
     <th className={className} aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
-      <button
-        onClick={() => onSort(field)}
-        className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide transition-colors select-none ${
-          active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
+      <button type="button" onClick={() => onSort(field)}>
         {label}
         <span className="sr-only">
           {active ? `, ordenado ${sortDir === "asc" ? "crescente" : "decrescente"}` : ", clique para ordenar"}
         </span>
-        <span className="shrink-0" aria-hidden="true">
-          {active ? (
-            sortDir === "asc" ? (
-              <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-            )
-          ) : (
-            <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" aria-hidden="true" />
-          )}
-        </span>
+        <span aria-hidden="true">{active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}</span>
       </button>
     </th>
   );
 }
 
+/** Cartão compacto (visão em cartões): painel btop com estado, ping + sparkline e sinal Wi-Fi. */
+function DeviceTile({
+  device, sparkline, selected, index, onOpen,
+}: {
+  device: DeviceWithStatus; sparkline?: (number | null)[]; selected: boolean; index: number; onOpen: () => void;
+}) {
+  const status = device.currentStatus;
+  const isOnline = status?.isOnline ?? false;
+  const ping = status?.pingMs;
+  const acked = !isOnline && !!device.offlineAcknowledgedAt;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      data-row-idx={index}
+      aria-label={`${device.name}, abrir detalhe`}
+      className={`d-card${selected ? " sel" : ""}`}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <Panel title={device.name} sub={DEVICE_TYPE_LABEL[device.type]} color={isOnline ? (isUnstable(device) ? "warn" : "ok") : "crit"} hot={!isOnline && !acked} focus={selected}>
+        <div className="d-stack" style={{ gap: 6, paddingBottom: 0 }}>
+          <div className="d-line">
+            <StatusBadge isOnline={isOnline} degraded={isUnstable(device)} acknowledged={acked} />
+            <span className="dim">{device.ip}</span>
+          </div>
+          <div className="d-line" style={{ justifyContent: "space-between" }}>
+            <span className={`big ${pingClass(ping, isOnline)}`}>
+              {ping ?? "—"}
+              {ping != null && <span className="dim" style={{ fontSize: 11, fontWeight: 400 }}> ms</span>}
+            </span>
+            {sparkline && sparkline.length >= 3 ? (
+              <PingSparkline data={sparkline} uid={device.id} width={90} height={32} />
+            ) : null}
+          </div>
+          {device.wifiSignal && (
+            <div className="d-line">
+              <span className={rssiClass(device.wifiSignal.signal)}>
+                {device.wifiSignal.signal != null ? `${device.wifiSignal.signal} dBm` : "—"}
+              </span>
+              {device.wifiSignal.snr != null && (
+                <span className={snrClass(device.wifiSignal.snr)}>SNR {device.wifiSignal.snr} dB</span>
+              )}
+              <span className="dim v" style={{ marginLeft: "auto" }}>{device.wifiSignal.apName}</span>
+            </div>
+          )}
+          {device.location ? <div className="dim">{device.location}</div> : null}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 export default function DevicesPage() {
+  const router = useRouter();
   const [devices, setDevices] = useState<DeviceWithStatus[]>([]);
   const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<"table" | "cards" | "compact">("cards");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("devices-view-mode");
-    if (saved === "table" || saved === "cards" || saved === "compact") setViewMode(saved);
-  }, []);
-
-  function changeViewMode(mode: "table" | "cards" | "compact") {
-    setViewMode(mode);
-    localStorage.setItem("devices-view-mode", mode);
-  }
-
-  const VALID_SORT_FIELDS: SortField[] = ["name", "ip", "type", "status", "ping", "location"];
-  useEffect(() => {
-    const f = localStorage.getItem("devices-sort-field") as SortField | null;
-    const d = localStorage.getItem("devices-sort-dir") as SortDir | null;
-    if (f && VALID_SORT_FIELDS.includes(f)) setSortField(f);
-    if (d === "asc" || d === "desc") setSortDir(d);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function handleSort(field: SortField) {
-    const newDir = sortField === field ? (sortDir === "asc" ? "desc" : "asc") : "asc";
-    setSortField(field);
-    setSortDir(newDir);
-    localStorage.setItem("devices-sort-field", field);
-    localStorage.setItem("devices-sort-dir", newDir);
-  }
-  // USA-U005: initialize filters from URL params so they survive navigation
+  const [loadError, setLoadError] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ONLINE" | "OFFLINE">("ALL");
   const [typeFilter, setTypeFilter] = useState<DeviceType | "ALL">("ALL");
   const [drawerDeviceId, setDrawerDeviceId] = useState<string | null>(null);
@@ -404,8 +185,44 @@ export default function DevicesPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [locationFilter, setLocationFilter] = useState<string | "ALL">("ALL");
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null);
   const filtersReady = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const selRef = useRef(0);
+  const viewModeRef = useRef<ViewMode>("table");
+  const { notify, requestPermission } = useDeviceNotifications();
 
+  // Preferências (visão e ordenação) lembradas por usuário no navegador.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("devices-view-mode");
+      // "compact" (visão NOC antiga) foi incorporada à tabela densa.
+      if (saved === "cards") setViewMode("cards");
+      const f = localStorage.getItem("devices-sort-field") as SortField | null;
+      const d = localStorage.getItem("devices-sort-dir");
+      if (f && f in SORT_LABELS) setSortField(f);
+      if (d === "asc" || d === "desc") setSortDir(d);
+    } catch {
+      /* armazenamento indisponível */
+    }
+  }, []);
+
+  const changeViewMode = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+    try { localStorage.setItem("devices-view-mode", mode); } catch { /* noop */ }
+  }, []);
+
+  function handleSort(field: SortField) {
+    const newDir = sortField === field ? (sortDir === "asc" ? "desc" : "asc") : "asc";
+    setSortField(field);
+    setSortDir(newDir);
+    try {
+      localStorage.setItem("devices-sort-field", field);
+      localStorage.setItem("devices-sort-dir", newDir);
+    } catch { /* noop */ }
+  }
+
+  // Filtros iniciais vindos da URL (sobrevivem à navegação).
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const s = p.get("status"); if (s === "ONLINE" || s === "OFFLINE") setStatusFilter(s);
@@ -425,8 +242,6 @@ export default function DevicesPage() {
     const qs = p.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
   }, [statusFilter, typeFilter, locationFilter, searchQuery]);
-  const [notifPermission, setNotifPermission] = useState<NotificationPermission>("default");
-  const { notify, requestPermission } = useDeviceNotifications();
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -451,10 +266,12 @@ export default function DevicesPage() {
         notify(data);
       }
       if (ovRes.ok) setOverviewData(await ovRes.json());
+      setLoadError(!devRes.ok);
       if (devRes.ok || ovRes.ok) setLastUpdated(new Date());
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       console.error("[devices] falha ao carregar dados:", err);
+      setLoadError(true);
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -463,13 +280,14 @@ export default function DevicesPage() {
   usePolling(load, 30_000);
 
   const q = searchQuery.trim().toLowerCase();
-  const uniqueLocations = [...new Set(devices.map((d) => d.location).filter(Boolean) as string[])].sort();
-  const filtered = devices
+  const uniqueLocations = useMemo(
+    () => [...new Set(devices.map((d) => d.location).filter(Boolean) as string[])].sort(),
+    [devices],
+  );
+  const filtered = useMemo(() => devices
     .filter((d) => {
-      const statusMatch =
-        statusFilter === "ALL" ||
-        (statusFilter === "ONLINE" && (d.currentStatus?.isOnline ?? false)) ||
-        (statusFilter === "OFFLINE" && !(d.currentStatus?.isOnline ?? false));
+      const on = d.currentStatus?.isOnline ?? false;
+      const statusMatch = statusFilter === "ALL" || (statusFilter === "ONLINE" ? on : !on);
       const typeMatch = typeFilter === "ALL" || d.type === typeFilter;
       const locationMatch = locationFilter === "ALL" || d.location === locationFilter;
       const searchMatch = !q || d.name.toLowerCase().includes(q) || d.ip.includes(q);
@@ -482,23 +300,16 @@ export default function DevicesPage() {
           cmp = a.name.localeCompare(b.name, "pt-BR");
           break;
         case "ip": {
-          const toInt = (ip: string) =>
-            ip.split(".").reduce((acc, oct) => (acc << 8) | parseInt(oct), 0) >>> 0;
+          const toInt = (ip: string) => ip.split(".").reduce((acc, oct) => (acc << 8) | parseInt(oct), 0) >>> 0;
           cmp = toInt(a.ip) - toInt(b.ip);
           break;
         }
-        case "status": {
-          const aOn = a.currentStatus?.isOnline ? 1 : 0;
-          const bOn = b.currentStatus?.isOnline ? 1 : 0;
-          cmp = bOn - aOn; // online primeiro quando asc
+        case "status":
+          cmp = (b.currentStatus?.isOnline ? 1 : 0) - (a.currentStatus?.isOnline ? 1 : 0); // online primeiro quando asc
           break;
-        }
-        case "ping": {
-          const ap = a.currentStatus?.pingMs ?? Infinity;
-          const bp = b.currentStatus?.pingMs ?? Infinity;
-          cmp = ap - bp;
+        case "ping":
+          cmp = (a.currentStatus?.pingMs ?? Infinity) - (b.currentStatus?.pingMs ?? Infinity);
           break;
-        }
         case "type":
           cmp = DEVICE_TYPE_LABEL[a.type].localeCompare(DEVICE_TYPE_LABEL[b.type], "pt-BR");
           break;
@@ -507,414 +318,192 @@ export default function DevicesPage() {
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;
-    });
+    }), [devices, statusFilter, typeFilter, locationFilter, q, sortField, sortDir]);
+
+  const onOpen = useCallback((i: number) => {
+    const d = filtered[i];
+    if (d) setDrawerDeviceId(d.id);
+  }, [filtered]);
+
+  const extra = useMemo(() => ({
+    e: () => { const d = filtered[selRef.current]; if (d) router.push(`/devices/${d.id}/edit`); },
+    n: () => router.push("/devices/new"),
+    v: () => changeViewMode(viewModeRef.current === "table" ? "cards" : "table"),
+  }), [filtered, router, changeViewMode]);
+
+  const { sel, help, setHelp } = useListKeys({ count: filtered.length, onOpen, searchRef, extra, enabled: drawerDeviceId === null });
+  useEffect(() => { selRef.current = sel; viewModeRef.current = viewMode; }, [sel, viewMode]);
+
+  const offlineCount = devices.filter((d) => !(d.currentStatus?.isOnline ?? false)).length;
+
+  const actions = (
+    <>
+      <span className="d-seg" role="group" aria-label="Visualização">
+        <button type="button" aria-pressed={viewMode === "table"} onClick={() => changeViewMode("table")}>tabela</button>
+        <button type="button" aria-pressed={viewMode === "cards"} onClick={() => changeViewMode("cards")}>cartões</button>
+      </span>
+      {notifPermission === "default" && (
+        <button type="button" className="btn" onClick={handleEnableNotifications} title="Ativar notificações de dispositivos offline">
+          notificações
+        </button>
+      )}
+      {notifPermission === "granted" && <span className="ok" title="Notificações ativas">● notificações</span>}
+      <GlobalIntervalModal />
+      <Link href="/devices/new/bulk" className="btn">em lote</Link>
+      <Link href="/devices/new" className="btn pri">+ novo</Link>
+    </>
+  );
 
   return (
-    <>
-      <Topbar title="Dispositivos" icon={Server} live={!loading} pollIntervalMs={30_000} lastUpdated={lastUpdated}>
-        {/* View toggle */}
-        <div className="flex items-center rounded-lg border border-border overflow-hidden">
-          <button
-            onClick={() => changeViewMode("table")}
-            className={`flex items-center justify-center h-8 w-8 transition-colors ${
-              viewMode === "table"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-            aria-label="Visualização em tabela"
-            title="Visualização em tabela"
-          >
-            <List className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => changeViewMode("cards")}
-            className={`flex items-center justify-center h-8 w-8 transition-colors ${
-              viewMode === "cards"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-            aria-label="Visualização em cards"
-            title="Visualização em cards"
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => changeViewMode("compact")}
-            className={`flex items-center justify-center h-8 w-8 transition-colors ${
-              viewMode === "compact"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-            aria-label="Visualização compacta NOC"
-            title="Visualização compacta NOC"
-          >
-            <AlignJustify className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        {"Notification" in (typeof window !== "undefined" ? window : {}) && notifPermission !== "denied" && notifPermission !== "granted" && (
-          <button
-            onClick={handleEnableNotifications}
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
-            title="Ativar notificações de dispositivos offline"
-          >
-            <Bell className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Notificações</span>
-          </button>
-        )}
-        {notifPermission === "granted" && (
-          <span className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-success/30 text-xs text-success/80 select-none">
-            <Bell className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Ativas</span>
+    <DevPage
+      title="Dispositivos"
+      sub={loading ? "carregando…" : `${filtered.length}/${devices.length} · ${offlineCount > 0 ? `✖ ${offlineCount} offline` : "● todos online"}`}
+      live={!loading && !loadError}
+      lastUpdated={lastUpdated}
+      actions={actions}
+      hints={HINTS}
+      help={HELP}
+      helpOpen={help}
+      onHelpClose={() => setHelp(false)}
+    >
+      <div className="d-filters" role="search">
+        <label className="d-search">
+          <span className="dim" aria-hidden="true">/</span>
+          <input
+            ref={searchRef}
+            type="text"
+            aria-label="Buscar dispositivos"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="nome ou IP"
+          />
+          {searchQuery && (
+            <button type="button" className="btn" style={{ border: 0, padding: 0 }} onClick={() => setSearchQuery("")} aria-label="Limpar busca">
+              ✕
+            </button>
+          )}
+        </label>
+        <span className="grp" role="group" aria-label="Status">
+          <span className="lbl">status</span>
+          {([["ALL", "todos"], ["ONLINE", "● online"], ["OFFLINE", "✖ offline"]] as const).map(([v, l]) => (
+            <button key={v} type="button" className="chip" aria-pressed={statusFilter === v} onClick={() => setStatusFilter(v)}>{l}</button>
+          ))}
+        </span>
+        <span className="grp" role="group" aria-label="Tipo">
+          <span className="lbl">tipo</span>
+          <button type="button" className="chip" aria-pressed={typeFilter === "ALL"} onClick={() => setTypeFilter("ALL")}>todos</button>
+          {TYPES.map((t) => (
+            <button key={t} type="button" className="chip" aria-pressed={typeFilter === t} onClick={() => setTypeFilter(t)}>
+              {DEVICE_TYPE_LABEL[t]} <span className="dim">{devices.filter((d) => d.type === t).length}</span>
+            </button>
+          ))}
+        </span>
+        {uniqueLocations.length > 0 && (
+          <span className="grp" role="group" aria-label="Local">
+            <span className="lbl">local</span>
+            <button type="button" className="chip" aria-pressed={locationFilter === "ALL"} onClick={() => setLocationFilter("ALL")}>todos</button>
+            {uniqueLocations.map((loc) => (
+              <button key={loc} type="button" className="chip" aria-pressed={locationFilter === loc} onClick={() => setLocationFilter(loc)}>{loc}</button>
+            ))}
           </span>
         )}
-
-        <GlobalIntervalModal />
-
-        <Link
-          href="/devices/new/bulk"
-          className={buttonVariants({ size: "sm", variant: "outline" })}
-        >
-          <Layers className="h-4 w-4 mr-1" />
-          Em lote
-        </Link>
-        <Link href="/devices/new" className={buttonVariants({ size: "sm" })}>
-          <Plus className="h-4 w-4 mr-1" />
-          Novo
-        </Link>
-      </Topbar>
-
-      <div className="p-7 space-y-4">
-        {/* Search + Filter chips */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <DeviceSearchInput value={searchQuery} onChange={setSearchQuery} />
-
-          {/* Sort selector — visible in all view modes */}
-          <div className="flex items-center gap-1">
-            <Select
-              value={sortField}
-              onValueChange={(v) => handleSort(v as SortField)}
-            >
-              <SelectTrigger size="sm" className="gap-1.5 text-xs font-medium" aria-label="Ordenar por">
-                <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                {(Object.entries(SORT_LABELS) as [SortField, string][]).map(([f, label]) => (
-                  <SelectItem key={f} value={f}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {viewMode === "cards" && (
+          <span className="grp">
+            <label className="lbl" htmlFor="dev-sort">ordem</label>
+            <select id="dev-sort" className="d-in" style={{ width: "auto" }} value={sortField} onChange={(e) => handleSort(e.target.value as SortField)}>
+              {(Object.entries(SORT_LABELS) as [SortField, string][]).map(([f, l]) => <option key={f} value={f}>{l}</option>)}
+            </select>
             <button
+              type="button"
+              className="btn"
+              aria-label={sortDir === "asc" ? "Ordem crescente — alternar para decrescente" : "Ordem decrescente — alternar para crescente"}
               onClick={() => {
-                const newDir = sortDir === "asc" ? "desc" : "asc";
-                setSortDir(newDir);
-                localStorage.setItem("devices-sort-dir", newDir);
+                const nd = sortDir === "asc" ? "desc" : "asc";
+                setSortDir(nd);
+                try { localStorage.setItem("devices-sort-dir", nd); } catch { /* noop */ }
               }}
-              className="flex items-center justify-center h-7 w-7 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
-              aria-label={sortDir === "asc" ? "Ordem crescente — clique para decrescente" : "Ordem decrescente — clique para crescente"}
-              title={sortDir === "asc" ? "Crescente" : "Decrescente"}
             >
-              {sortDir === "asc"
-                ? <ChevronUp className="h-3.5 w-3.5" />
-                : <ChevronDown className="h-3.5 w-3.5" />
-              }
+              {sortDir === "asc" ? "↑" : "↓"}
             </button>
-          </div>
-          <div className="w-px bg-border mx-0.5 self-stretch" />
-          <FilterChip active={statusFilter === "ALL"} onClick={() => setStatusFilter("ALL")}>
-            Todos os status
-          </FilterChip>
-          <FilterChip
-            active={statusFilter === "ONLINE"}
-            onClick={() => setStatusFilter("ONLINE")}
-            color="success"
-          >
-            <Wifi className="h-3 w-3" />
-            Online
-          </FilterChip>
-          <FilterChip
-            active={statusFilter === "OFFLINE"}
-            onClick={() => setStatusFilter("OFFLINE")}
-            color="destructive"
-          >
-            <WifiOff className="h-3 w-3" />
-            Offline
-          </FilterChip>
+          </span>
+        )}
+      </div>
 
-          <div className="w-px bg-border mx-0.5 self-stretch" />
-
-          {(["ALL", "MIKROTIK", "OMADA_AP", "UNIFI_AP", "DVR", "CAMERA", "OTHER"] as const).map((t) => (
-            <FilterChip
-              key={t}
-              active={typeFilter === t}
-              onClick={() => setTypeFilter(t)}
-            >
-              {t === "ALL" ? "Todos os tipos" : DEVICE_TYPE_LABEL[t]}
-              {t !== "ALL" && (
-                <span
-                  className={`inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[10px] font-semibold tabular-nums ${
-                    typeFilter === t ? "bg-white/25" : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {devices.filter((d) => d.type === t).length}
-                </span>
-              )}
-            </FilterChip>
-          ))}
-
-          {uniqueLocations.length > 0 && (
-            <>
-              <div className="w-px bg-border mx-0.5 self-stretch" />
-              <FilterChip active={locationFilter === "ALL"} onClick={() => setLocationFilter("ALL")}>
-                Todos os locais
-              </FilterChip>
-              {uniqueLocations.map((loc) => (
-                <FilterChip key={loc} active={locationFilter === loc} onClick={() => setLocationFilter(loc)}>
-                  {loc}
-                </FilterChip>
-              ))}
-            </>
-          )}
-        </div>
-
-        {/* Content */}
+      <Panel title="dispositivos" sub={`${filtered.length}`} color="info" focus>
         {loading ? (
-          viewMode === "cards" ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <Skeleton key={i} className="h-28 rounded-xl" />
-              ))}
-            </div>
-          ) : viewMode === "compact" ? (
-            <div className="rounded-xl border bg-card overflow-hidden">
-              {Array.from({ length: 15 }).map((_, i) => (
-                <Skeleton key={i} className="h-7 rounded-none border-b last:border-b-0" />
-              ))}
-            </div>
-          ) : (
-            <SkeletonList count={5} />
-          )
+          <DevLoading rows={8} label="Carregando dispositivos" />
+        ) : loadError && devices.length === 0 ? (
+          <DevError message="Não foi possível carregar os dispositivos." onRetry={() => { setLoading(true); void load(); }} />
         ) : filtered.length === 0 ? (
           devices.length === 0 ? (
-            <EmptyState
-              icon={Server}
-              title="Nenhum dispositivo cadastrado."
-              action={<Link href="/devices/new" className={buttonVariants({})}>Cadastrar primeiro dispositivo</Link>}
-            />
+            <DevEmpty title="Nenhum dispositivo cadastrado." action={<Link href="/devices/new" className="btn pri">cadastrar primeiro dispositivo</Link>} />
           ) : (
-            <EmptyState title="Nenhum dispositivo encontrado para os filtros selecionados." />
+            <DevEmpty title="Nenhum dispositivo encontrado para os filtros selecionados." hint="Limpe a busca ou os filtros acima." />
           )
         ) : viewMode === "cards" ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {filtered.map((device) => (
-              <DeviceCard
+          <div className="d-cards">
+            {filtered.map((device, i) => (
+              <DeviceTile
                 key={device.id}
                 device={device}
+                index={i}
+                selected={i === sel}
                 sparkline={overviewData?.sparklines[device.id]}
-                onClick={() => setDrawerDeviceId(device.id)}
+                onOpen={() => setDrawerDeviceId(device.id)}
               />
             ))}
           </div>
-        ) : viewMode === "compact" ? (
-          <div className="rounded-xl border bg-card overflow-hidden" role="list" aria-label="Lista de dispositivos — visão compacta">
-            {filtered.map((device) => {
-              const status = device.currentStatus;
-              const isOnline = status?.isOnline ?? false;
-              const ping = status?.pingMs;
-              const isInstavel = isOnline && (ping ?? 0) > 150;
-              const isAcknowledgedCompact = !isOnline && !!device.offlineAcknowledgedAt;
-              const dotColor = isInstavel ? "bg-warning" : isAcknowledgedCompact ? "bg-muted-foreground/50" : isOnline ? "bg-success" : "bg-destructive";
-              const pingText = ping != null ? `${ping}ms` : "—";
-              const pingColor = isInstavel ? "text-warning" : isOnline ? "text-foreground" : "text-muted-foreground";
-              return (
-                <button
-                  key={device.id}
-                  role="listitem"
-                  onClick={() => setDrawerDeviceId(device.id)}
-                  className="w-full flex items-center gap-3 px-3 border-b last:border-b-0 hover:bg-muted/40 transition-colors text-left group"
-                  style={{ height: "28px" }}
-                  aria-label={`${device.name} — ${isInstavel ? "Instável" : isAcknowledgedCompact ? "Offline reconhecido" : isOnline ? "Online" : "Offline"}`}
-                >
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} aria-hidden="true" />
-                  <span className="text-xs font-medium truncate min-w-0 flex-1 group-hover:text-primary transition-colors">
-                    {device.name}
-                  </span>
-                  <span className="text-[10px] font-mono text-muted-foreground hidden sm:block w-24 shrink-0">
-                    {device.ip}
-                  </span>
-                  {device.location && (
-                    <span className="text-[10px] text-muted-foreground hidden lg:block w-28 truncate shrink-0">
-                      {device.location}
-                    </span>
-                  )}
-                  <span className={`text-[10px] font-mono tabular-nums w-10 text-right shrink-0 ${pingColor}`}>
-                    {pingText}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         ) : (
-          <div className="rounded-xl border bg-card overflow-x-auto">
-            <table className="w-full text-sm" aria-label="Lista de dispositivos">
-              <thead className="border-b bg-muted/40">
+          <div className="d-wrap">
+            <table className="d-tbl" aria-label="Lista de dispositivos">
+              <thead>
                 <tr>
-                  <SortableHeader
-                    field="name" label="Dispositivo"
-                    sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    className="text-left px-4 py-3"
-                  />
-                  <SortableHeader
-                    field="type" label="Tipo"
-                    sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    className="hidden md:table-cell text-left px-4 py-3"
-                  />
-                  <SortableHeader
-                    field="ip" label="IP"
-                    sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    className="text-left px-4 py-3"
-                  />
-                  <SortableHeader
-                    field="status" label="Status"
-                    sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    className="text-left px-4 py-3"
-                  />
-                  <SortableHeader
-                    field="ping" label="Ping"
-                    sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    className="text-left px-4 py-3"
-                  />
-                  <th className="hidden md:table-cell text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    CPU
-                  </th>
-                  <th className="hidden lg:table-cell text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Uptime
-                  </th>
-                  <SortableHeader
-                    field="location" label="Local"
-                    sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    className="hidden sm:table-cell text-left px-4 py-3"
-                  />
-                  <th className="text-right px-4 py-3" />
+                  <SortableHeader field="status" label="Status" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHeader field="name" label="Dispositivo" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHeader field="type" label="Tipo" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hide-sm" />
+                  <SortableHeader field="ip" label="IP" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHeader field="ping" label="Ping" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                  <th className="hide-sm">CPU</th>
+                  <th className="hide-sm">Uptime</th>
+                  <SortableHeader field="location" label="Local" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hide-sm" />
+                  <th><span className="sr-only">Ações</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
-                {filtered.map((device) => {
-                  const TypeIcon = DEVICE_TYPE_ICON[device.type];
+              <tbody>
+                {filtered.map((device, i) => {
                   const status = device.currentStatus;
-
+                  const on = status?.isOnline ?? false;
                   return (
                     <tr
                       key={device.id}
+                      data-row-idx={i}
+                      aria-selected={i === sel}
+                      className={`${i === sel ? "sel" : ""}${!on ? " muted" : ""}`.trim()}
                       onClick={() => setDrawerDeviceId(device.id)}
-                      className="hover:bg-muted/30 transition-colors cursor-pointer group"
                     >
-                      {/* Dispositivo */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-primary shrink-0">
-                            <TypeIcon className="h-3.5 w-3.5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-medium truncate group-hover:text-primary transition-colors">
-                              {device.name}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground">
-                              {DEVICE_TYPE_LABEL[device.type]}
-                            </p>
-                          </div>
-                        </div>
+                      <td>
+                        <StatusBadge isOnline={on} degraded={isUnstable(device)} acknowledged={!on && !!device.offlineAcknowledgedAt} />
                       </td>
-
-                      {/* Tipo */}
-                      <td className="hidden md:table-cell px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${DEVICE_TYPE_ICON_BG[device.type]}`}>
-                            <TypeIcon className="h-3 w-3" />
-                          </div>
-                          <span className="text-xs text-muted-foreground">{DEVICE_TYPE_LABEL[device.type]}</span>
-                        </div>
-                      </td>
-
-                      {/* IP */}
-                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                        {device.ip}
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-3">
-                        <StatusBadge
-                          isOnline={status?.isOnline ?? false}
-                          acknowledged={!!(status && !status.isOnline && device.offlineAcknowledgedAt)}
-                        />
-                      </td>
-
-                      {/* Ping */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${pingDot(status?.pingMs)}`}
-                          />
-                          <span className={`font-mono text-xs font-medium ${pingColor(status?.pingMs)}`}>
-                            {formatResponseTime(status?.pingMs)}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* CPU */}
-                      <td className="hidden md:table-cell px-4 py-3">
-                        {status?.cpuLoad != null ? (
-                          <div className="flex items-center gap-2">
-                            <MiniBar
-                              value={status.cpuLoad}
-                              colorClass={
-                                status.cpuLoad < 60
-                                  ? "bg-success"
-                                  : status.cpuLoad < 85
-                                  ? "bg-warning"
-                                  : "bg-destructive"
-                              }
-                            />
-                            <span className="text-xs font-mono text-muted-foreground">
-                              {formatPercent(status.cpuLoad)}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground/40 text-xs">—</span>
-                        )}
-                      </td>
-
-                      {/* Uptime */}
-                      <td className="hidden lg:table-cell px-4 py-3 text-xs font-mono text-muted-foreground">
-                        {status?.uptime != null ? formatUptime(status.uptime) : (
-                          <span className="text-muted-foreground/40">—</span>
-                        )}
-                      </td>
-
-                      {/* Local */}
-                      <td className="hidden sm:table-cell px-4 py-3">
-                        {device.location ? (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            {device.location}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground/40 text-xs">—</span>
-                        )}
-                      </td>
-
-                      {/* Ações */}
-                      <td
-                        className="px-4 py-3 text-right"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Link
-                          href={`/devices/${device.id}/edit`}
-                          aria-label="Editar dispositivo"
-                          className={buttonVariants({ variant: "ghost", size: "icon" })}
+                      <td className="name" title={device.name}>
+                        <button
+                          type="button"
+                          style={{ background: "none", border: 0, padding: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}
+                          onClick={(e) => { e.stopPropagation(); setDrawerDeviceId(device.id); }}
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          {device.name}
+                        </button>
+                      </td>
+                      <td className="hide-sm dim">{DEVICE_TYPE_LABEL[device.type]}</td>
+                      <td className="dim">{device.ip}</td>
+                      <td className={pingClass(status?.pingMs, on)}>{formatResponseTime(status?.pingMs)}</td>
+                      <td className="hide-sm">
+                        {status?.cpuLoad != null ? <UsageBar value={status.cpuLoad} label={`CPU de ${device.name}`} /> : <span className="faint">—</span>}
+                      </td>
+                      <td className="hide-sm dim">{status?.uptime != null ? formatUptime(status.uptime) : "—"}</td>
+                      <td className="hide-sm dim">{device.location ?? "—"}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/devices/${device.id}/edit`} aria-label={`Editar ${device.name}`} className="btn">
+                          editar
                         </Link>
                       </td>
                     </tr>
@@ -924,12 +513,9 @@ export default function DevicesPage() {
             </table>
           </div>
         )}
-      </div>
+      </Panel>
 
-      <DeviceDetailDrawer
-        deviceId={drawerDeviceId}
-        onClose={() => setDrawerDeviceId(null)}
-      />
-    </>
+      <DeviceDetailDrawer deviceId={drawerDeviceId} onClose={() => setDrawerDeviceId(null)} />
+    </DevPage>
   );
 }

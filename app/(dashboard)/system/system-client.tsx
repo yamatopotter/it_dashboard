@@ -179,7 +179,7 @@ export function SystemClient() {
   }, []);
 
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
     const interval = setInterval(load, 30_000);
     return () => clearInterval(interval);
   }, [load]);
@@ -233,7 +233,7 @@ export function SystemClient() {
     setDattoLastSyncError(cfg.dattoLastSyncError ?? null);
   }, []);
 
-  useEffect(() => { loadSmtp(); loadZoho(); loadMiradore(); loadDatto(); }, [loadSmtp, loadZoho, loadMiradore, loadDatto]);
+  useEffect(() => { void Promise.resolve().then(() => { loadSmtp(); loadZoho(); loadMiradore(); loadDatto(); }); }, [loadSmtp, loadZoho, loadMiradore, loadDatto]);
 
   async function saveSmtp() {
     setSmtpSaving(true);
@@ -496,7 +496,7 @@ export function SystemClient() {
                         <div className="flex items-center justify-end gap-2">
                           <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-primary"
+                              className="h-full rounded-full bg-[var(--accent-2)]"
                               style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
                             />
                           </div>
@@ -684,7 +684,7 @@ export function SystemClient() {
             <div className="space-y-2 rounded-lg bg-muted/40 p-3.5 border border-border">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase">Redirect URI</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 font-mono text-[12px] text-accent-foreground truncate">
+                <code className="flex-1 font-mono text-[12px] text-[var(--accent-2)] truncate">
                   {typeof window !== "undefined" ? `${window.location.origin}/api/auth/callback/zoho` : ""}
                 </code>
                 <button

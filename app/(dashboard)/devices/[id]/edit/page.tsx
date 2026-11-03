@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { DeviceForm } from "@/components/device-form";
-import { Topbar } from "@/components/topbar";
+import { DevPage } from "@/components/tui/dev-shell";
 
 export default async function EditDevicePage({
   params,
@@ -14,15 +14,8 @@ export default async function EditDevicePage({
   if (!device) notFound();
 
   return (
-    <>
-      <Topbar
-        title="Editar Dispositivo"
-        subtitle={device.name}
-        back={`/devices/${id}`}
-      />
-      <div className="p-7">
-        <DeviceForm device={device} />
-      </div>
-    </>
+    <DevPage title="Editar dispositivo" sub={`${device.name} · ${device.ip}`} back={`/devices/${id}`} backLabel="dispositivo">
+      <DeviceForm device={device} />
+    </DevPage>
   );
 }

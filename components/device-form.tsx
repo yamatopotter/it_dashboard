@@ -6,12 +6,11 @@ import { DEFAULT_SNMP_OIDS, type SnmpOidEntry } from "@/lib/snmp-defaults";
 import { useForm, FormProvider, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Panel } from "@/components/tui/panel";
 import {
   Select,
   SelectContent,
@@ -267,12 +266,9 @@ export function DeviceForm({ device }: DeviceFormProps) {
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit as SubmitHandler<FormData>)} className="space-y-6 max-w-2xl">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Informações Básicas</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit as SubmitHandler<FormData>)} className="space-y-6 max-w-3xl">
+        <Panel title="informações básicas" color="info">
+        <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Nome *</Label>
@@ -386,33 +382,29 @@ export function DeviceForm({ device }: DeviceFormProps) {
               </p>
             </div>
 
-          </CardContent>
-        </Card>
+          </div>
+      </Panel>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Protocolos de Monitoramento</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <Panel title="protocolos de monitoramento" color="accent2">
+        <div className="space-y-4">
             <DeviceFormProtocols device={device} />
-          </CardContent>
-        </Card>
+          </div>
+      </Panel>
 
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={loading || isSubmitting}>
+        <div className="btns" style={{ alignItems: "center" }}>
+          <button type="submit" className="btn pri" disabled={loading || isSubmitting}>
             {loading || isSubmitting ? "Salvando..." : device ? "Atualizar" : "Cadastrar"}
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="outline"
+            className="btn"
             onClick={() => router.push(device ? `/devices/${device.id}` : "/devices")}
           >
             Cancelar
-          </Button>
+          </button>
           {isDirty && !loading && (
-            <span className="flex items-center gap-1 text-xs text-warning font-medium">
-              <span className="h-1.5 w-1.5 rounded-full bg-warning inline-block" />
-              Modificado
+            <span className="warn" role="status">
+              ▲ modificado, ainda não salvo
             </span>
           )}
         </div>

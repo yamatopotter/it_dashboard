@@ -2,35 +2,26 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { formatUptime, fmtTime } from "@/lib/format";
-import { DEVICE_TYPE_ICON, DEVICE_TYPE_ICON_BG, DEVICE_TYPE_LABEL } from "@/lib/device-constants";
-import { MapPin, History, Zap, X, CheckCheck, Undo2, Wifi, Activity } from "lucide-react";
+import { DEVICE_TYPE_LABEL } from "@/lib/device-constants";
+import { Panel } from "@/components/tui/panel";
+import { DevScope } from "@/components/tui/dev-shell";
 import { StatusBadge } from "@/components/status-badge";
 import type { WifiSignalResult } from "@/app/api/devices/[id]/wifi-signal/route";
 import { resolveSnmpOids } from "@/lib/snmp-defaults";
 import { PingSparkline } from "@/components/ping-sparkline";
-import { MetricTile, InfoRow } from "@/components/drawer-primitives";
 import type { Device, DeviceStatus, StatusHistory } from "@prisma/client";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
 
-// ─── Uptime segments ─────────────────────────────────────────────────────────
+// ─── Segmentos de disponibilidade ────────────────────────────────────────────
 
 type Seg = "online" | "offline" | "degraded" | "empty";
 
-const SEG_COLOR: Record<Seg, string> = {
-  online: "bg-success", offline: "bg-destructive", degraded: "bg-warning", empty: "bg-muted/60",
-};
-
 function buildSegments(history: StatusHistory[], now: number): Seg[] {
   return Array.from({ length: 48 }, (_, i) => {
-    const segEnd = now - i * 1_800_000;          // 30-min slots
+    const segEnd = now - i * 1_800_000;          // fatias de 30 min
     const segStart = segEnd - 1_800_000;
     const checks = history.filter((h) => {
       const t = new Date(h.timestamp).getTime();
@@ -44,8 +35,21 @@ function buildSegments(history: StatusHistory[], now: number): Seg[] {
   }).reverse();
 }
 
-// ─── Metric tile ─────────────────────────────────────────────────────────────
+// ─── Peças ───────────────────────────────────────────────────────────────────
 
+function Tile({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="d-tile">
+      <div className="k">{k}</div>
+      <div className="v">{v}</div>
+    </div>
+  );
+}
+
+function Unit({ v, unit }: { v: number | string | null; unit?: string }) {
+  if (v == null) return <>—</>;
+  return <>{v}{unit ? <span className="u">{unit}</span> : null}</>;
+}
 
 // ─── Drawer ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +67,7 @@ const HOUR_OPTIONS = [
 ] as const;
 type HourOption = typeof HOUR_OPTIONS[number]["value"];
 
+/** Painel lateral de detalhe do dispositivo, no estilo TUI (painéis com título na borda). */
 export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }: Props) {
   const [device, setDevice] = useState<DeviceWithStatus | null>(null);
   const [history, setHistory] = useState<StatusHistory[]>([]);
@@ -73,7 +78,7 @@ export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }
   const [sessionRole, setSessionRole] = useState<string | null>(null);
   const [wifiSignal, setWifiSignal] = useState<WifiSignalResult | null>(null);
   const [hours, setHours] = useState<HourOption>(24);
-  const [now, setNow] = useState(0); // 0 on SSR, set after mount to avoid hydration mismatch
+  const [now, setNow] = useState(0); // 0 no SSR; definido após montar para evitar divergência de hidratação
 
   const fetchData = useCallback(async (id: string, h: number, signal?: AbortSignal) => {
     setLoading(true);
@@ -85,13 +90,13 @@ export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }
       setDevice(dev);
       setHistory(Array.isArray(hist) ? hist : []);
 
-      // Always try to fetch Wi-Fi signal — endpoint matches by MAC (if set) then IP
+      // Sempre tenta o sinal Wi-Fi — o endpoint casa por MAC (se houver) e depois por IP
       fetch(`/api/devices/${id}/wifi-signal`, { signal })
         .then((r) => r.ok ? r.json() : null)
         .then((data) => { if (!signal?.aborted) setWifiSignal(data ?? null); })
         .catch(() => {});
     } catch (err) {
-      // Ignore aborts (param changed mid-flight); only reset on real errors
+      // Aborts (parâmetro mudou no meio do voo) são ignorados; só reseta em erro real
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       setDevice(null); setHistory([]);
     } finally {
@@ -147,7 +152,7 @@ export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }
     setAcknowledging(false);
   }
 
-  // ── Computed metrics ────────────────────────────────────────────────────────
+  // ── Métricas calculadas ─────────────────────────────────────────────────────
   const pings = history.map((h) => h.pingMs).filter((v): v is number => v != null);
   const pingAvg = pings.length > 0 ? Math.round(pings.reduce((s, v) => s + v, 0) / pings.length) : null;
   const pingPeak = pings.length > 0 ? Math.max(...pings) : null;
@@ -160,7 +165,6 @@ export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }
     : null;
 
   const status = device?.currentStatus;
-  const TypeIcon = device ? DEVICE_TYPE_ICON[device.type] : DEVICE_TYPE_ICON.OTHER;
 
   const timeLabels = history.map((h) =>
     fmtTime(h.timestamp, { hour: "2-digit", minute: "2-digit" })
@@ -172,197 +176,119 @@ export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }
 
   const segments = useMemo(() => buildSegments(history, now), [history, now]);
 
+  const rssiCls = wifiSignal?.signal == null ? "dim" : wifiSignal.signal >= -65 ? "ok" : wifiSignal.signal >= -75 ? "warn" : "crit";
+  const snrCls = wifiSignal?.snr == null ? "dim" : wifiSignal.snr >= 25 ? "ok" : wifiSignal.snr >= 15 ? "warn" : "crit";
+  const canAck = sessionRole === "OPERADOR" || sessionRole === "ADMIN";
+
+  const chart = (title: string, values: (number | null)[], uid: string) => (
+    <Panel title={title} color="info">
+      {loading ? (
+        <div className="d-skel" style={{ height: 60 }} />
+      ) : values.some((v) => v !== null) && values.length >= 3 ? (
+        <PingSparkline
+          data={values}
+          labels={timeLabels}
+          uid={uid}
+          threshold={80}
+          responsive
+          width={380}
+          height={88}
+          showTooltip
+          unit="%"
+          decimals={2}
+        />
+      ) : (
+        <div className="dim">◌ sem dados para o período</div>
+      )}
+    </Panel>
+  );
+
   return (
     <Sheet open={deviceId !== null} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="sm:max-w-105 w-full p-0 flex flex-col gap-0 overflow-y-auto"
+        aria-label="Detalhe do dispositivo"
+        className="sm:max-w-130 w-full p-0 flex flex-col gap-0 overflow-y-auto bg-background"
       >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="px-5 pt-5 pb-4 border-b border-border shrink-0">
-          {loading || !device ? (
-            <div className="space-y-2 pr-8">
-              <div className="flex items-center gap-3">
-                <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
-                <div className="space-y-1.5 flex-1">
-                  <Skeleton className="h-4 w-36" />
-                  <Skeleton className="h-3 w-28" />
-                </div>
-              </div>
-              <Skeleton className="h-5 w-14" />
-            </div>
-          ) : (
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${DEVICE_TYPE_ICON_BG[device.type]}`}>
-                  <TypeIcon className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-[15px] leading-tight truncate">{device.name}</p>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                    <span className="font-mono">{device.ip}</span>
-                    {device.location && (
-                      <>
-                        <span className="opacity-40">·</span>
-                        <MapPin className="h-3 w-3 shrink-0" />
-                        <span>{device.location}</span>
-                      </>
-                    )}
+        <DevScope className="d-drawer">
+          <div style={{ padding: "14px 14px 0", display: "flex", flexDirection: "column", gap: 18, minHeight: "100%" }}>
+            {/* ── Estado ─────────────────────────────────────────────── */}
+            <Panel
+              title={loading || !device ? "carregando…" : device.name}
+              sub={device ? DEVICE_TYPE_LABEL[device.type] : undefined}
+              color={status?.isOnline ? "ok" : "crit"}
+              hot={!!device && !status?.isOnline && !device.offlineAcknowledgedAt}
+              right={<button type="button" onClick={onClose} aria-label="Fechar painel"><kbd>esc</kbd> fechar</button>}
+            >
+              {loading || !device ? (
+                <div className="d-skel" style={{ height: 40 }} role="status" aria-label="Carregando" />
+              ) : (
+                <div className="d-stack" style={{ gap: 6, paddingBottom: 0 }}>
+                  <div className="d-line">
+                    <StatusBadge isOnline={status?.isOnline ?? false} acknowledged={!!device.offlineAcknowledgedAt} />
+                    <span className="dim">{device.ip}</span>
+                    {device.location ? <span className="dim">· {device.location}</span> : null}
                   </div>
-                  <div className="mt-2 space-y-2">
-                    <StatusBadge
-                      isOnline={status?.isOnline ?? false}
-                      acknowledged={!!device.offlineAcknowledgedAt}
-                    />
 
-                    {/* Acknowledge section — only for offline devices */}
-                    {!status?.isOnline && (sessionRole === "OPERADOR" || sessionRole === "ADMIN") && (
-                      <div className="space-y-1.5">
-                        {device.offlineAcknowledgedAt ? (
-                          <div className="space-y-1">
-                            {device.offlineAcknowledgedNote && (
-                              <p className="text-[11px] text-muted-foreground italic leading-snug">
-                                &ldquo;{device.offlineAcknowledgedNote}&rdquo;
-                              </p>
-                            )}
-                            <button
-                              onClick={handleUnacknowledge}
-                              disabled={acknowledging}
-                              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-                            >
-                              <Undo2 className="h-3 w-3" />
-                              Remover reconhecimento
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            <input
-                              type="text"
-                              value={ackNote}
-                              onChange={(e) => setAckNote(e.target.value)}
-                              placeholder="Motivo (opcional)"
-                              className="w-full text-[11px] px-2 py-1 rounded-md border border-border bg-muted/40 placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                            <button
-                              onClick={handleAcknowledge}
-                              disabled={acknowledging}
-                              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                            >
-                              <CheckCheck className="h-3 w-3" />
-                              Reconhecer offline
-                            </button>
-                          </div>
+                  {/* Reconhecimento — só para dispositivos offline e perfis com permissão */}
+                  {!status?.isOnline && canAck && (
+                    device.offlineAcknowledgedAt ? (
+                      <div className="d-stack" style={{ gap: 4, paddingBottom: 0 }}>
+                        {device.offlineAcknowledgedNote && (
+                          <div className="dim">&ldquo;{device.offlineAcknowledgedNote}&rdquo;</div>
                         )}
+                        <div>
+                          <button type="button" className="btn" onClick={handleUnacknowledge} disabled={acknowledging}>
+                            remover reconhecimento
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    ) : (
+                      <div className="btns">
+                        <input
+                          type="text"
+                          aria-label="Motivo do reconhecimento (opcional)"
+                          value={ackNote}
+                          onChange={(e) => setAckNote(e.target.value)}
+                          placeholder="motivo (opcional)"
+                          className="d-in"
+                          style={{ width: "auto", flex: 1, minWidth: "16ch" }}
+                        />
+                        <button type="button" className="btn" onClick={handleAcknowledge} disabled={acknowledging}>
+                          reconhecer offline
+                        </button>
+                      </div>
+                    )
+                  )}
                 </div>
-              </div>
-              <button
-                onClick={onClose}
-                aria-label="Fechar painel"
-                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-          )}
-        </div>
+              )}
+            </Panel>
 
-        {/* ── Body ───────────────────────────────────────────────────────── */}
-        <div className="flex-1 px-5 py-5 space-y-5">
-
-          {/* Metrics 2×2 */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <MetricTile label="Ping atual"       value={status?.pingMs ?? null} unit="ms" loading={loading} />
-            <MetricTile label="Ping médio"        value={pingAvg}               unit="ms" loading={loading} />
-            <MetricTile label="Pico"              value={pingPeak}              unit="ms" loading={loading} />
-            <MetricTile label="Perda de pacote"   value={`${packetLoss}%`}      loading={loading} />
-          </div>
-
-          {/* Wi-Fi signal tile — only when device has MAC and AP data is available */}
-          {device?.macAddress && wifiSignal && (
-            <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Wifi className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Sinal Wi-Fi
-                </p>
-                <span className="ml-auto text-[10px] text-muted-foreground/70 truncate max-w-35">
-                  via {wifiSignal.apName}
+            {/* ── Latência ────────────────────────────────────────────── */}
+            <Panel
+              title="latência"
+              sub={hours === 168 ? "7d" : `${hours}h`}
+              color="info"
+              right={
+                <span className="d-seg" role="group" aria-label="Período">
+                  {HOUR_OPTIONS.map((opt) => (
+                    <button key={opt.value} type="button" aria-pressed={hours === opt.value} onClick={() => setHours(opt.value)}>
+                      {opt.label}
+                    </button>
+                  ))}
                 </span>
+              }
+            >
+              <div className="d-tiles" style={{ marginBottom: 10 }}>
+                <Tile k="ping atual" v={loading ? "…" : <Unit v={status?.pingMs ?? null} unit="ms" />} />
+                <Tile k="médio" v={loading ? "…" : <Unit v={pingAvg} unit="ms" />} />
+                <Tile k="pico" v={loading ? "…" : <Unit v={pingPeak} unit="ms" />} />
+                <Tile k="perda" v={loading ? "…" : `${packetLoss}%`} />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {/* RSSI */}
-                <div className="rounded-lg bg-background border border-border p-2.5 space-y-0.5">
-                  <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">RSSI</p>
-                  <p className={`text-xl font-extrabold leading-none tabular-nums ${
-                    wifiSignal.signal == null ? "text-muted-foreground" :
-                    wifiSignal.signal >= -65 ? "text-success" :
-                    wifiSignal.signal >= -75 ? "text-warning" : "text-destructive"
-                  }`}>
-                    {wifiSignal.signal != null ? wifiSignal.signal : "—"}
-                    {wifiSignal.signal != null && <span className="text-xs font-normal ml-0.5 text-muted-foreground">dBm</span>}
-                  </p>
-                </div>
-                {/* SNR or SSID */}
-                {wifiSignal.snr != null ? (
-                  <div className="rounded-lg bg-background border border-border p-2.5 space-y-0.5">
-                    <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">SNR</p>
-                    <p className={`text-xl font-extrabold leading-none tabular-nums ${
-                      wifiSignal.snr >= 25 ? "text-success" :
-                      wifiSignal.snr >= 15 ? "text-warning" : "text-destructive"
-                    }`}>
-                      {wifiSignal.snr}
-                      <span className="text-xs font-normal ml-0.5 text-muted-foreground">dB</span>
-                    </p>
-                  </div>
-                ) : (
-                  <div className="rounded-lg bg-background border border-border p-2.5 space-y-0.5">
-                    <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">SSID</p>
-                    <p className="text-sm font-bold leading-tight truncate">{wifiSignal.ssid ?? "—"}</p>
-                  </div>
-                )}
-              </div>
-              {/* Band + SSID row */}
-              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                {wifiSignal.ssid && wifiSignal.snr != null && (
-                  <span>SSID: <span className="text-foreground font-medium">{wifiSignal.ssid}</span></span>
-                )}
-                {wifiSignal.band && (
-                  <span>Banda: <span className="text-foreground font-medium">{wifiSignal.band}</span></span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Latency chart */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
-                Latência
-              </p>
-              <div className="flex items-center gap-0.5">
-                {HOUR_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setHours(opt.value)}
-                    className={`px-2 h-5 rounded text-[10px] font-semibold transition-colors ${
-                      hours === opt.value
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {loading ? (
-              <Skeleton className="h-24 w-full rounded-xl" />
-            ) : sparklineData.length >= 3 ? (
-              <div className="w-full rounded-xl overflow-hidden border border-border bg-muted/20 px-2 pt-2 pb-1">
+              {loading ? (
+                <div className="d-skel" style={{ height: 60 }} />
+              ) : sparklineData.length >= 3 ? (
                 <PingSparkline
                   data={sparklineData}
                   labels={timeLabels}
@@ -372,207 +298,121 @@ export function DeviceDetailDrawer({ deviceId, onClose, userRole: userRoleProp }
                   height={88}
                   showTooltip
                 />
-              </div>
-            ) : (
-              <div className="h-24 rounded-xl border border-border bg-muted/20 flex items-center justify-center">
-                <p className="text-xs text-muted-foreground">Sem dados para o período</p>
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="dim">◌ sem dados para o período</div>
+              )}
+            </Panel>
 
-          {/* CPU + Memory charts — Mikrotik/SNMP/RouterOS only */}
-          {device && (device.snmpEnabled || device.routerosEnabled) && (
-            <>
-              <div className="space-y-2">
-                <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
-                  CPU (%)
-                </p>
-                {loading ? (
-                  <Skeleton className="h-24 w-full rounded-xl" />
-                ) : cpuSparkline.some((v) => v !== null) && cpuSparkline.length >= 3 ? (
-                  <div className="w-full rounded-xl overflow-hidden border border-border bg-muted/20 px-2 pt-2 pb-1">
-                    <PingSparkline
-                      data={cpuSparkline}
-                      labels={timeLabels}
-                      uid={`drawer-cpu-${deviceId}`}
-                      threshold={80}
-                      responsive
-                      width={380}
-                      height={88}
-                      showTooltip
-                      unit="%"
-                      decimals={2}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-24 rounded-xl border border-border bg-muted/20 flex items-center justify-center">
-                    <p className="text-xs text-muted-foreground">Sem dados para o período</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Memória (%)
-                </p>
-                {loading ? (
-                  <Skeleton className="h-24 w-full rounded-xl" />
-                ) : memorySparkline.some((v) => v !== null) && memorySparkline.length >= 3 ? (
-                  <div className="w-full rounded-xl overflow-hidden border border-border bg-muted/20 px-2 pt-2 pb-1">
-                    <PingSparkline
-                      data={memorySparkline}
-                      labels={timeLabels}
-                      uid={`drawer-mem-${deviceId}`}
-                      threshold={80}
-                      responsive
-                      width={380}
-                      height={88}
-                      showTooltip
-                      unit="%"
-                      decimals={2}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-24 rounded-xl border border-border bg-muted/20 flex items-center justify-center">
-                    <p className="text-xs text-muted-foreground">Sem dados para o período</p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Custom SNMP metrics — only non-standard keys (cpu/memory/uptime have dedicated charts) */}
-          {device?.snmpEnabled && status?.snmpData && (() => {
-            const snmpData = status.snmpData as Record<string, number | null>;
-            const oidConfig = resolveSnmpOids(device.snmpCustomOids);
-            const customMetrics = oidConfig.filter(
-              (e) => e.enabled && !["cpu", "memory", "uptime"].includes(e.key) && snmpData[e.key] != null
-            );
-            if (customMetrics.length === 0) return null;
-            return (
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Activity className="h-3 w-3 text-muted-foreground" />
-                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Métricas SNMP
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {customMetrics.map((entry) => {
-                    const val = snmpData[entry.key];
-                    const display = val != null ? `${Number(val).toFixed(entry.unit === "%" ? 1 : 0)}` : "—";
-                    return (
-                      <div key={entry.key} className="rounded-lg bg-muted/30 border border-border p-2.5 space-y-0.5">
-                        <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{entry.label}</p>
-                        <p className="text-lg font-extrabold leading-none tabular-nums">
-                          {display}
-                          {val != null && entry.unit && (
-                            <span className="text-xs font-normal ml-0.5 text-muted-foreground">{entry.unit}</span>
-                          )}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Availability bar */}
-          <div className="space-y-2">
-            <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
-              Disponibilidade (24h)
-            </p>
-            {loading ? (
-              <Skeleton className="h-5 w-full rounded" />
-            ) : (
-              <TooltipProvider>
-                <div className="flex gap-0.5">
-                  {segments.map((s, i) => {
-                    const slotEnd = new Date(now - (47 - i) * 1_800_000);
-                    const slotStart = new Date(slotEnd.getTime() - 1_800_000);
-                    const fmt = (d: Date) => fmtTime(d, { hour: "2-digit", minute: "2-digit" });
-                    const label = `${fmt(slotStart)}–${fmt(slotEnd)} · ${
-                      s === "online" ? "Online" : s === "offline" ? "Offline" : s === "degraded" ? "Instável" : "Sem dados"
-                    }`;
-                    return (
-                      <Tooltip key={i}>
-                        <TooltipTrigger className="flex-1">
-                          <div className={`w-full h-5 rounded-[3px] cursor-default ${SEG_COLOR[s]}`} />
-                        </TooltipTrigger>
-                        <TooltipContent side="top">{label}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-              </TooltipProvider>
-            )}
-          </div>
-
-          {/* Device info table */}
-          <div className="space-y-0.5">
-            <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
-              Informações do dispositivo
-            </p>
-            {loading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex justify-between py-2">
-                    <Skeleton className="h-3 w-24" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                ))}
-              </div>
-            ) : device ? (
-              <div>
-                <InfoRow label="Tipo"              value={DEVICE_TYPE_LABEL[device.type]} />
-                <InfoRow label="Endereço IP"       value={device.ip} />
-                {device.macAddress && (
-                  <InfoRow label="MAC Address"     value={device.macAddress} />
-                )}
-                {wifiSignal && (
-                  <InfoRow label="AP conectado"    value={`${wifiSignal.apName} (${wifiSignal.apIp})`} />
-                )}
-                {status?.uptime != null && (
-                  <InfoRow label="Uptime"          value={formatUptime(status.uptime)} />
-                )}
-                {uptime24h && (
-                  <InfoRow label="Disponibilidade 24h" value={`${uptime24h}%`} />
-                )}
-                {status?.checkedAt && (
-                  <InfoRow
-                    label="Última verificação"
-                    value={fmtTime(status.checkedAt)}
-                    suppressHydration
+            {device?.macAddress && wifiSignal && (
+              <Panel title="sinal wi-fi" sub={`via ${wifiSignal.apName}`} color="accent2">
+                <div className="d-tiles">
+                  <Tile
+                    k="rssi"
+                    v={<span className={rssiCls}><Unit v={wifiSignal.signal} unit={wifiSignal.signal != null ? "dBm" : undefined} /></span>}
                   />
-                )}
+                  {wifiSignal.snr != null ? (
+                    <Tile k="snr" v={<span className={snrCls}><Unit v={wifiSignal.snr} unit="dB" /></span>} />
+                  ) : (
+                    <Tile k="ssid" v={<span style={{ fontSize: 14 }}>{wifiSignal.ssid ?? "—"}</span>} />
+                  )}
+                </div>
+                <div className="dim" style={{ marginTop: 6 }}>
+                  {wifiSignal.ssid && wifiSignal.snr != null && <span>SSID {wifiSignal.ssid} </span>}
+                  {wifiSignal.band && <span>· banda {wifiSignal.band}</span>}
+                </div>
+              </Panel>
+            )}
+
+            {device && (device.snmpEnabled || device.routerosEnabled) && (
+              <>
+                {chart("cpu (%)", cpuSparkline, `drawer-cpu-${deviceId}`)}
+                {chart("memória (%)", memorySparkline, `drawer-mem-${deviceId}`)}
+              </>
+            )}
+
+            {/* Métricas SNMP personalizadas (cpu/memória/uptime têm gráfico próprio) */}
+            {device?.snmpEnabled && status?.snmpData && (() => {
+              const snmpData = status.snmpData as Record<string, number | null>;
+              const oidConfig = resolveSnmpOids(device.snmpCustomOids);
+              const customMetrics = oidConfig.filter(
+                (e) => e.enabled && !["cpu", "memory", "uptime"].includes(e.key) && snmpData[e.key] != null
+              );
+              if (customMetrics.length === 0) return null;
+              return (
+                <Panel title="métricas snmp" color="accent2">
+                  <div className="d-tiles">
+                    {customMetrics.map((entry) => {
+                      const val = snmpData[entry.key];
+                      const display = val != null ? `${Number(val).toFixed(entry.unit === "%" ? 1 : 0)}` : "—";
+                      return (
+                        <Tile
+                          key={entry.key}
+                          k={entry.label}
+                          v={<Unit v={display} unit={val != null && entry.unit ? entry.unit : undefined} />}
+                        />
+                      );
+                    })}
+                  </div>
+                </Panel>
+              );
+            })()}
+
+            {/* Disponibilidade 24h em fatias de 30 min */}
+            <Panel title="disponibilidade" sub="24h" color="ok">
+              {loading ? (
+                <div className="d-skel" />
+              ) : (
+                <>
+                  <div className="d-segs" role="img" aria-label={`Disponibilidade nas últimas 24 horas${uptime24h ? `: ${uptime24h}%` : ""}`}>
+                    {segments.map((s, i) => {
+                      const slotEnd = new Date(now - (47 - i) * 1_800_000);
+                      const slotStart = new Date(slotEnd.getTime() - 1_800_000);
+                      const fmt = (d: Date) => fmtTime(d, { hour: "2-digit", minute: "2-digit" });
+                      const label = `${fmt(slotStart)}–${fmt(slotEnd)} · ${
+                        s === "online" ? "Online" : s === "offline" ? "Offline" : s === "degraded" ? "Instável" : "Sem dados"
+                      }`;
+                      return <i key={i} className={s} title={label} />;
+                    })}
+                  </div>
+                  <div className="dim" style={{ marginTop: 4, fontSize: 11 }}>
+                    <span className="ok">●</span> online <span className="warn">▲</span> instável <span className="crit">✖</span> offline ░ sem dados
+                  </div>
+                </>
+              )}
+            </Panel>
+
+            <Panel title="informações" color="dim">
+              {loading ? (
+                <div className="d-skel" style={{ height: 70 }} />
+              ) : device ? (
+                <dl className="kv" style={{ gridTemplateColumns: "18ch 1fr" }}>
+                  <dt>Tipo</dt><dd>{DEVICE_TYPE_LABEL[device.type]}</dd>
+                  <dt>Endereço IP</dt><dd>{device.ip}</dd>
+                  {device.macAddress && (<><dt>MAC</dt><dd>{device.macAddress}</dd></>)}
+                  {wifiSignal && (<><dt>AP conectado</dt><dd>{wifiSignal.apName} ({wifiSignal.apIp})</dd></>)}
+                  {status?.uptime != null && (<><dt>Uptime</dt><dd>{formatUptime(status.uptime)}</dd></>)}
+                  {uptime24h && (<><dt>Disponib. 24h</dt><dd>{uptime24h}%</dd></>)}
+                  {status?.checkedAt && (<><dt>Última verif.</dt><dd suppressHydrationWarning>{fmtTime(status.checkedAt)}</dd></>)}
+                </dl>
+              ) : null}
+            </Panel>
+
+            {/* ── Rodapé ──────────────────────────────────────────────── */}
+            {device && (
+              <div className="foot">
+                <button type="button" className="btn pri" onClick={handleTest} disabled={testing || loading}>
+                  {testing ? "testando…" : "testar agora"}
+                </button>
+                <Link href={`/devices/${device.id}`} onClick={onClose} className="btn">
+                  histórico
+                </Link>
+                <Link href={`/devices/${device.id}/edit`} onClick={onClose} className="btn">
+                  editar
+                </Link>
               </div>
-            ) : null}
+            )}
           </div>
-
-        </div>
-
-        {/* ── Footer ─────────────────────────────────────────────────────── */}
-        {device && (
-          <div className="px-5 py-4 border-t border-border flex gap-2.5 shrink-0">
-            <button
-              onClick={handleTest}
-              disabled={testing || loading}
-              className="flex-1 inline-flex items-center justify-center gap-2 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60"
-            >
-              <Zap className="h-4 w-4" />
-              {testing ? "Testando..." : "Testar agora"}
-            </button>
-            <Link
-              href={`/devices/${device.id}`}
-              onClick={onClose}
-              className="flex-1 inline-flex items-center justify-center gap-2 h-10 rounded-xl border border-border bg-background text-foreground text-sm font-semibold hover:bg-muted transition-colors"
-            >
-              <History className="h-4 w-4" />
-              Histórico
-            </Link>
-          </div>
-        )}
+        </DevScope>
       </SheetContent>
     </Sheet>
   );

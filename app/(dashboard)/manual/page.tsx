@@ -1,10 +1,10 @@
 "use client";
+/* eslint-disable react/no-unescaped-entities -- conteúdo de documentação com literais entre aspas */
 
 import { useState, useEffect, useRef } from "react";
 import { Topbar } from "@/components/topbar";
 import {
-  LayoutDashboard, Server, Network, AlertCircle, Router, RadioTower, Wifi,
-  FileText, ShieldCheck, Users, Settings, ClipboardList, LogIn, KeyRound,
+  LayoutDashboard, Server, Network, AlertCircle,   FileText, ShieldCheck, Settings, LogIn, KeyRound,
   Edit, Trash2, Search, Filter, Download, Bell, Moon,
   RefreshCw, ChevronRight, Menu, X, BookOpen, Cpu,
   Zap, Printer,
@@ -154,7 +154,7 @@ function UL({ children }: { children: React.ReactNode }) {
 function LI({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex gap-2 text-[14px] text-muted-foreground leading-relaxed">
-      <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+      <ChevronRight className="h-4 w-4 text-[var(--info)] mt-0.5 shrink-0" />
       <span>{children}</span>
     </li>
   );
@@ -168,7 +168,7 @@ function Callout({
   children: React.ReactNode;
 }) {
   const styles = {
-    info:    "bg-primary/5 border-primary/30 text-primary",
+    info:    "bg-[var(--info)]/5 border-[var(--info)]/30 text-[var(--info)]",
     warning: "bg-warning/5 border-warning/30 text-warning",
     tip:     "bg-success/5 border-success/30 text-success",
   };
@@ -185,12 +185,12 @@ function Badge({ children, color = "default" }: { children: React.ReactNode; col
   const cls = {
     default: "bg-muted text-muted-foreground",
     green:   "bg-success/10 text-success",
-    blue:    "bg-primary/10 text-primary",
+    blue:    "bg-[var(--info)]/10 text-[var(--info)]",
     purple:  "bg-purple-500/10 text-purple-500",
     red:     "bg-destructive/10 text-destructive",
   };
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold mr-1", cls[color])}>
+    <span className={cn("inline-flex items-center rounded-[3px] px-2.5 py-0.5 text-[11px] font-bold mr-1", cls[color])}>
       {children}
     </span>
   );
@@ -258,7 +258,7 @@ export default function ManualPage() {
         <button
           onClick={() => setSidebarOpen((v) => !v)}
           aria-label={sidebarOpen ? "Fechar índice" : "Abrir índice"}
-          className="fixed bottom-6 right-6 z-50 lg:hidden h-10 w-10 rounded-full bg-primary text-white shadow-lg flex items-center justify-center"
+          className="fixed bottom-6 right-6 z-50 lg:hidden h-10 w-10 rounded-full bg-[var(--accent-2)] text-white shadow-lg flex items-center justify-center"
         >
           {sidebarOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
         </button>
@@ -286,11 +286,11 @@ export default function ManualPage() {
                     className={cn(
                       "w-full flex items-center gap-2 px-2 py-1.75 rounded-[8px] text-[13px] font-semibold text-left transition-colors",
                       isActive
-                        ? "bg-accent text-accent-foreground"
+                        ? "bg-muted text-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     )}
                   >
-                    <Icon className={cn("h-3.75 w-3.75 shrink-0", isActive ? "text-accent-foreground" : "")} />
+                    <Icon className={cn("h-3.75 w-3.75 shrink-0", isActive ? "text-[var(--accent-2)]" : "")} />
                     {section.title}
                   </button>
                   {section.subsections && isActive && (
@@ -302,7 +302,7 @@ export default function ManualPage() {
                           className={cn(
                             "w-full text-left px-2 py-1.25 rounded-[6px] text-[12px] font-medium transition-colors",
                             activeId === sub.id
-                              ? "text-primary font-semibold"
+                              ? "text-[var(--info)] font-semibold"
                               : "text-muted-foreground hover:text-foreground"
                           )}
                         >
@@ -323,7 +323,7 @@ export default function ManualPage() {
 
             {/* ── Introdução ──────────────────────────────────────── */}
             <Section id="intro">
-              <H1><BookOpen className="h-6 w-6 text-primary" /> Introdução</H1>
+              <H1><BookOpen className="h-6 w-6 text-[var(--info)]" /> Introdução</H1>
               <P>
                 O <strong>WatchIT Tower</strong> é uma plataforma de monitoramento de TI para redes internas.
                 Ele acompanha roteadores Mikrotik, câmeras IP, DVRs, APs UniFi e Omada, e links de internet
@@ -348,7 +348,7 @@ export default function ManualPage() {
 
             {/* ── Acesso ──────────────────────────────────────────── */}
             <Section id="acesso">
-              <H1><LogIn className="h-6 w-6 text-primary" /> Acesso ao Sistema</H1>
+              <H1><LogIn className="h-6 w-6 text-[var(--info)]" /> Acesso ao Sistema</H1>
 
               <H2 id="login">Login</H2>
               <P>
@@ -417,7 +417,7 @@ export default function ManualPage() {
 
             {/* ── Visão Geral ─────────────────────────────────────── */}
             <Section id="visao-geral">
-              <H1><LayoutDashboard className="h-6 w-6 text-primary" /> Visão Geral</H1>
+              <H1><LayoutDashboard className="h-6 w-6 text-[var(--info)]" /> Visão Geral</H1>
               <P>
                 A página inicial (<strong>/</strong>) é o painel central de monitoramento.
                 Ela consolida o estado de toda a infraestrutura em uma única tela,
@@ -486,7 +486,7 @@ export default function ManualPage() {
 
             {/* ── Dispositivos ────────────────────────────────────── */}
             <Section id="dispositivos">
-              <H1><Server className="h-6 w-6 text-primary" /> Dispositivos</H1>
+              <H1><Server className="h-6 w-6 text-[var(--info)]" /> Dispositivos</H1>
               <P>
                 A seção <strong>Dispositivos</strong> permite cadastrar e monitorar todos os
                 equipamentos da rede. Cada dispositivo tem seus protocolos de monitoramento
@@ -591,7 +591,7 @@ export default function ManualPage() {
 
             {/* ── Links ───────────────────────────────────────────── */}
             <Section id="links">
-              <H1><Network className="h-6 w-6 text-primary" /> Links de Internet</H1>
+              <H1><Network className="h-6 w-6 text-[var(--info)]" /> Links de Internet</H1>
               <P>
                 A página <strong>/links</strong> gerencia os links de internet monitorados,
                 com medição de tráfego em tempo real via RouterOS e rastreamento de eventos UP/DOWN.
@@ -639,7 +639,7 @@ export default function ManualPage() {
 
             {/* ── Incidentes ──────────────────────────────────────── */}
             <Section id="incidentes">
-              <H1><AlertCircle className="h-6 w-6 text-primary" /> Incidentes</H1>
+              <H1><AlertCircle className="h-6 w-6 text-[var(--info)]" /> Incidentes</H1>
               <P>
                 A página <strong>/incidents</strong> lista todos os eventos de queda e retorno
                 registrados no histórico, com paginação e filtros.
@@ -657,7 +657,7 @@ export default function ManualPage() {
 
             {/* ── Painéis ─────────────────────────────────────────── */}
             <Section id="paineis">
-              <H1><Cpu className="h-6 w-6 text-primary" /> Painéis Específicos</H1>
+              <H1><Cpu className="h-6 w-6 text-[var(--info)]" /> Painéis Específicos</H1>
               <P>
                 Os painéis de Mikrotik, Omada e UniFi agrupam todos os dispositivos desse tipo
                 e exibem métricas consolidadas.
@@ -700,7 +700,7 @@ export default function ManualPage() {
 
             {/* ── Relatórios ──────────────────────────────────────── */}
             <Section id="relatorios">
-              <H1><FileText className="h-6 w-6 text-primary" /> Relatórios</H1>
+              <H1><FileText className="h-6 w-6 text-[var(--info)]" /> Relatórios</H1>
               <P>
                 A página <strong>/reports</strong> permite gerar relatórios de disponibilidade
                 por dispositivo com exportação em PDF e CSV.
@@ -719,7 +719,7 @@ export default function ManualPage() {
 
             {/* ── Segurança ───────────────────────────────────────── */}
             <Section id="seguranca">
-              <H1><ShieldCheck className="h-6 w-6 text-primary" /> Segurança</H1>
+              <H1><ShieldCheck className="h-6 w-6 text-[var(--info)]" /> Segurança</H1>
               <P>
                 A página <strong>/security</strong> exibe o relatório de segurança da plataforma —
                 todos os achados identificados, suas severidades e status de resolução.
@@ -734,7 +734,7 @@ export default function ManualPage() {
 
             {/* ── Administração ───────────────────────────────────── */}
             <Section id="administracao">
-              <H1><Settings className="h-6 w-6 text-primary" /> Administração</H1>
+              <H1><Settings className="h-6 w-6 text-[var(--info)]" /> Administração</H1>
               <P>
                 As páginas de administração são visíveis apenas para usuários com perfil
                 <Badge color="red">ADMIN</Badge>.
@@ -800,7 +800,7 @@ export default function ManualPage() {
 
             {/* ── Atalhos ─────────────────────────────────────────── */}
             <Section id="atalhos">
-              <H1><Zap className="h-6 w-6 text-primary" /> Atalhos e Dicas</H1>
+              <H1><Zap className="h-6 w-6 text-[var(--info)]" /> Atalhos e Dicas</H1>
 
               <H2 id="tema">Tema claro/escuro</H2>
               <P>

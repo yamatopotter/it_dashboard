@@ -29,21 +29,21 @@ interface PanelProps {
   children: ReactNode;
 }
 
-/** Painel estilo btop: borda CSS com o título sobreposto. */
+/** Painel estilo btop: borda CSS com o título sobreposto. Funciona em qualquer página (classes globais .tui-panel*). */
 export function Panel({ title, sub, right, color = "info", hot, focus, full, id, className = "", children }: PanelProps) {
   const labelId = id ? `${id}-t` : undefined;
   return (
     <section
       id={id}
       aria-labelledby={labelId}
-      className={`box${hot ? " hot" : ""}${focus ? " focus" : ""}${full ? " full" : ""} ${className}`.trim()}
+      className={`box tui-panel${hot ? " hot" : ""}${focus ? " focus" : ""}${full ? " full tui-full" : ""} ${className}`.trim()}
       style={{ "--box": COLOR_VAR[color] } as CSSProperties}
     >
-      <h2 className="box-t" id={labelId}>
+      <h2 className="box-t tui-panel-t" id={labelId}>
         <span>{title}</span>
         {sub ? <span className="sub">{sub}</span> : null}
       </h2>
-      {right ? <span className="box-r">{right}</span> : null}
+      {right ? <span className="box-r tui-panel-r">{right}</span> : null}
       {children}
     </section>
   );

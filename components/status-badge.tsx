@@ -9,11 +9,16 @@ interface StatusBadgeProps {
   className?: string;
 }
 
+// Estado = glifo + texto + cor (nunca só cor), no mesmo vocabulário das telas TUI (● ▲ ✖ ░).
 const STATUS_STYLES: Record<StatusValue, string> = {
-  online:       "bg-success/10 text-success border border-success/20",
-  offline:      "bg-destructive/10 text-destructive border border-destructive/20",
-  degraded:     "bg-warning/10 text-warning border border-warning/20",
-  acknowledged: "bg-muted text-muted-foreground border border-border",
+  online:       "text-success",
+  offline:      "text-destructive",
+  degraded:     "text-warning",
+  acknowledged: "text-muted-foreground",
+};
+
+const STATUS_GLYPH: Record<StatusValue, string> = {
+  online: "●", offline: "✖", degraded: "▲", acknowledged: "░",
 };
 
 const STATUS_LABELS: Record<StatusValue, string> = {
@@ -33,18 +38,12 @@ export function StatusBadge({ isOnline, degraded = false, acknowledged = false, 
       role="status"
       aria-label={STATUS_LABELS[status]}
       className={cn(
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold",
+        "inline-flex items-center gap-1.5 font-mono text-xs font-semibold whitespace-nowrap",
         STATUS_STYLES[status],
         className
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "relative h-1.5 w-1.5 rounded-full bg-current",
-          status === "online" && "animate-ping-dot"
-        )}
-      />
+      <span aria-hidden="true">{STATUS_GLYPH[status]}</span>
       <span aria-hidden="true">{STATUS_LABELS[status]}</span>
     </span>
   );

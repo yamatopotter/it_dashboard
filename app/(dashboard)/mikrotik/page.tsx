@@ -1,19 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Topbar } from "@/components/topbar";
 import { StatusBadge } from "@/components/status-badge";
+import { Panel } from "@/components/tui/panel";
+import { DevEmpty, DevError, DevLoading, DevPage } from "@/components/tui/dev-shell";
+import { DevTable, KpiStrip, NetAlert, PanelToggle, UsageBar, useDeviceList, type Col } from "@/components/dev-net-panels";
+import { Bar } from "@/components/tui/bar";
 import { formatUptime, formatBps, formatResponseTime, timeAgo } from "@/lib/format";
-import {
-  Cpu, MemoryStick, Clock, Network, ExternalLink,
-  AlertTriangle, ArrowDownToLine, ArrowUpFromLine,
-  ChevronDown, ChevronUp, Globe, Router, Users, RefreshCw,
-} from "lucide-react";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Tipos ──────────────────────────────────────────────────────────────────────
 
 interface RouterOSClient {
   mac: string;
@@ -56,430 +52,192 @@ interface AssociatedLink {
   contractedUploadBps: number | null;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+type LinkWithDevice = AssociatedLink & { mikrotikDeviceId: string | null };
 
-function MetricPill({
-  icon: Icon, value, color,
-}: { icon: React.ElementType; value: string; color: string }) {
+// ── Peças ──────────────────────────────────────────────────────────────────────
+
+/** Tráfego atual; com banda contratada mostra a barra de utilização com % ao lado. */
+function UtilCell({ bps, contractedBps, label }: { bps: number | null; contractedBps: number | null; label: string }) {
+  if (!bps || !contractedBps) return <span className="dim">{formatBps(bps)}</span>;
+  const pct = Math.min((bps / contractedBps) * 100, 100);
   return (
-    <span className="flex items-center gap-1 text-xs font-mono">
-      <Icon className={`h-3 w-3 ${color}`} />
-      {value}
+    <span className="barwrap">
+      <Bar pct={pct} width="8ch" label={label} />
+      <span>{formatBps(bps)}</span>
     </span>
   );
 }
 
-function CpuBar({ value }: { value: number }) {
-  const color =
-    value > 80 ? "bg-destructive" :
-    value > 50 ? "bg-warning" :
-    "bg-success";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(value, 100)}%` }} />
-      </div>
-      <span className="font-mono text-xs w-9 text-right">{value.toFixed(0)}%</span>
-    </div>
-  );
-}
+const LINK_COLS: Col<AssociatedLink>[] = [
+  { key: "name", head: "Link", className: "name", cell: (l) => <>{l.name}{l.location ? <span className="dim" style={{ fontWeight: 400 }}> · {l.location}</span> : null}</> },
+  { key: "if", head: "Interface", className: "dim", cell: (l) => l.mikrotikInterface ?? "—" },
+  { key: "st", head: "Status", cell: (l) => (l.isOnline ? <span className="ok">● online</span> : <span className="crit">✖ offline</span>) },
+  { key: "dl", head: "↓ download", cell: (l) => <UtilCell bps={l.downloadBps} contractedBps={l.contractedDownloadBps} label={`Download de ${l.name}`} /> },
+  { key: "ul", head: "↑ upload", cell: (l) => <UtilCell bps={l.uploadBps} contractedBps={l.contractedUploadBps} label={`Upload de ${l.name}`} /> },
+];
 
-function UtilBar({ bps, contractedBps }: { bps: number | null; contractedBps: number | null }) {
-  if (!bps || !contractedBps) return <span className="font-mono text-xs text-muted-foreground">{formatBps(bps)}</span>;
-  const pct = Math.min((bps / contractedBps) * 100, 100);
-  const color = pct > 90 ? "bg-destructive" : pct > 70 ? "bg-warning" : "bg-success";
-  return (
-    <div className="flex items-center gap-2 min-w-28">
-      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="font-mono text-xs w-16 text-right">{formatBps(bps)}</span>
-    </div>
-  );
-}
+const DHCP_COLS: Col<RouterOSClient>[] = [
+  { key: "host", head: "Hostname", className: "name", cell: (c) => c.hostname ?? <span className="dim">sem nome</span> },
+  { key: "ip", head: "IP", className: "dim", cell: (c) => c.ip || "—" },
+  { key: "mac", head: "MAC", className: "dim", cell: (c) => c.mac },
+  { key: "srv", head: "Servidor", className: "dim", hideSm: true, cell: (c) => c.server ?? "—" },
+];
 
-// ── Device Card ────────────────────────────────────────────────────────────────
+// ── Painel de um Mikrotik ─────────────────────────────────────────────────────
 
-function DeviceCard({
-  device,
-  links,
-}: {
-  device: MikrotikDevice;
-  links: AssociatedLink[];
-}) {
-  const [linksOpen,   setLinksOpen]   = useState(false);
+function DevicePanel({ device, links }: { device: MikrotikDevice; links: AssociatedLink[] }) {
+  const [linksOpen, setLinksOpen] = useState(false);
   const [clientsOpen, setClientsOpen] = useState(false);
 
-  const status     = device.currentStatus;
-  const isOnline   = status?.isOnline ?? false;
-  const hasMetrics = status?.cpuLoad != null || status?.memoryUsed != null;
+  const status      = device.currentStatus;
+  const isOnline    = status?.isOnline ?? false;
+  const hasMetrics  = status?.cpuLoad != null || status?.memoryUsed != null;
   const hasCpuAlert = (status?.cpuLoad ?? 0) > 80;
   const hasMemAlert = (status?.memoryUsed ?? 0) > 85;
-  // Online via RouterOS but /system/resource didn't return metrics (uptime/CPU/mem)
+  // Online via RouterOS, mas /system/resource não retornou métricas (uptime/CPU/mem)
   const resourceError = isOnline && !hasMetrics && status?.uptime == null
     ? status?.routerosData?.resourceError ?? null
     : null;
+  const clients = status?.routerosData?.clients ?? null;
 
   return (
-    <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 px-5 py-4 border-b bg-muted/20">
-        <div className="flex items-start gap-3 min-w-0">
-          <Router className="h-5 w-5 text-violet-500 mt-0.5 shrink-0" />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-base leading-tight">{device.name}</span>
-              <StatusBadge isOnline={isOnline} />
-            </div>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <span className="font-mono text-xs text-muted-foreground">{device.ip}</span>
-              {device.location && (
-                <span className="text-xs text-muted-foreground">· {device.location}</span>
-              )}
-              {device.routerosEnabled && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">RouterOS API</Badge>
-              )}
-            </div>
-          </div>
+    <Panel
+      title={device.name}
+      sub={`${device.ip}${device.location ? ` · ${device.location}` : ""}${device.routerosEnabled ? " · RouterOS API" : ""}`}
+      color={isOnline ? "ok" : "crit"}
+      hot={!isOnline}
+      right={<Link href={`/devices/${device.id}`} style={{ color: "inherit" }}>detalhes ›</Link>}
+    >
+      <div className="d-stack" style={{ gap: 10, paddingBottom: 0 }}>
+        <div className="d-line">
+          <StatusBadge isOnline={isOnline} />
+          {status?.checkedAt && <span className="dim">verificado {timeAgo(status.checkedAt)}</span>}
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {status?.checkedAt && (
-            <span className="text-[10px] text-muted-foreground">{timeAgo(status.checkedAt)}</span>
-          )}
-          <Link
-            href={`/devices/${device.id}`}
-            className={buttonVariants({ variant: "ghost", size: "sm" }) + " gap-1"}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Detalhes
-          </Link>
-        </div>
-      </div>
 
-      {/* CPU / mem alert */}
-      {(hasCpuAlert || hasMemAlert) && (
-        <div className="flex items-start gap-2 px-5 py-2.5 bg-destructive/5 border-b border-destructive/20 text-xs">
-          <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
-          <span className="text-destructive">
+        {(hasCpuAlert || hasMemAlert) && (
+          <NetAlert tone="crit">
             {[
               hasCpuAlert && `CPU em ${status!.cpuLoad!.toFixed(0)}% — acima do limite`,
               hasMemAlert && `Memória em ${status!.memoryUsed!.toFixed(0)}% — risco de instabilidade`,
             ].filter(Boolean).join(" · ")}
-          </span>
-        </div>
-      )}
+          </NetAlert>
+        )}
 
-      {/* Metrics row */}
-      <div className="px-5 py-3 flex flex-wrap gap-x-6 gap-y-2 border-b">
-        {status?.pingMs != null && (
-          <MetricPill icon={Network}     value={formatResponseTime(status.pingMs)} color="text-[var(--chart-1)]" />
-        )}
-        {status?.uptime != null && (
-          <MetricPill icon={Clock}       value={formatUptime(status.uptime)}       color="text-success" />
-        )}
-        {status?.httpOk != null && (
-          <MetricPill
-            icon={Globe}
-            value={status.httpOk ? "HTTP OK" : "HTTP Falha"}
-            color={status.httpOk ? "text-success" : "text-destructive"}
-          />
-        )}
-        {!status && (
-          <span className="text-xs text-muted-foreground">Aguardando primeira coleta...</span>
-        )}
-      </div>
-
-      {/* CPU / Memory bars */}
-      {hasMetrics && (
-        <div className="px-5 py-3 grid grid-cols-1 sm:grid-cols-2 gap-3 border-b">
-          {status?.cpuLoad != null && (
-            <div>
-              <div className="flex items-center gap-1 mb-1">
-                <Cpu className="h-3 w-3 text-warning" />
-                <span className="text-xs font-semibold text-muted-foreground">CPU</span>
-              </div>
-              <CpuBar value={status.cpuLoad} />
-            </div>
-          )}
-          {status?.memoryUsed != null && (
-            <div>
-              <div className="flex items-center gap-1 mb-1">
-                <MemoryStick className="h-3 w-3 text-chart-4" />
-                <span className="text-xs font-semibold text-muted-foreground">Memória</span>
-              </div>
-              <CpuBar value={status.memoryUsed} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* System metrics unavailable (online, but /system/resource didn't return) */}
-      {resourceError && (
-        <div className="flex items-start gap-2 px-5 py-2.5 bg-warning/5 border-b border-warning/20 text-xs">
-          <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
-          <span className="text-warning">
+        {resourceError && (
+          <NetAlert tone="warn">
             Métricas do sistema (uptime/CPU/memória) indisponíveis — provável permissão da API no RouterOS.
-            Garanta que o usuário da API tenha a policy <span className="font-mono">read</span>.
-          </span>
-        </div>
-      )}
+            Garanta que o usuário da API tenha a policy <code>read</code>.
+          </NetAlert>
+        )}
 
-      {/* Associated links */}
-      {links.length > 0 && (
-        <div>
-          <button
-            onClick={() => setLinksOpen(v => !v)}
-            className="w-full flex items-center justify-between px-5 py-2.5 text-xs font-semibold hover:bg-muted/30 transition-colors"
-          >
-            <span className="flex items-center gap-1.5">
-              <Network className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-              Links de Internet
-              <Badge variant="secondary" className="text-[10px]">{links.length}</Badge>
-            </span>
-            {linksOpen ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
-          </button>
-          {linksOpen && (
-            <div className="overflow-x-auto border-t">
-              <table className="w-full text-xs" aria-label="Links de internet">
-                <thead className="bg-muted/40">
-                  <tr>
-                    <th className="text-left px-5 py-2 font-medium text-muted-foreground">Link</th>
-                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Interface</th>
-                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-2 font-medium text-muted-foreground">
-                      <span className="flex items-center gap-1"><ArrowDownToLine className="h-3 w-3" />Download</span>
-                    </th>
-                    <th className="px-4 py-2 font-medium text-muted-foreground">
-                      <span className="flex items-center gap-1"><ArrowUpFromLine className="h-3 w-3" />Upload</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {links.map(link => (
-                    <tr key={link.id} className="hover:bg-muted/10">
-                      <td className="px-5 py-2">
-                        <p className="font-semibold">{link.name}</p>
-                        {link.location && (
-                          <p className="text-[10px] text-muted-foreground">{link.location}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-muted-foreground">
-                        {link.mikrotikInterface ?? "—"}
-                      </td>
-                      <td className="px-4 py-2">
-                        <span className={`inline-flex items-center gap-1 font-semibold ${link.isOnline ? "text-success" : "text-destructive"}`}>
-                          {link.isOnline ? "Online" : "Offline"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2">
-                        <UtilBar bps={link.downloadBps} contractedBps={link.contractedDownloadBps} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <UtilBar bps={link.uploadBps} contractedBps={link.contractedUploadBps} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* DHCP clients */}
-      {device.routerosEnabled && (() => {
-        const clients = status?.routerosData?.clients ?? null;
-        return (
-          <div className={links.length > 0 ? "border-t" : ""}>
-            <button
-              onClick={() => setClientsOpen(v => !v)}
-              className="w-full flex items-center justify-between px-5 py-2.5 text-xs font-semibold hover:bg-muted/30 transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                Clientes DHCP
-                {clients !== null && (
-                  <Badge variant="secondary" className="text-[10px]">{clients.length}</Badge>
-                )}
-              </span>
-              {clientsOpen ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
-            </button>
-            {clientsOpen && (
-              <div className="border-t">
-                {clients === null ? (
-                  <p className="px-5 py-3 text-xs text-muted-foreground">Aguardando primeira coleta...</p>
-                ) : clients.length === 0 ? (
-                  <p className="px-5 py-3 text-xs text-muted-foreground">Nenhum cliente DHCP ativo.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs" aria-label="Clientes DHCP ativos">
-                      <thead className="bg-muted/40">
-                        <tr>
-                          <th className="text-left px-5 py-2 font-medium text-muted-foreground">Hostname</th>
-                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">IP</th>
-                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">MAC</th>
-                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Servidor</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {clients.map(client => (
-                          <tr key={client.mac} className="hover:bg-muted/10">
-                            <td className="px-5 py-2 font-semibold">
-                              {client.hostname ?? <span className="text-muted-foreground italic">sem nome</span>}
-                            </td>
-                            <td className="px-4 py-2 font-mono text-muted-foreground">{client.ip || "—"}</td>
-                            <td className="px-4 py-2 font-mono text-[10px] text-muted-foreground">{client.mac}</td>
-                            <td className="px-4 py-2 text-muted-foreground">{client.server ?? "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+        {status ? (
+          <div className="d-tiles">
+            {status.pingMs != null && <div className="d-tile"><div className="k">ping</div><div className="v" style={{ fontSize: 14 }}>{formatResponseTime(status.pingMs)}</div></div>}
+            {status.uptime != null && <div className="d-tile"><div className="k">uptime</div><div className="v" style={{ fontSize: 14 }}>{formatUptime(status.uptime)}</div></div>}
+            {status.httpOk != null && (
+              <div className="d-tile">
+                <div className="k">http</div>
+                <div className={`v ${status.httpOk ? "ok" : "crit"}`} style={{ fontSize: 14 }}>{status.httpOk ? "● OK" : "✖ Falha"}</div>
               </div>
             )}
+            {status.cpuLoad != null && <div className="d-tile"><div className="k">cpu</div><div className="v" style={{ fontSize: 13 }}><UsageBar value={status.cpuLoad} label={`CPU de ${device.name}`} width="6ch" /></div></div>}
+            {status.memoryUsed != null && <div className="d-tile"><div className="k">memória</div><div className="v" style={{ fontSize: 13 }}><UsageBar value={status.memoryUsed} label={`Memória de ${device.name}`} width="6ch" /></div></div>}
           </div>
-        );
-      })()}
-    </div>
+        ) : (
+          <div className="dim">◌ aguardando primeira coleta…</div>
+        )}
+
+        {links.length > 0 && (
+          <PanelToggle open={linksOpen} onToggle={() => setLinksOpen((v) => !v)} label="Links de Internet" count={links.length}>
+            <DevTable label="Links de internet" cols={LINK_COLS} rows={links} rowKey={(l) => l.id} />
+          </PanelToggle>
+        )}
+
+        {device.routerosEnabled && (
+          <PanelToggle open={clientsOpen} onToggle={() => setClientsOpen((v) => !v)} label="Clientes DHCP" count={clients?.length}>
+            {clients === null ? (
+              <div className="dim">◌ aguardando primeira coleta…</div>
+            ) : clients.length === 0 ? (
+              <div className="dim">░ nenhum cliente DHCP ativo.</div>
+            ) : (
+              <DevTable label="Clientes DHCP ativos" cols={DHCP_COLS} rows={clients} rowKey={(c) => c.mac} />
+            )}
+          </PanelToggle>
+        )}
+      </div>
+    </Panel>
   );
 }
 
-// ── KPI Card ───────────────────────────────────────────────────────────────────
-
-function KpiCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <div className="rounded-xl border bg-card px-5 py-4 space-y-1">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className={`text-2xl font-extrabold font-mono ${color ?? ""}`}>{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
-
-// ── Page ───────────────────────────────────────────────────────────────────────
+// ── Página ─────────────────────────────────────────────────────────────────────
 
 export default function MikrotikPage() {
-  const [devices,    setDevices]    = useState<MikrotikDevice[]>([]);
-  const [links,      setLinks]      = useState<(AssociatedLink & { mikrotikDeviceId: string | null })[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [isChecking, setIsChecking] = useState(false);
+  const [links, setLinks] = useState<LinkWithDevice[]>([]);
 
-  const load = useCallback(async () => {
-    const [devRes, linkRes] = await Promise.all([
-      fetch("/api/devices?type=MIKROTIK"),
-      fetch("/api/links"),
-    ]);
-    if (devRes.ok)  setDevices(await devRes.json());
-    if (linkRes.ok) setLinks(await linkRes.json());
-    setLoading(false);
+  const loadLinks = useCallback(async () => {
+    const res = await fetch("/api/links");
+    if (res.ok) setLinks(await res.json());
   }, []);
 
-  async function handleCheckAll() {
-    setIsChecking(true);
-    await fetch("/api/devices/check?type=MIKROTIK", { method: "POST" }).catch(() => {});
-    await load();
-    setIsChecking(false);
-  }
+  const { devices, loading, error, lastUpdated, isChecking, checkAll, reload } = useDeviceList<MikrotikDevice>("MIKROTIK", loadLinks);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const id = setInterval(load, 30_000);
-    return () => clearInterval(id);
-  }, [load]);
-
-  const online   = devices.filter(d => d.currentStatus?.isOnline).length;
+  const online   = devices.filter((d) => d.currentStatus?.isOnline).length;
   const offline  = devices.length - online;
-  const withCpu  = devices.filter(d => d.currentStatus?.cpuLoad != null);
-  const withMem  = devices.filter(d => d.currentStatus?.memoryUsed != null);
-  const withPing = devices.filter(d => d.currentStatus?.pingMs != null);
+  const withCpu  = devices.filter((d) => d.currentStatus?.cpuLoad != null);
+  const withMem  = devices.filter((d) => d.currentStatus?.memoryUsed != null);
+  const withPing = devices.filter((d) => d.currentStatus?.pingMs != null);
 
-  const avgCpu  = withCpu.length  ? withCpu.reduce((s, d)  => s + (d.currentStatus!.cpuLoad!),    0) / withCpu.length  : null;
-  const avgMem  = withMem.length  ? withMem.reduce((s, d)  => s + (d.currentStatus!.memoryUsed!), 0) / withMem.length  : null;
-  const avgPing = withPing.length ? withPing.reduce((s, d) => s + (d.currentStatus!.pingMs!),     0) / withPing.length : null;
+  const avgCpu  = withCpu.length  ? withCpu.reduce((s, d)  => s + d.currentStatus!.cpuLoad!,    0) / withCpu.length  : null;
+  const avgMem  = withMem.length  ? withMem.reduce((s, d)  => s + d.currentStatus!.memoryUsed!, 0) / withMem.length  : null;
+  const avgPing = withPing.length ? withPing.reduce((s, d) => s + d.currentStatus!.pingMs!,     0) / withPing.length : null;
 
   const sortedDevices = [...devices].sort((a, b) => {
     const aOn = a.currentStatus?.isOnline ?? false;
     const bOn = b.currentStatus?.isOnline ?? false;
-    if (aOn !== bOn) return aOn ? 1 : -1;
+    if (aOn !== bOn) return aOn ? 1 : -1; // offline primeiro
     return a.name.localeCompare(b.name);
   });
 
-  const linksForDevice = (deviceId: string) =>
-    links.filter(l => l.mikrotikDeviceId === deviceId);
-
   return (
-    <>
-      <Topbar
-        title="Painel Mikrotik"
-        subtitle={loading ? "Carregando..." : `${devices.length} dispositivo${devices.length !== 1 ? "s" : ""} registrado${devices.length !== 1 ? "s" : ""}`}
-      >
-        <button
-          onClick={handleCheckAll}
-          disabled={isChecking}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border text-xs font-semibold bg-background hover:bg-muted transition-colors disabled:opacity-60"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${isChecking ? "animate-spin" : ""}`} />
-          {isChecking ? "Verificando..." : "Atualizar todos"}
+    <DevPage
+      title="Painel Mikrotik"
+      sub={loading ? "carregando…" : `${devices.length} dispositivo${devices.length !== 1 ? "s" : ""} registrado${devices.length !== 1 ? "s" : ""}`}
+      live={!loading && !error}
+      lastUpdated={lastUpdated}
+      actions={
+        <button type="button" className="btn" onClick={checkAll} disabled={isChecking}>
+          {isChecking ? "verificando…" : "atualizar todos"}
         </button>
-      </Topbar>
+      }
+    >
+      <div className="d-stack">
+        <KpiStrip
+          items={[
+            { label: "Online", value: `${online}/${devices.length}`, sub: "dispositivos ativos", tone: offline > 0 ? "warn" : "ok" },
+            { label: "Ping médio", value: avgPing != null ? `${avgPing.toFixed(0)}ms` : "—", sub: "dispositivos com ping", tone: avgPing == null ? "dim" : avgPing < 50 ? "ok" : avgPing < 150 ? "warn" : "crit" },
+            { label: "CPU média", value: avgCpu != null ? `${avgCpu.toFixed(0)}%` : "—", sub: "via RouterOS API", tone: avgCpu == null ? "dim" : avgCpu > 70 ? "crit" : avgCpu > 40 ? "warn" : "ok" },
+            { label: "Mem média", value: avgMem != null ? `${avgMem.toFixed(0)}%` : "—", sub: "via RouterOS API", tone: avgMem == null ? "dim" : avgMem > 85 ? "crit" : avgMem > 60 ? "warn" : "ok" },
+          ]}
+        />
 
-      <div className="p-7 space-y-6">
-        {/* KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <KpiCard
-            label="Online"
-            value={`${online}/${devices.length}`}
-            sub="dispositivos ativos"
-            color={offline > 0 ? "text-warning" : "text-success"}
-          />
-          <KpiCard
-            label="Ping médio"
-            value={avgPing != null ? `${avgPing.toFixed(0)}ms` : "—"}
-            sub="dispositivos com ping"
-            color={avgPing == null ? undefined : avgPing < 50 ? "text-success" : avgPing < 150 ? "text-warning" : "text-destructive"}
-          />
-          <KpiCard
-            label="CPU média"
-            value={avgCpu != null ? `${avgCpu.toFixed(0)}%` : "—"}
-            sub="via RouterOS API"
-            color={avgCpu == null ? undefined : avgCpu > 70 ? "text-destructive" : avgCpu > 40 ? "text-warning" : "text-success"}
-          />
-          <KpiCard
-            label="Mem média"
-            value={avgMem != null ? `${avgMem.toFixed(0)}%` : "—"}
-            sub="via RouterOS API"
-            color={avgMem == null ? undefined : avgMem > 85 ? "text-destructive" : avgMem > 60 ? "text-warning" : "text-success"}
-          />
-        </div>
-
-        {/* Device cards */}
         {loading ? (
-          <div className="space-y-3">
-            {[1, 2].map(i => (
-              <div key={i} className="rounded-xl border bg-card h-24 animate-pulse" />
-            ))}
-          </div>
+          <Panel title="mikrotik" color="info"><DevLoading rows={5} label="Carregando Mikrotik" /></Panel>
+        ) : error && devices.length === 0 ? (
+          <DevError message="Não foi possível carregar os Mikrotik." onRetry={() => void reload()} />
         ) : devices.length === 0 ? (
-          <div className="rounded-xl border bg-card px-6 py-12 text-center">
-            <Router className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-            <p className="font-semibold text-muted-foreground">Nenhum Mikrotik registrado</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Adicione um dispositivo do tipo <strong>Mikrotik</strong> para visualizar o painel.
-            </p>
-          </div>
+          <Panel title="mikrotik" color="info">
+            <DevEmpty
+              title="Nenhum Mikrotik registrado"
+              hint="Adicione um dispositivo do tipo Mikrotik para visualizar o painel."
+              action={<Link href="/devices/new" className="btn pri">+ novo dispositivo</Link>}
+            />
+          </Panel>
         ) : (
-          <div className="space-y-4">
-            {sortedDevices.map(d => (
-              <DeviceCard
-                key={d.id}
-                device={d}
-                links={linksForDevice(d.id)}
-              />
-            ))}
-          </div>
+          sortedDevices.map((d) => (
+            <DevicePanel key={d.id} device={d} links={links.filter((l) => l.mikrotikDeviceId === d.id)} />
+          ))
         )}
       </div>
-    </>
+    </DevPage>
   );
 }

@@ -3,34 +3,9 @@
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Wifi, Server, AlertTriangle, Shield, KeyRound } from "lucide-react";
 import { LighthouseIcon } from "@/components/lighthouse-icon";
-
-const features = [
-  {
-    icon: Server,
-    label: "Dispositivos em tempo real",
-    desc: "Mikrotik, câmeras, DVRs, switches e roteadores",
-  },
-  {
-    icon: Wifi,
-    label: "Links de internet",
-    desc: "Utilização de banda, latência e histórico de uptime",
-  },
-  {
-    icon: AlertTriangle,
-    label: "Incidentes automáticos",
-    desc: "Detecção, timeline e histórico de eventos",
-  },
-  {
-    icon: Shield,
-    label: "Auditoria e segurança",
-    desc: "Logs de alterações, notas e relatórios",
-  },
-];
+import { Panel } from "@/components/tui/panel";
+import { Field } from "@/components/tui/states";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -42,11 +17,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   // SEC-009: track whether this user has TOTP enabled
   const [needsTotp, setNeedsTotp] = useState(false);
-  const [providers, setProviders] = useState<Record<string, any> | null>(null);
+  const [providers, setProviders] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/providers")
-      .then((r) => r.json() as Promise<Record<string, any>>)
+      .then((r) => r.json() as Promise<Record<string, unknown>>)
       .then(setProviders)
       .catch(() => setProviders({}));
   }, []);
@@ -96,169 +71,67 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex">
-      {/* ── Left panel — branding ── */}
-      <div
-        className="hidden lg:flex lg:w-[55%] flex-col justify-between p-12 relative overflow-hidden"
-        style={{ background: "linear-gradient(145deg, #0c0d15 0%, #13152a 60%, #0c0d15 100%)" }}
-      >
-        {/* Glow accents */}
-        <div
-          className="absolute -top-20 right-0 w-130 h-130 rounded-full pointer-events-none"
-          style={{ background: "radial-gradient(circle, rgba(109,92,246,.18) 0%, transparent 65%)" }}
-        />
-        <div
-          className="absolute bottom-0 -left-20 w-90 h-90 rounded-full pointer-events-none"
-          style={{ background: "radial-gradient(circle, rgba(91,72,232,.12) 0%, transparent 65%)" }}
-        />
-
-        {/* Top logo */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div
-            className="flex items-center justify-center w-11 h-11 rounded-[14px] text-white shrink-0"
-            style={{
-              background: "linear-gradient(145deg, #6d5cf6 0%, #5b48e8 100%)",
-              boxShadow: "0 8px 24px rgba(109,92,246,.45), inset 0 1px 0 rgba(255,255,255,.2)",
-            }}
-          >
-            <LighthouseIcon size={22} />
-          </div>
+    <main className="tui-auth">
+      <div className="tui-auth-box tui">
+        <div className="tui-side-brand" style={{ justifyContent: "center", paddingBottom: 18 }}>
+          <LighthouseIcon size={28} />
           <div>
-            <div className="text-white font-extrabold text-[17px] tracking-tight leading-none">
-              WatchIT Tower
-            </div>
-            <div className="text-white/40 text-xs font-semibold mt-0.5">Monitoramento de TI</div>
+            <b style={{ fontSize: 15 }}>WatchIT Tower</b>
+            <small>monitoramento de TI · acesso restrito</small>
           </div>
         </div>
 
-        {/* Hero area */}
-        <div className="relative z-10 flex-1 flex flex-col justify-center py-10">
-          <div className="mb-10 relative w-fit">
-            <div
-              className="absolute inset-0 rounded-full blur-3xl scale-150 opacity-25 pointer-events-none"
-              style={{ background: "radial-gradient(circle, #6d5cf6, transparent)" }}
-            />
-            <LighthouseIcon size={96} className="relative text-white/75 drop-shadow-2xl" />
-          </div>
-
-          <h1 className="text-white text-[2rem] font-extrabold tracking-tight leading-[1.2] mb-4">
-            Visibilidade total<br />da sua infraestrutura
-          </h1>
-          <p className="text-white/45 text-[15px] leading-relaxed mb-10 max-w-85">
-            Monitore dispositivos, links de internet e incidentes em tempo real — tudo centralizado em um só painel.
+        <Panel title={needsTotp ? "verificação em duas etapas" : "entrar"} color="accent2">
+          <p className="tui-hint" style={{ marginBottom: 12 }}>
+            {needsTotp ? "Digite o código do seu app autenticador." : "Credenciais fornecidas pelo administrador."}
           </p>
-
-          <div className="space-y-4 max-w-85">
-            {features.map(({ icon: Icon, label, desc }) => (
-              <div key={label} className="flex items-center gap-3.5">
-                <div
-                  className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0"
-                  style={{ background: "rgba(109,92,246,.2)", border: "1px solid rgba(109,92,246,.25)" }}
-                >
-                  <Icon className="h-4 w-4" style={{ color: "#a597fa" }} />
-                </div>
-                <div>
-                  <div className="text-white/85 text-[13.5px] font-semibold leading-tight">{label}</div>
-                  <div className="text-white/35 text-xs leading-snug mt-0.5">{desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="relative z-10 text-white/20 text-[11px] font-semibold tracking-wide uppercase">
-          Uso exclusivo interno
-        </div>
-      </div>
-
-      {/* ── Right panel — login form ── */}
-      <div className="flex-1 flex items-center justify-center bg-background px-8 py-12">
-        <div className="w-full max-w-90">
-
-          {/* Mobile-only logo */}
-          <div className="flex items-center gap-2.5 mb-8 lg:hidden">
-            <div
-              className="flex items-center justify-center w-10 h-10 rounded-[12px] text-white shrink-0"
-              style={{
-                background: "linear-gradient(145deg, #6d5cf6 0%, #5b48e8 100%)",
-                boxShadow: "0 4px 12px rgba(109,92,246,.35)",
-              }}
-            >
-              <LighthouseIcon size={20} />
-            </div>
-            <div>
-              <div className="font-extrabold text-[15px] tracking-tight leading-none">WatchIT Tower</div>
-              <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">Monitoramento de TI</div>
-            </div>
-          </div>
-
-          <div className="mb-8">
-            <h2 className="text-[1.6rem] font-extrabold tracking-tight leading-tight">
-              {needsTotp ? "Verificação em duas etapas" : "Bem-vindo de volta"}
-            </h2>
-            <p className="text-muted-foreground text-sm mt-1.5">
-              {needsTotp
-                ? "Digite o código do seu app autenticador"
-                : "Credenciais fornecidas pelo administrador"}
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="tui-form">
             {!needsTotp && (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="username" className="text-sm font-semibold">
-                    Usuário
-                  </Label>
-                  <Input
+                <Field id="username" label="Usuário">
+                  <input
                     id="username"
+                    className="tui-input"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Seu nome de usuário"
+                    placeholder="seu usuário"
                     required
                     autoFocus
-                    className="h-11"
+                    autoComplete="username"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-semibold">
-                    Senha
-                  </Label>
-                  <div className="relative">
-                    <Input
+                </Field>
+                <Field id="password" label="Senha">
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <input
                       id="password"
+                      className="tui-input"
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="h-11 pr-11"
+                      autoComplete="current-password"
                     />
                     <button
                       type="button"
-                      tabIndex={-1}
+                      className="tui-btn"
+                      aria-pressed={showPassword}
+                      aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                     >
-                      {showPassword
-                        ? <EyeOff className="h-4 w-4" />
-                        : <Eye className="h-4 w-4" />}
+                      {showPassword ? "ocultar" : "ver"}
                     </button>
                   </div>
-                </div>
+                </Field>
               </>
             )}
 
             {/* SEC-009: TOTP step */}
             {needsTotp && (
-              <div className="space-y-2">
-                <Label htmlFor="totp" className="text-sm font-semibold flex items-center gap-1.5">
-                  <KeyRound className="h-3.5 w-3.5" />
-                  Código 2FA
-                </Label>
-                <Input
+              <Field id="totp" label="Código 2FA">
+                <input
                   id="totp"
+                  className="tui-input"
+                  style={{ textAlign: "center", letterSpacing: "0.3em", fontSize: 18 }}
                   value={totp}
                   onChange={(e) => setTotp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   placeholder="000000"
@@ -267,68 +140,39 @@ export default function LoginPage() {
                   maxLength={6}
                   inputMode="numeric"
                   autoComplete="one-time-code"
-                  className="h-11 font-mono text-center tracking-[0.3em] text-lg"
                 />
                 <button
                   type="button"
+                  className="tui-btn tui-btn-sm"
+                  style={{ alignSelf: "flex-start" }}
                   onClick={() => { setNeedsTotp(false); setTotp(""); setError(""); }}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
                 >
-                  Voltar ao login
+                  ← voltar ao login
                 </button>
-              </div>
+              </Field>
             )}
 
             {error && (
-              <div className="flex items-center gap-2.5 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-                <p className="text-sm text-destructive font-semibold">{error}</p>
+              <div className="tui-error" role="alert">
+                <span>{error}</span>
               </div>
             )}
 
-            <Button
-              type="submit"
-              className="w-full h-11 font-bold text-[15px] mt-1 border-0"
-              disabled={loading}
-              style={
-                loading
-                  ? undefined
-                  : {
-                      background: "linear-gradient(145deg, #6d5cf6 0%, #5b48e8 100%)",
-                      boxShadow: "0 4px 14px rgba(109,92,246,.35)",
-                    }
-              }
-            >
+            <button type="submit" className="tui-btn tui-btn-primary" style={{ minHeight: 34 }} disabled={loading}>
               {loading ? "Verificando..." : needsTotp ? "Verificar código" : "Entrar"}
-            </Button>
+            </button>
           </form>
 
-          {providers?.zoho && !needsTotp && (
-            <>
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-border" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground/50 font-semibold">Ou</span>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full h-11 font-bold text-[15px]"
-                onClick={() => signIn("zoho", { callbackUrl: "/" })}
-              >
+          {Boolean(providers?.zoho) && !needsTotp && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+              <button type="button" className="tui-btn" style={{ width: "100%", minHeight: 32 }} onClick={() => signIn("zoho", { callbackUrl: "/" })}>
                 Entrar com Zoho
-              </Button>
-            </>
+              </button>
+            </div>
           )}
-
-          <p className="mt-10 text-center text-[11px] text-muted-foreground/40 font-semibold tracking-wide uppercase">
-            WatchIT Tower · Acesso restrito
-          </p>
-        </div>
+        </Panel>
+        <p className="tui-hint" style={{ textAlign: "center", marginTop: 16 }}>uso exclusivo interno</p>
       </div>
-    </div>
+    </main>
   );
 }

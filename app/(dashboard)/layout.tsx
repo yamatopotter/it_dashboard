@@ -31,9 +31,12 @@ export default async function DashboardLayout({
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background">
+      <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-[70] focus:bg-background focus:border focus:px-2 focus:py-1">
+        Pular para o conteúdo
+      </a>
       <Sidebar userName={session.user?.name ?? ""} userRole={userRole} initialCounts={initialCounts} modules={modules} />
-      <main className="flex-1 min-w-0 overflow-y-auto">
+      <main id="conteudo" className="flex-1 min-w-0 overflow-y-auto">
         {children}
       </main>
     </div>

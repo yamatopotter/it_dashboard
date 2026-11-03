@@ -48,7 +48,7 @@ export function CliqCard() {
     } catch { /* mantém valores padrão */ }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   async function save() {
     setSaving(true);

@@ -5,21 +5,14 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Panel } from "@/components/tui/panel";
+import { LnkShell } from "@/components/tui/lnk-shell";
+import { LnkField } from "@/components/tui/lnk-parts";
+import type { HelpRow } from "@/components/tui/help-overlay";
+import type { KeyHint } from "@/components/tui/key-hints";
+import { useHotkeys } from "@/hooks/use-hotkeys";
 import { toast } from "sonner";
 import type { Phone } from "@prisma/client";
-import { phoneCreateSchema, phoneUpdateSchema } from "@/lib/schemas/phone";
 
 const schema = z.object({
   phoneNumber: z.string().min(1, "Número de telefone é obrigatório"),
@@ -37,6 +30,13 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+const HELP: HelpRow[] = [
+  ["tab", "próximo campo"],
+  ["⏎", "salvar o formulário"],
+  ["esc", "cancelar e voltar (só se nada foi alterado)"],
+];
+
+
 interface PhoneFormProps {
   phone?: Phone;
 }
@@ -48,9 +48,7 @@ export function PhoneForm({ phone }: PhoneFormProps) {
   const {
     register,
     handleSubmit,
-    watch,
-    setValue,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -111,98 +109,98 @@ export function PhoneForm({ phone }: PhoneFormProps) {
     }
   };
 
+  const [help, setHelp] = useState(false);
+  useHotkeys({
+    "?": () => setHelp((h) => !h),
+    Escape: () => {
+      if (help) setHelp(false);
+      else if (!isDirty) router.back();
+    },
+  });
+
+  const hints: KeyHint[] = [
+    { keys: ["tab"], label: "próximo campo" },
+    { keys: ["⏎"], label: "salvar" },
+    { keys: ["esc"], label: "cancelar (sem alterações)" },
+    { keys: ["?"], label: "ajuda" },
+  ];
+
+  const err = (k: keyof FormData) => errors[k]?.message as string | undefined;
+  const inv = (k: keyof FormData) => ({ "aria-invalid": !!errors[k], "aria-describedby": errors[k] ? `${k}-e` : undefined });
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl mx-auto">
-      <Card>
-        <CardHeader>
-          <CardTitle>{phone ? "Editar Celular" : "Novo Celular"}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="phoneNumber">Número de Telefone *</Label>
-              <Input
-                id="phoneNumber"
-                placeholder="(11) 99999-9999"
-                {...register("phoneNumber")}
-              />
-              {errors.phoneNumber && <p className="text-red-500 text-sm mt-1">{errors.phoneNumber.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="owner">Proprietário *</Label>
-              <Input id="owner" {...register("owner")} />
-              {errors.owner && <p className="text-red-500 text-sm mt-1">{errors.owner.message}</p>}
-            </div>
+    <LnkShell
+      title={phone ? "EDITAR CELULAR" : "NOVO CELULAR"}
+      sub={phone ? phone.phoneNumber : "adicione um dispositivo ao inventário"}
+      back={{ href: "/phones", label: "celulares" }}
+      hints={hints}
+      help={HELP}
+      helpOpen={help}
+      onHelpClose={() => setHelp(false)}
+    >
+      <form onSubmit={handleSubmit(onSubmit)} noValidate aria-label={phone ? "Editar celular" : "Novo celular"} style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
+        <Panel title="linha" sub="* obrigatório" color="accent" focus>
+          <div className="form">
+            <LnkField id="phoneNumber" label="Número de telefone *" error={err("phoneNumber")}>
+              <input id="phoneNumber" placeholder="(11) 99999-9999" {...inv("phoneNumber")} {...register("phoneNumber")} />
+            </LnkField>
+            <LnkField id="owner" label="Proprietário *" error={err("owner")}>
+              <input id="owner" {...inv("owner")} {...register("owner")} />
+            </LnkField>
+            <LnkField id="department" label="Departamento">
+              <input id="department" {...register("department")} />
+            </LnkField>
+            <LnkField id="carrier" label="Operadora">
+              <input id="carrier" {...register("carrier")} />
+            </LnkField>
+            <LnkField id="status" label="Estado">
+              <select id="status" {...register("status")}>
+                <option value="ACTIVE">Ativo</option>
+                <option value="SUSPENDED">Suspenso</option>
+                <option value="CANCELED">Cancelado</option>
+              </select>
+            </LnkField>
           </div>
+        </Panel>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="department">Departamento</Label>
-              <Input id="department" {...register("department")} />
-            </div>
-            <div>
-              <Label htmlFor="carrier">Operadora</Label>
-              <Input id="carrier" {...register("carrier")} />
-            </div>
+        <Panel title="aparelho" color="info">
+          <div className="form">
+            <LnkField id="model" label="Modelo">
+              <input id="model" {...register("model")} />
+            </LnkField>
+            <LnkField id="imei" label="IMEI">
+              <input id="imei" {...register("imei")} />
+            </LnkField>
           </div>
+        </Panel>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="model">Modelo</Label>
-              <Input id="model" {...register("model")} />
-            </div>
-            <div>
-              <Label htmlFor="imei">IMEI</Label>
-              <Input id="imei" {...register("imei")} />
-            </div>
+        <Panel title="contrato" color="info">
+          <div className="form">
+            <LnkField id="invoiceAmount" label="Valor da fatura (R$)">
+              <input id="invoiceAmount" type="number" step="0.01" {...register("invoiceAmount")} />
+            </LnkField>
+            <span />
+            <LnkField id="contractStartDate" label="Data de contrato">
+              <input id="contractStartDate" type="date" {...register("contractStartDate")} />
+            </LnkField>
+            <LnkField id="loyaltyEndDate" label="Fim da fidelidade">
+              <input id="loyaltyEndDate" type="date" {...register("loyaltyEndDate")} />
+            </LnkField>
+            <LnkField id="notes" label="Observações" full>
+              <textarea id="notes" rows={3} {...register("notes")} />
+            </LnkField>
           </div>
+        </Panel>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="status">Status</Label>
-              <Select {...register("status")} defaultValue={phone?.status ?? "ACTIVE"}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ACTIVE">Ativo</SelectItem>
-                  <SelectItem value="SUSPENDED">Suspenso</SelectItem>
-                  <SelectItem value="CANCELED">Cancelado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="invoiceAmount">Valor da Fatura (R$)</Label>
-              <Input id="invoiceAmount" type="number" step="0.01" {...register("invoiceAmount")} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="contractStartDate">Data de Contrato</Label>
-              <Input id="contractStartDate" type="date" {...register("contractStartDate")} />
-            </div>
-            <div>
-              <Label htmlFor="loyaltyEndDate">Fim da Fidelidade</Label>
-              <Input id="loyaltyEndDate" type="date" {...register("loyaltyEndDate")} />
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="notes">Observações</Label>
-            <Textarea id="notes" rows={3} {...register("notes")} />
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => router.back()}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Salvando..." : "Salvar"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </form>
+        <div className="btns">
+          <button type="submit" className="btn primary" disabled={isSubmitting}>
+            {isSubmitting ? "salvando…" : "salvar"}
+          </button>
+          <button type="button" className="btn" onClick={() => router.back()}>
+            cancelar
+          </button>
+        </div>
+      </form>
+    </LnkShell>
   );
 }
