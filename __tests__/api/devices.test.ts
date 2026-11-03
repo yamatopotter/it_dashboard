@@ -19,6 +19,7 @@ jest.mock("@/lib/db", () => ({
     deviceStatus: {
       aggregate: jest.fn(),
     },
+    systemConfig: { findUnique: jest.fn() },
   },
 }));
 
@@ -71,6 +72,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   (mockDb.device.aggregate as jest.Mock).mockResolvedValue({ _count: 1, _max: { updatedAt: new Date("2024-01-01") } });
   (mockDb.deviceStatus.aggregate as jest.Mock).mockResolvedValue({ _count: 1, _max: { checkedAt: new Date("2024-01-01") } });
+  (mockDb.systemConfig.findUnique as jest.Mock).mockResolvedValue({ moduleNvr: true });
 });
 
 describe("GET /api/devices", () => {
@@ -136,6 +138,49 @@ describe("GET /api/devices", () => {
   });
 });
 
+describe("GET /api/devices — módulo NVR", () => {
+  it("módulo desligado: exclui DVR/CAMERA da lista", async () => {
+    mockAuth.mockResolvedValue(FAKE_SESSION as never);
+    (mockDb.systemConfig.findUnique as jest.Mock).mockResolvedValue({ moduleNvr: false });
+    (mockDb.device.findMany as jest.Mock).mockResolvedValue([FAKE_DEVICE]);
+
+    const res = await GET(new NextRequest("http://localhost/api/devices"));
+    expect(res.status).toBe(200);
+    expect(mockDb.device.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { type: { notIn: ["DVR", "CAMERA"] } } })
+    );
+  });
+
+  it("módulo desligado: ?type=DVR explícito continua funcionando", async () => {
+    mockAuth.mockResolvedValue(FAKE_SESSION as never);
+    (mockDb.systemConfig.findUnique as jest.Mock).mockResolvedValue({ moduleNvr: false });
+    (mockDb.device.findMany as jest.Mock).mockResolvedValue([]);
+
+    const res = await GET(new NextRequest("http://localhost/api/devices?type=DVR"));
+    expect(res.status).toBe(200);
+    expect(mockDb.device.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { type: "DVR" } })
+    );
+  });
+
+  it("módulo ligado: não filtra por tipo", async () => {
+    mockAuth.mockResolvedValue(FAKE_SESSION as never);
+    (mockDb.device.findMany as jest.Mock).mockResolvedValue([FAKE_DEVICE]);
+
+    await GET(new NextRequest("http://localhost/api/devices"));
+    expect(mockDb.device.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
+  });
+
+  it("ETag muda quando o estado do módulo muda", async () => {
+    mockAuth.mockResolvedValue(FAKE_SESSION as never);
+    (mockDb.device.findMany as jest.Mock).mockResolvedValue([FAKE_DEVICE]);
+    const on = await GET(new NextRequest("http://localhost/api/devices"));
+    (mockDb.systemConfig.findUnique as jest.Mock).mockResolvedValue({ moduleNvr: false });
+    const off = await GET(new NextRequest("http://localhost/api/devices"));
+    expect(on.headers.get("ETag")).not.toBe(off.headers.get("ETag"));
+  });
+});
+
 describe("POST /api/devices", () => {
   it("returns 401 when not authenticated", async () => {
     mockAuth.mockResolvedValue(null as never);
@@ -165,6 +210,20 @@ describe("POST /api/devices", () => {
     expect(mockWriteAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "CREATE", entity: "Device", entityId: "device-1" })
     );
+  });
+
+  it("aceita e persiste site; vazio vira null; valor inválido dá 400", async () => {
+    mockAuth.mockResolvedValue(FAKE_SESSION as never);
+    (mockDb.device.create as jest.Mock).mockResolvedValue({ ...FAKE_DEVICE, site: "BOT" });
+    const mk = (site: unknown) => new NextRequest("http://localhost/api/devices", {
+      method: "POST",
+      body: JSON.stringify({ name: "R", ip: "192.168.1.1", type: "MIKROTIK", site }),
+    });
+    expect((await POST(mk("BOT"))).status).toBe(201);
+    expect((mockDb.device.create as jest.Mock).mock.calls[0][0].data.site).toBe("BOT");
+    expect((await POST(mk(""))).status).toBe(201);
+    expect((mockDb.device.create as jest.Mock).mock.calls[1][0].data.site).toBeNull();
+    expect((await POST(mk("XXX"))).status).toBe(400);
   });
 
   it("returns 400 for missing required fields", async () => {

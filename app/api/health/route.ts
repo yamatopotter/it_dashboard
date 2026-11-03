@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/with-auth";
+import { notify } from "@/lib/notify";
 
 export interface HealthData {
   totalChecks: number;
@@ -12,26 +13,18 @@ export interface HealthData {
   workerStatus: "ok" | "stale" | "unknown";
 }
 
-// Fire a webhook at most once per hour when the worker is stale.
+// Notify (Zoho Cliq) at most once per hour when the worker is stale.
 // In-process state is acceptable for single-instance deployments.
 const STALE_ALERT_COOLDOWN_MS = 60 * 60_000;
 let lastStaleAlertAt = 0;
 
 async function maybeFireStaleAlert(workerLastSeen: string | null): Promise<void> {
-  const webhookUrl = process.env.WORKER_STALE_WEBHOOK_URL;
-  if (!webhookUrl) return;
   if (Date.now() - lastStaleAlertAt < STALE_ALERT_COOLDOWN_MS) return;
 
   lastStaleAlertAt = Date.now();
-  const body = JSON.stringify({
-    text: `⚠️ WatchIT Tower: worker parado ou inativo. Último heartbeat: ${workerLastSeen ?? "nunca"}.`,
-  });
-  // Fire-and-forget; errors are logged but don't affect the health response.
-  fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  }).catch((err) => console.error("[health] erro ao enviar alerta de worker stale:", err));
+  const minutes = workerLastSeen ? (Date.now() - new Date(workerLastSeen).getTime()) / 60_000 : 0;
+  // notify() ignora se o Zoho Cliq estiver desativado; nunca lança.
+  void notify({ kind: "WORKER_STALE", minutes });
 }
 
 export async function GET() {

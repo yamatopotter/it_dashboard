@@ -13,6 +13,8 @@ jest.mock("@/lib/db", () => ({
     $queryRaw: jest.fn(),
     link: { findMany: jest.fn() },
     linkEvent: { findMany: jest.fn() },
+    device: { findMany: jest.fn() },
+    systemConfig: { findUnique: jest.fn() },
   },
 }));
 
@@ -24,6 +26,8 @@ const mockDb = db as unknown as {
   $queryRaw: jest.Mock;
   link: { findMany: jest.Mock };
   linkEvent: { findMany: jest.Mock };
+  device: { findMany: jest.Mock };
+  systemConfig: { findUnique: jest.Mock };
 };
 
 const FAKE_SESSION = { user: { id: "user-1", name: "admin", role: "ADMIN" }, expires: "2099-01-01" };
@@ -41,6 +45,8 @@ function emptyDb() {
 beforeEach(() => {
   jest.clearAllMocks();
   resetOverviewCache();
+  (mockDb.systemConfig.findUnique as jest.Mock).mockResolvedValue({ moduleNvr: true });
+  (mockDb.device.findMany as jest.Mock).mockResolvedValue([]);
 });
 
 describe("GET /api/overview", () => {
@@ -48,6 +54,21 @@ describe("GET /api/overview", () => {
     mockAuth.mockResolvedValue(null as never);
     const res = await GET(new Request("http://localhost/api/overview"));
     expect(res.status).toBe(401);
+  });
+
+  it("módulo NVR desligado: remove sparklines de DVR/CAMERA", async () => {
+    mockAuth.mockResolvedValue(FAKE_SESSION as never);
+    emptyDb();
+    mockDb.systemConfig.findUnique.mockResolvedValue({ moduleNvr: false });
+    mockDb.device.findMany.mockResolvedValue([{ id: "cam-1" }]);
+    mockDb.$queryRaw.mockResolvedValue([
+      { deviceId: "cam-1", pingMs: 5, isOnline: true },
+      { deviceId: "mk-1", pingMs: 7, isOnline: true },
+    ]);
+
+    const data = await (await GET(new Request("http://localhost/api/overview"))).json();
+    expect(data.sparklines).toHaveProperty("mk-1");
+    expect(data.sparklines).not.toHaveProperty("cam-1");
   });
 
   it("returns sparklines and linkSegments structure when empty", async () => {

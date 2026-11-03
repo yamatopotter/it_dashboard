@@ -13,6 +13,8 @@
 // Set the secret BEFORE the module imports so verifyWebhookToken picks it up
 process.env.WEBHOOK_SECRET = "integration-test-secret-32chars!!";
 
+jest.mock("@/lib/notify", () => ({ notify: jest.fn().mockResolvedValue({ sent: false }) }));
+
 jest.mock("@/lib/db", () => ({
   db: {
     link: {

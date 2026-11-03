@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/with-auth";
 import { buildDeviceReport } from "@/lib/report-builder";
 import type { DeviceReport } from "@/lib/report-builder";
+import { buildAvailabilityReport, DEFAULT_TARGET } from "@/lib/report-availability";
+import { monthRange, monthKeyOf } from "@/lib/sla";
+
+export type { AvailabilityReport, AvailabilityLinkRow, AvailabilityUnitRow, AvailabilityDeviceRow } from "@/lib/report-availability";
 
 export type { DeviceReport };
 export type { ReportSummary, ReportIncident, ReportPingPoint, ReportRouterosPoint, ReportInsight } from "@/lib/report-builder";
@@ -11,6 +15,21 @@ export async function GET(req: Request) {
   if (unauth) return unauth;
 
   const { searchParams } = new URL(req.url);
+
+  // Modo padrão: relatório mensal de disponibilidade (links + rede/Wi-Fi).
+  // O modo por dispositivo (legado, usado pelo ReportView) ativa quando `devices` é enviado.
+  if (!searchParams.has("devices")) {
+    const now = new Date();
+    const range = monthRange(searchParams.get("month") ?? monthKeyOf(now));
+    if (!range) return NextResponse.json({ error: "Mês inválido. Use o formato YYYY-MM." }, { status: 400 });
+    const targetParam = searchParams.get("target");
+    const target = targetParam == null ? DEFAULT_TARGET : Number(targetParam);
+    if (!Number.isFinite(target) || target <= 0 || target > 100) {
+      return NextResponse.json({ error: "Meta inválida. Use um valor entre 0 e 100." }, { status: 400 });
+    }
+    return NextResponse.json(await buildAvailabilityReport(range, target, now));
+  }
+
   const deviceIds = (searchParams.get("devices") ?? "")
     .split(",")
     .map(s => s.trim())

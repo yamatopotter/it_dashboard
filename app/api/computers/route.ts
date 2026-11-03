@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionRole } from "@/lib/with-auth";
+import { requireModule } from "@/lib/module-config";
 
 export type Computer = Awaited<ReturnType<typeof db.computer.findFirst>>;
 
@@ -16,6 +17,8 @@ export interface ComputerPaginatedResponse {
 export async function GET(req: NextRequest) {
   const role = await getSessionRole();
   if (!role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const off = await requireModule("computers");
+  if (off) return off;
 
   const { searchParams } = new URL(req.url);
   const rawPage = searchParams.get("page");

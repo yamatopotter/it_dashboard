@@ -12,6 +12,7 @@ import { sanitizeDevice } from "@/lib/device-utils";
 import { buildWifiSignalMap, resolveSignal } from "@/lib/wifi-signal-map";
 import { writeAudit } from "@/lib/audit";
 import { createHash } from "crypto";
+import { getModules } from "@/lib/module-config";
 
 const deviceTypeSchema = z.enum(["MIKROTIK", "DVR", "CAMERA", "OTHER", "UNIFI_AP", "OMADA_AP"]);
 
@@ -30,7 +31,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const where = rawType ? { type: rawType as "MIKROTIK" | "DVR" | "CAMERA" | "OTHER" } : undefined;
+  // Módulo NVR desligado: esconde DVR/CAMERA das listas (um ?type= explícito continua valendo
+  // para telas administrativas).
+  const nvrOn = (await getModules()).nvr;
+  const where = rawType
+    ? { type: rawType as "MIKROTIK" | "DVR" | "CAMERA" | "OTHER" }
+    : nvrOn
+      ? undefined
+      : { type: { notIn: ["DVR", "CAMERA"] as ("DVR" | "CAMERA")[] } };
   const paginate = rawPage !== null || rawLimit !== null;
   const limit = Math.min(Math.max(parseInt(rawLimit ?? "50", 10) || 50, 1), 200);
   const page  = Math.max(parseInt(rawPage  ?? "1",  10) || 1, 1);
@@ -51,10 +59,10 @@ export async function GET(req: NextRequest) {
   // freeze the dashboard on whatever snapshot was first loaded.
   if (!rawType) {
     const [devAgg, statusAgg] = await Promise.all([
-      db.device.aggregate({ _count: true, _max: { updatedAt: true } }),
+      db.device.aggregate({ where, _count: true, _max: { updatedAt: true } }),
       db.deviceStatus.aggregate({ _count: true, _max: { checkedAt: true } }),
     ]);
-    const fingerprint = `${devAgg._count}:${devAgg._max.updatedAt?.toISOString() ?? ""}:${statusAgg._count}:${statusAgg._max.checkedAt?.toISOString() ?? ""}`;
+    const fingerprint = `nvr${nvrOn ? 1 : 0}:${devAgg._count}:${devAgg._max.updatedAt?.toISOString() ?? ""}:${statusAgg._count}:${statusAgg._max.checkedAt?.toISOString() ?? ""}`;
     const etag = `"${createHash("md5").update(fingerprint).digest("hex")}"`;
     if (req.headers.get("if-none-match") === etag) {
       return new NextResponse(null, { status: 304, headers: { ETag: etag } });

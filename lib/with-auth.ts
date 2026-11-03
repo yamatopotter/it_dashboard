@@ -34,3 +34,8 @@ export async function getSessionRole(): Promise<Role | null> {
   if (!session) return null;
   return getRole(session);
 }
+
+export async function getSessionUsername(): Promise<string | null> {
+  const session = await getSession();
+  return (session?.user as { name?: string | null } | undefined)?.name ?? null;
+}

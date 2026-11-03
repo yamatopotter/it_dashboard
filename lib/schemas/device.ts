@@ -1,4 +1,12 @@
 import { z } from "zod";
+import { SITE_KEYS } from "@/lib/modules";
+
+/** Unidade: BAR|BOT|ITA; vazio/null = não definida (normalizado para null). */
+export const siteSchema = z
+  .union([z.enum(SITE_KEYS), z.literal("")])
+  .nullable()
+  .optional()
+  .transform((v) => (v === "" ? null : v));
 
 // SEC-030: valida que cada octeto é 0–255
 const ipSchema = z
@@ -36,6 +44,7 @@ export const deviceConfigSchema = z.object({
   ip: ipSchema,
   type: z.enum(["MIKROTIK", "DVR", "CAMERA", "OTHER", "UNIFI_AP", "OMADA_AP"]),
   location: z.string().max(200).optional(),
+  site: siteSchema,
   notes: z.string().max(1000).optional(),
   pingEnabled: z.boolean().default(true),
   httpEnabled: z.boolean().default(false),

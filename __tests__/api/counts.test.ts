@@ -9,6 +9,7 @@ jest.mock("@/lib/db", () => ({
   db: {
     device: { count: jest.fn() },
     link: { count: jest.fn() },
+    systemConfig: { findUnique: jest.fn().mockResolvedValue(null) },
   },
 }));
 

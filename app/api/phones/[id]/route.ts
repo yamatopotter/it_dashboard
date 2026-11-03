@@ -7,10 +7,13 @@ import { parseAndValidate } from "@/lib/parse-body";
 import { notFoundOnP2025 } from "@/lib/prisma-error";
 import { writeAudit } from "@/lib/audit";
 import { phoneUpdateSchema } from "@/lib/schemas/phone";
+import { requireModule } from "@/lib/module-config";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const unauth = await requireAuth();
   if (unauth) return unauth;
+  const off = await requireModule("telephony");
+  if (off) return off;
   const { id } = await params;
   const phone = await db.phone.findUnique({ where: { id } });
   if (!phone) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -20,6 +23,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const unauth = await requireRole("OPERADOR");
   if (unauth) return unauth;
+  const off = await requireModule("telephony");
+  if (off) return off;
   const { id } = await params;
   const body = await parseAndValidate(req, phoneUpdateSchema);
   if (!body.ok) return body.response;
@@ -42,6 +47,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const unauth = await requireRole("OPERADOR");
   if (unauth) return unauth;
+  const off = await requireModule("telephony");
+  if (off) return off;
   const { id } = await params;
   try {
     const phone = await db.phone.findUnique({ where: { id }, select: { phoneNumber: true } });

@@ -6,6 +6,7 @@ import { requireRole, getSessionRole } from "@/lib/with-auth";
 import { parseAndValidate } from "@/lib/parse-body";
 import { writeAudit } from "@/lib/audit";
 import { phoneCreateSchema } from "@/lib/schemas/phone";
+import { requireModule } from "@/lib/module-config";
 
 export type Phone = Awaited<ReturnType<typeof db.phone.findFirst>>;
 
@@ -19,6 +20,8 @@ export interface PhonePaginatedResponse {
 export async function GET(req: NextRequest) {
   const role = await getSessionRole();
   if (!role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const off = await requireModule("telephony");
+  if (off) return off;
 
   const { searchParams } = new URL(req.url);
   const rawPage = searchParams.get("page");
@@ -71,6 +74,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: Request) {
   const unauth = await requireRole("OPERADOR");
   if (unauth) return unauth;
+  const off = await requireModule("telephony");
+  if (off) return off;
 
   const body = await parseAndValidate(req, phoneCreateSchema);
   if (!body.ok) return body.response;

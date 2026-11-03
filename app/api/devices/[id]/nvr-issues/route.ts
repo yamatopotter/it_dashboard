@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import type { NvrChannelIssue } from "@prisma/client";
+import { requireModule } from "@/lib/module-config";
 
 export interface PaginatedNvrIssuesResponse {
   data: NvrChannelIssue[];
@@ -19,6 +20,8 @@ export async function GET(
 ) {
   const unauth = await requireAuth();
   if (unauth) return unauth;
+  const off = await requireModule("nvr");
+  if (off) return off;
   const { id } = await params;
   const { searchParams } = new URL(req.url);
   const page  = Math.max(1, parseInt(searchParams.get("page")  ?? "") || 1);

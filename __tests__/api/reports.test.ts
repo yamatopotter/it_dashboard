@@ -7,7 +7,15 @@
  * lib/report-builder.
  */
 jest.mock("@/lib/auth", () => ({ auth: jest.fn() }));
-jest.mock("@/lib/db", () => ({ db: { device: { findUnique: jest.fn() } } }));
+jest.mock("@/lib/db", () => ({
+  db: {
+    device: { findUnique: jest.fn(), findMany: jest.fn() },
+    link: { findMany: jest.fn() },
+    linkEvent: { findMany: jest.fn() },
+    statusHistory: { groupBy: jest.fn() },
+    $queryRaw: jest.fn(),
+  },
+}));
 jest.mock("@/lib/report-queries", () => ({
   getDeviceReportStats: jest.fn(),
   getDeviceChartSamples: jest.fn(),
@@ -205,5 +213,89 @@ describe("GET /api/reports — multi-device & params", () => {
   it("clamps hours to 720", async () => {
     const [report] = await (await GET(req(`devices=${DEV_ID}&hours=9999`))).json();
     expect(report.period.hours).toBe(720);
+  });
+});
+
+describe("GET /api/reports — disponibilidade mensal (sem ?devices)", () => {
+  const dbAny = db as unknown as {
+    device: { findMany: jest.Mock };
+    link: { findMany: jest.Mock };
+    linkEvent: { findMany: jest.Mock };
+    statusHistory: { groupBy: jest.Mock };
+    $queryRaw: jest.Mock;
+  };
+  const created = new Date("2020-01-01T00:00:00Z");
+
+  beforeEach(() => {
+    dbAny.link.findMany.mockResolvedValue([
+      { id: "l1", name: "Link BAR", site: "BAR", createdAt: created },
+      { id: "l2", name: "Link ITA", site: "ITA", createdAt: created },
+    ]);
+    dbAny.linkEvent.findMany.mockResolvedValue([
+      { linkId: "l1", type: "DOWN", timestamp: new Date("2026-05-10T13:00:00Z") },
+      { linkId: "l1", type: "UP", timestamp: new Date("2026-05-10T15:00:00Z") },
+    ]);
+    dbAny.$queryRaw.mockResolvedValue([]);
+    dbAny.device.findMany.mockResolvedValue([
+      { id: "d1", name: "AP-1", type: "UNIFI_AP", site: "BAR" },
+      { id: "d2", name: "CRS", type: "MIKROTIK", site: "BOT" },
+      { id: "d3", name: "Sem checks", type: "OMADA_AP", site: "BOT" },
+    ]);
+    dbAny.statusHistory.groupBy.mockResolvedValue([
+      { deviceId: "d1", isOnline: true, _count: { _all: 90 } },
+      { deviceId: "d1", isOnline: false, _count: { _all: 10 } },
+      { deviceId: "d2", isOnline: true, _count: { _all: 100 } },
+    ]);
+  });
+
+  it("401 sem sessão", async () => {
+    mockAuth.mockResolvedValue(null as never);
+    expect((await GET(req("month=2026-05"))).status).toBe(401);
+  });
+
+  it("400 para mês ou meta inválidos", async () => {
+    expect((await GET(req("month=2026-99"))).status).toBe(400);
+    expect((await GET(req("month=2026-05&target=abc"))).status).toBe(400);
+    expect((await GET(req("month=2026-05&target=150"))).status).toBe(400);
+  });
+
+  it("calcula disponibilidade por link, unidade e meta", async () => {
+    const res = await GET(req("month=2026-05&target=99.8"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.month).toBe("2026-05");
+    expect(body.target).toBe(99.8);
+    const l1 = body.links.find((l: { id: string }) => l.id === "l1");
+    expect(l1.downtimeSec).toBe(7200);
+    expect(l1.drops).toBe(1);
+    expect(l1.longestDropSec).toBe(7200);
+    expect(l1.perDay).toHaveLength(31);
+    expect(l1.perDay[9].state).toBe("partial");
+    expect(l1.metTarget).toBe(false);
+    const l2 = body.links.find((l: { id: string }) => l.id === "l2");
+    expect(l2.availabilityPct).toBe(100);
+    expect(l2.metTarget).toBe(true);
+    const bar = body.units.find((u: { site: string }) => u.site === "BAR");
+    expect(bar.linksBelowTarget).toBe(1);
+    expect(bar.metTarget).toBe(false);
+  });
+
+  it("meta configurável muda metTarget", async () => {
+    const body = await (await GET(req("month=2026-05&target=99.5"))).json();
+    expect(body.links.find((l: { id: string }) => l.id === "l1").metTarget).toBe(true);
+  });
+
+  it("lista piores dispositivos e conta os sem dado", async () => {
+    const body = await (await GET(req("month=2026-05"))).json();
+    expect(body.devices.worst.map((d: { id: string }) => d.id)).toEqual(["d1", "d2"]);
+    expect(body.devices.worst[0].availabilityPct).toBe(90);
+    expect(body.devices.withoutData).toBe(1);
+  });
+
+  it("usa consultas agregadas (sem N+1)", async () => {
+    await GET(req("month=2026-05"));
+    expect(dbAny.linkEvent.findMany).toHaveBeenCalledTimes(1);
+    expect(dbAny.statusHistory.groupBy).toHaveBeenCalledTimes(1);
+    expect(dbAny.$queryRaw).toHaveBeenCalledTimes(1);
   });
 });

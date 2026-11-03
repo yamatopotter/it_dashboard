@@ -2,8 +2,8 @@
  * @jest-environment node
  *
  * Tests the alert path inside the scheduler's safeRun: when a device reaches
- * alertThreshold consecutive failures, it atomically claims the alert slot
- * (updateMany guarded by the cooldown) and only fires sendAlert when count === 1.
+ * alertThreshold consecutive failures it calls notify(OPEN) once (dedupe per
+ * episode lives in notify), and notify(RECOVER) when it comes back online.
  */
 import type { Device } from "@prisma/client";
 
@@ -16,7 +16,7 @@ jest.mock("@/lib/db", () => ({
     tokenBlacklist:  { deleteMany: jest.fn() },
     link:            { findMany: jest.fn(), update: jest.fn() },
     workerHeartbeat: { upsert: jest.fn() },
-    systemConfig:    { upsert: jest.fn(), update: jest.fn() },
+    systemConfig:    { upsert: jest.fn(), update: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
     $transaction:    jest.fn(),
   },
 }));
@@ -28,7 +28,7 @@ jest.mock("@/worker/monitors/routeros",     () => ({ checkRouterOS:    jest.fn()
 jest.mock("@/worker/monitors/unifi",        () => ({ checkUnifi:       jest.fn() }));
 jest.mock("@/worker/monitors/omada",        () => ({ checkOmada:       jest.fn() }));
 jest.mock("@/worker/monitors/link-traffic", () => ({ checkLinkTraffic: jest.fn() }));
-jest.mock("@/worker/monitors/alert",        () => ({ sendAlert: jest.fn(), ALERT_COOLDOWN_MS: 3_600_000 }));
+jest.mock("@/lib/notify", () => ({ notify: jest.fn().mockResolvedValue({ sent: true }) }));
 jest.mock("@/lib/crypto", () => ({
   resolveRouterosCredentials: jest.fn().mockReturnValue(null),
   resolveSnmpCommunity:       jest.fn().mockReturnValue("public"),
@@ -39,12 +39,12 @@ jest.mock("@/lib/crypto", () => ({
 
 import { db } from "@/lib/db";
 import { checkPing } from "@/worker/monitors/ping";
-import { sendAlert } from "@/worker/monitors/alert";
+import { notify } from "@/lib/notify";
 import { startScheduler, shutdown } from "@/worker/scheduler";
 
 const mockDb        = db as jest.Mocked<typeof db>;
 const mockCheckPing = checkPing as jest.Mock;
-const mockSendAlert = sendAlert as jest.Mock;
+const mockNotify    = notify as jest.Mock;
 
 const baseDevice: Device = {
   id: "1", name: "Router", ip: "10.0.0.1", type: "MIKROTIK",
@@ -60,7 +60,7 @@ const baseDevice: Device = {
   nvrMaxGapMinutes: 5, nvrHoursWindow: 24, nvrCheckIntervalMinutes: 1440,
   parentNvrId: null, parentNvrChannel: null,
   checkInterval: 60, maintenanceUntil: null,
-  alertWebhookUrl: "https://hook.example/alert", alertThreshold: 2, lastAlertAt: null,
+  alertWebhookUrl: null, alertThreshold: 2, lastAlertAt: null,
   offlineAcknowledgedAt: null, offlineAcknowledgedBy: null, offlineAcknowledgedNote: null,
   macAddress: null, snmpCustomOids: null,
   createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
@@ -98,41 +98,35 @@ async function flush() {
 }
 
 describe("scheduler alert path", () => {
-  it("fires sendAlert once when failures reach alertThreshold (atomic claim)", async () => {
+  it("calls notify(OPEN) once when failures reach alertThreshold", async () => {
     (mockDb.device.findMany as jest.Mock).mockResolvedValue([baseDevice]); // threshold 2
 
     await startScheduler();
-    await flush(); // immediate check → fails = 1
+    await flush(); // immediate check -> fails = 1
 
-    expect(mockSendAlert).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
 
-    await jest.advanceTimersByTimeAsync(60_000); // tick 2 → fails = 2 === threshold
+    await jest.advanceTimersByTimeAsync(60_000); // tick 2 -> fails = 2 === threshold
     await flush();
 
-    // Atomic claim guarded by cooldown, then alert sent exactly once
-    expect(mockDb.device.updateMany).toHaveBeenCalledTimes(1);
-    const claim = (mockDb.device.updateMany as jest.Mock).mock.calls[0][0];
-    expect(claim.where.id).toBe("1");
-    expect(claim.where.OR).toBeDefined(); // lastAlertAt null OR older than cooldown
-    expect(mockSendAlert).toHaveBeenCalledTimes(1);
-    expect(mockSendAlert.mock.calls[0][0]).toBe("https://hook.example/alert");
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+    expect(mockNotify.mock.calls[0][0]).toMatchObject({ kind: "OPEN", entityType: "device", id: "1", name: "Router" });
 
     // Further ticks (fails > threshold) do not re-alert
     await jest.advanceTimersByTimeAsync(60_000);
     await flush();
-    expect(mockSendAlert).toHaveBeenCalledTimes(1);
+    expect(mockNotify).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT send when the atomic claim returns count 0 (cooldown active)", async () => {
-    (mockDb.device.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+  it("calls notify(RECOVER) when a failing device comes back online", async () => {
     (mockDb.device.findMany as jest.Mock).mockResolvedValue([baseDevice]);
 
     await startScheduler();
-    await flush();
+    await flush(); // fails = 1
+    mockCheckPing.mockResolvedValue({ alive: true, responseMs: 5 });
     await jest.advanceTimersByTimeAsync(60_000);
     await flush();
 
-    expect(mockDb.device.updateMany).toHaveBeenCalledTimes(1);
-    expect(mockSendAlert).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ kind: "RECOVER", id: "1" }));
   });
 });

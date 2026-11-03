@@ -9,6 +9,8 @@ jest.mock("@/lib/webhook", () => ({
   verifyWebhookToken: jest.fn(),
 }));
 
+jest.mock("@/lib/notify", () => ({ notify: jest.fn().mockResolvedValue({ sent: false }) }));
+
 jest.mock("@/lib/db", () => ({
   db: {
     link: { findUnique: jest.fn(), update: jest.fn() },

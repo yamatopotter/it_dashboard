@@ -12,7 +12,7 @@ import { syncMiradorePhones } from "./miradore-sync";
 import { syncDattoDevices } from "./datto-sync";
 import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials, resolveNvrCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
-import { sendAlert, ALERT_COOLDOWN_MS } from "./monitors/alert";
+import { notify } from "../lib/notify";
 import { resolveSnmpOids } from "../lib/snmp-defaults";
 import type { Device, Link } from "@prisma/client";
 
@@ -363,6 +363,10 @@ function scheduleDevice(device: Device) {
         if (prev >= BACKOFF_THRESHOLD) {
           log("info", "[Backoff] dispositivo recuperado, voltando ao intervalo normal", { device: device.name });
         }
+        // Zoho Cliq: aviso de recuperação (lê o ack antes de ele ser limpo abaixo)
+        if (prev > 0 || device.cliqNotifiedAt) {
+          await notify({ kind: "RECOVER", entityType: "device", id: device.id, name: device.name, site: device.site });
+        }
         // Auto-clear offline acknowledgement when device comes back online
         if (device.offlineAcknowledgedAt) {
           await db.device.update({
@@ -382,33 +386,13 @@ function scheduleDevice(device: Device) {
             });
           }
         }
-        // Fire alert if threshold reached and webhook is configured.
-        // Atomically claim the alert slot: updateMany only matches (count === 1) when
-        // no alert was sent within the cooldown, so overlapping ticks for the same
-        // device can never send a duplicate alert (TOCTOU-safe).
-        if (device.alertWebhookUrl && fails === device.alertThreshold) {
-          const cooldownBoundary = new Date(Date.now() - ALERT_COOLDOWN_MS);
-          const claim = await db.device.updateMany({
-            where: { id: device.id, OR: [{ lastAlertAt: null }, { lastAlertAt: { lt: cooldownBoundary } }] },
-            data: { lastAlertAt: new Date() },
+        // Zoho Cliq: avisa a abertura ao atingir o limiar. notify() aplica silêncio,
+        // agrupamento por link caído, ack e deduplicação por episódio (cliqNotifiedAt).
+        if (fails === device.alertThreshold) {
+          await notify({
+            kind: "OPEN", entityType: "device", id: device.id, name: device.name, site: device.site,
+            since: new Date(Date.now() - (fails - 1) * device.checkInterval * 1000),
           });
-          if (claim.count === 1) {
-            try {
-              await sendAlert(device.alertWebhookUrl, {
-                deviceId:   device.id,
-                deviceName: device.name,
-                deviceIp:   device.ip,
-                deviceType: device.type,
-                failCount:  fails,
-                timestamp:  new Date().toISOString(),
-              });
-            } catch (alertErr: unknown) {
-              log("error", "[Alerta] falha ao enviar webhook", {
-                device: device.name,
-                error: alertErr instanceof Error ? alertErr.message : String(alertErr),
-              });
-            }
-          }
         }
       }
     } catch (err: unknown) {
@@ -440,6 +424,9 @@ function scheduleDevice(device: Device) {
     const nvrIntervalMs = Math.max(device.nvrCheckIntervalMinutes, 1) * 60_000;
 
     const safeNvrRun = async () => {
+      // Módulo NVR pode ser ligado/desligado sem reiniciar: relê a flag a cada ciclo
+      const nvrCfg = await db.systemConfig.findUnique({ where: { id: 1 } }).catch(() => null);
+      if (!nvrCfg?.moduleNvr) return;
       await acquireSlot();
       try {
         await withTimeout(runNvrChecks(device), NVR_CHECK_TIMEOUT_MS, `runNvrChecks(${device.name})`);
@@ -540,6 +527,9 @@ export async function startScheduler() {
   void updateHeartbeat();
   makeInterval(updateHeartbeat, 60_000);
 
+  // Zoho Cliq: reaviso único para CRIT sem ack após cliqRenotifyMinutes
+  makeInterval(() => void trackAsync(checkRenotify()), 60_000);
+
   // Reconcile device list every 30s: add new, remove deleted, reschedule updated
   // Uses a lean select for change detection; fetches full device only when needed.
   makeInterval(async () => {
@@ -607,6 +597,35 @@ export async function pollLinks() {
   });
 
   await Promise.allSettled(links.map(runLinkChecks));
+}
+
+// Envia RENOTIFY (uma única vez por episódio) para dispositivos/links avisados e sem ack
+// há mais de cliqRenotifyMinutes. notify() revalida ack, silêncio e deduplicação.
+export async function checkRenotify() {
+  try {
+    const cfg = await db.systemConfig.findUnique({ where: { id: 1 } });
+    if (!cfg?.cliqEnabled) return;
+    const boundary = new Date(Date.now() - (cfg.cliqRenotifyMinutes ?? 15) * 60_000);
+    const where = {
+      cliqNotifiedAt: { lt: boundary },
+      cliqRenotifiedAt: null,
+      offlineAcknowledgedAt: null,
+    };
+    const [devices, links] = await Promise.all([
+      db.device.findMany({ where }),
+      db.link.findMany({ where }),
+    ]);
+    for (const d of devices) {
+      if (!d.cliqNotifiedAt) continue;
+      await notify({ kind: "RENOTIFY", entityType: "device", id: d.id, name: d.name, site: d.site, since: d.cliqNotifiedAt });
+    }
+    for (const l of links) {
+      if (!l.cliqNotifiedAt) continue;
+      await notify({ kind: "RENOTIFY", entityType: "link", id: l.id, name: l.name, site: l.site, since: l.cliqNotifiedAt });
+    }
+  } catch (err: unknown) {
+    log("error", "[Cliq] checkRenotify falhou", { error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 export async function pruneHistory() {

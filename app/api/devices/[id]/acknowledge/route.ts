@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/with-auth";
+import { requireRole, getSessionUsername } from "@/lib/with-auth";
 import { db } from "@/lib/db";
 import { parseBody } from "@/lib/parse-body";
 import { writeAudit, extractIp } from "@/lib/audit";
@@ -22,10 +22,12 @@ export async function POST(
   const { note } = parsed.data as { note?: string };
 
   try {
+    const by = await getSessionUsername();
     const device = await db.device.update({
       where: { id },
       data: {
         offlineAcknowledgedAt:   new Date(),
+        offlineAcknowledgedBy:   by,
         offlineAcknowledgedNote: note?.trim() || null,
       },
       select: { id: true, name: true },
@@ -61,6 +63,7 @@ export async function DELETE(
       where: { id },
       data: {
         offlineAcknowledgedAt:   null,
+        offlineAcknowledgedBy:   null,
         offlineAcknowledgedNote: null,
       },
       select: { id: true, name: true },
