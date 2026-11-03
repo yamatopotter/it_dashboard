@@ -1,5 +1,7 @@
 import { httpsGetApiKey } from "./unifi-http";
 import type { UnifiResult, UnifiSSID, UnifiClient } from "./unifi";
+import { SharedCache, snapshotTtlMs } from "../connections/ttl-cache";
+import { recordConn, shortHash } from "../connections/stats";
 
 // On UniFi OS (port 443) the app is proxied under /proxy/network/.
 // On standalone Network Application (port 8443) the path is direct.
@@ -51,26 +53,86 @@ function isApConnected(state: string | number | undefined): boolean {
   return state.toUpperCase() === "ONLINE";
 }
 
+interface ApiKeySnapshot {
+  siteId: string;
+  siteName: string;
+  devices: DeviceItem[];
+  clients: ClientItem[];
+  broadcasts: BroadcastItem[];
+}
+
+// The API base path is discovered once per (controller, key) and reused; the
+// per-site snapshot (devices + clients + broadcasts) is shared by all APs of the site.
+const BASE_MAX_AGE_MS = 3_600_000;
+const baseCache = new SharedCache<string>();
+const snapshotCache = new SharedCache<ApiKeySnapshot>();
+
+// Test helper: forget cached bases and snapshots
+export function resetUnifiApiKeyCache(): void {
+  baseCache.clear();
+  snapshotCache.clear();
+}
+
 export async function checkUnifiApiKey(
   apIp: string, controllerIp: string, apiKey: string,
   port: number, site: string, tlsVerify: boolean,
+  checkIntervalSec?: number,
 ): Promise<UnifiResult> {
-  const base = await discoverBase(controllerIp, port, apiKey, tlsVerify);
+  const baseKey = `${controllerIp}:${port}:${tlsVerify ? 1 : 0}:${shortHash(apiKey)}`;
+  const snapKey = `${baseKey}:${site}`;
 
-  const sitesRes = await httpsGetApiKey(controllerIp, port, `${base}/sites?limit=200`, apiKey, tlsVerify);
-  const sites = (sitesRes.body as Page<SiteItem>).data ?? [];
-  const siteObj = sites.find((s) => s.name === site || s.id === site || s.internalReference === site);
-  if (!siteObj) {
-    const available = sites.map((s) => `"${s.name}" (ref: ${s.internalReference ?? s.id})`).join(", ");
-    throw new Error(`Site "${site}" não encontrado. Disponíveis: ${available || "(nenhum)"}`);
+  let baseReused = true;
+  const getBase = async (): Promise<string> => {
+    const r = await baseCache.get(
+      baseKey,
+      () => discoverBase(controllerIp, port, apiKey, tlsVerify),
+      (_v, age) => age < BASE_MAX_AGE_MS,
+    );
+    if (!r.hit) baseReused = false;
+    return r.value;
+  };
+
+  const fetchSnapshot = async (): Promise<ApiKeySnapshot> => {
+    const base = await getBase();
+    const sitesRes = await httpsGetApiKey(controllerIp, port, `${base}/sites?limit=200`, apiKey, tlsVerify);
+    const sites = (sitesRes.body as Page<SiteItem>).data ?? [];
+    const siteObj = sites.find((s) => s.name === site || s.id === site || s.internalReference === site);
+    if (!siteObj) {
+      const available = sites.map((s) => `"${s.name}" (ref: ${s.internalReference ?? s.id})`).join(", ");
+      throw new Error(`Site "${site}" não encontrado. Disponíveis: ${available || "(nenhum)"}`);
+    }
+    const [devRes, clientsRes, broadcasts] = await Promise.all([
+      httpsGetApiKey(controllerIp, port, `${base}/sites/${siteObj.id}/devices?limit=200`, apiKey, tlsVerify),
+      httpsGetApiKey(controllerIp, port, `${base}/sites/${siteObj.id}/clients?limit=200`, apiKey, tlsVerify),
+      httpsGetApiKey(controllerIp, port, `${base}/sites/${siteObj.id}/wifi/broadcasts?limit=200`, apiKey, tlsVerify)
+        .then((r) => (r.body as Page<BroadcastItem>).data ?? [])
+        .catch(() => [] as BroadcastItem[]), // non-fatal
+    ]);
+    return {
+      siteId: siteObj.id,
+      siteName: siteObj.name,
+      devices: (devRes.body as Page<DeviceItem>).data ?? [],
+      clients: (clientsRes.body as Page<ClientItem>).data ?? [],
+      broadcasts,
+    };
+  };
+
+  let snap;
+  try {
+    const maxAge = snapshotTtlMs(checkIntervalSec);
+    snap = await snapshotCache.get(snapKey, fetchSnapshot, (_v, age) => age < maxAge);
+  } catch (err) {
+    baseCache.invalidate(baseKey); // re-discover next time (key revoked, base moved…)
+    recordConn("unifi", "error");
+    throw err;
   }
-  const siteId = siteObj.id;
+  recordConn("unifi", snap.hit || baseReused ? "reused" : "opened");
 
-  const devRes = await httpsGetApiKey(controllerIp, port, `${base}/sites/${siteId}/devices?limit=200`, apiKey, tlsVerify);
-  const devices = (devRes.body as Page<DeviceItem>).data ?? [];
+  const { siteId, siteName, devices } = snap.value;
+  const base = await getBase();
   const ap = devices.find((d) => d.ipAddress === apIp) ?? (devices.length === 1 ? devices[0] : undefined);
   if (!ap) {
-    throw new Error(`AP com IP ${apIp} não encontrado no site "${siteObj.name}" (${devices.length} dispositivo(s))`);
+    throw new Error(`AP com IP ${apIp} não encontrado no site "${siteName}" (${devices.length} dispositivo(s))`);
   }
 
   let cpuLoad: number | null = null;
@@ -94,22 +156,15 @@ export async function checkUnifiApiKey(
     }
   } catch { /* non-fatal */ }
 
-  const clientsRes = await httpsGetApiKey(controllerIp, port, `${base}/sites/${siteId}/clients?limit=200`, apiKey, tlsVerify);
-  const allClients = (clientsRes.body as Page<ClientItem>).data ?? [];
-  const apClients = allClients.filter((c) => c.type === "WIRELESS" && c.uplinkDeviceId === ap.id);
+  const apClients = snap.value.clients.filter((c) => c.type === "WIRELESS" && c.uplinkDeviceId === ap.id);
 
-  let ssids: UnifiSSID[] = [];
-  try {
-    const broadcastsRes = await httpsGetApiKey(controllerIp, port, `${base}/sites/${siteId}/wifi/broadcasts?limit=200`, apiKey, tlsVerify);
-    const broadcasts = (broadcastsRes.body as Page<BroadcastItem>).data ?? [];
-    ssids = broadcasts
-      .filter((b) => b.enabled !== false)
-      .map((b) => ({
-        ssid: b.name,
-        band: (b.broadcastingFrequenciesGHz ?? []).map(freqLabel).join(" / ") || "—",
-        channel: 0, clients: 0, txBytes: 0, rxBytes: 0,
-      }));
-  } catch { /* non-fatal */ }
+  const ssids: UnifiSSID[] = snap.value.broadcasts
+    .filter((b) => b.enabled !== false)
+    .map((b) => ({
+      ssid: b.name,
+      band: (b.broadcastingFrequenciesGHz ?? []).map(freqLabel).join(" / ") || "—",
+      channel: 0, clients: 0, txBytes: 0, rxBytes: 0,
+    }));
 
   const clients: UnifiClient[] = apClients.map((c) => ({
     id: c.id,

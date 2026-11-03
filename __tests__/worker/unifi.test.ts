@@ -5,7 +5,7 @@
 jest.mock("https", () => ({ request: jest.fn() }));
 
 import * as https from "https";
-import { checkUnifi } from "@/worker/monitors/unifi";
+import { checkUnifi, resetUnifiInformCache, resetUnifiApiKeyCache } from "@/worker/monitors/unifi";
 
 const mockRequest = https.request as jest.Mock;
 
@@ -42,6 +42,8 @@ function mockQueue(responses: ReturnType<typeof fakeRes>[]) {
 let timeoutSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
+  resetUnifiInformCache();
+  resetUnifiApiKeyCache();
   timeoutSpy = jest.spyOn(global, "setTimeout").mockImplementation((fn) => {
     if (typeof fn === "function") Promise.resolve().then(() => fn());
     return 0 as unknown as NodeJS.Timeout;
@@ -61,9 +63,9 @@ describe("checkUnifi — API key path", () => {
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }), // discover
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }), // sites
       fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6-Lite", firmwareVersion: "6.5", ipAddress: apIp }] }),
-      fakeRes(200, { uptimeSec: 3600, cpuUtilizationPct: 25, memoryUtilizationPct: 50, uplink: { txRateBps: 1000, rxRateBps: 2000 } }),
       fakeRes(200, { data: [{ id: "c1", type: "WIRELESS", uplinkDeviceId: "dev-1", name: "Phone", macAddress: "11:22", ipAddress: "192.168.1.50", connectedAt: "2026-01-01T00:00:00Z" }] }),
       fakeRes(200, { data: [{ id: "b1", name: "HomeSSID", enabled: true, broadcastingFrequenciesGHz: [2.4, 5] }] }),
+      fakeRes(200, { uptimeSec: 3600, cpuUtilizationPct: 25, memoryUtilizationPct: 50, uplink: { txRateBps: 1000, rxRateBps: 2000 } }),
     ]);
 
     const r = await checkUnifi(apIp, ctrl, auth, 443, "default", false);
@@ -87,9 +89,9 @@ describe("checkUnifi — API key path", () => {
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6-Pro", ipAddress: apIp, state: "ONLINE" }] }),
+      fakeRes(200, { data: [] }),
+      fakeRes(200, { data: [] }),
       fakeRes(200, {}),
-      fakeRes(200, { data: [] }),
-      fakeRes(200, { data: [] }),
     ]);
     const r = await checkUnifi(apIp, ctrl, auth, 443, "default", false);
     expect(r.connected).toBe(true);
@@ -100,9 +102,9 @@ describe("checkUnifi — API key path", () => {
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6-Pro", ipAddress: apIp, state: "OFFLINE" }] }),
+      fakeRes(200, { data: [] }),
+      fakeRes(200, { data: [] }),
       fakeRes(200, {}),
-      fakeRes(200, { data: [] }),
-      fakeRes(200, { data: [] }),
     ]);
     const r = await checkUnifi(apIp, ctrl, auth, 443, "default", false);
     expect(r.connected).toBe(false);
@@ -113,9 +115,9 @@ describe("checkUnifi — API key path", () => {
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6-Pro", ipAddress: apIp }] }),
+      fakeRes(200, { data: [] }),
+      fakeRes(200, { data: [] }),
       fakeRes(200, {}),
-      fakeRes(200, { data: [] }),
-      fakeRes(200, { data: [] }),
     ]);
     const r = await checkUnifi(apIp, ctrl, auth, 443, "default", false);
     expect(r.connected).toBe(true);
@@ -132,6 +134,8 @@ describe("checkUnifi — API key path", () => {
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [] }), // no devices at all
+      fakeRes(200, { data: [] }), // clients
+      fakeRes(200, { data: [] }), // broadcasts
     ]);
     await expect(checkUnifi(apIp, ctrl, auth, 443, "default", false)).rejects.toThrow(/não encontrado/i);
   });
@@ -245,9 +249,9 @@ describe("checkUnifi — Inform API (user/pass)", () => {
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "site-1", name: "default", internalReference: "default" }] }),
       fakeRes(200, { data: [{ id: "dev-1", macAddress: "aa:bb", model: "U6", ipAddress: apIp }] }),
-      fakeRes(200, {}),
       fakeRes(200, { data: [{ id: "c1", type: "WIRELESS", uplinkDeviceId: "dev-1", macAddress: "11:22" }] }),
       fakeRes(200, { data: [] }),
+      fakeRes(200, {}),
     ]);
     const r = await checkUnifi(apIp, ctrl, { method: "apikey", apiKey: "k" }, 443, "default", false);
     expect(r.clients[0].signal).toBeNull();

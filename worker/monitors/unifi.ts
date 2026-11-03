@@ -40,7 +40,8 @@ export type UnifiAuth =
 
 export { discoverBase } from "./unifi-apikey";
 export { checkUnifiApiKey } from "./unifi-apikey";
-export { checkUnifiInform } from "./unifi-inform";
+export { checkUnifiInform, resetUnifiInformCache } from "./unifi-inform";
+export { resetUnifiApiKeyCache } from "./unifi-apikey";
 
 export async function checkUnifi(
   apIp: string,
@@ -49,9 +50,10 @@ export async function checkUnifi(
   port: number,
   site: string,
   tlsVerify: boolean,
+  checkIntervalSec?: number,
 ): Promise<UnifiResult> {
   if (auth.method === "userpass") {
-    return checkUnifiInform(apIp, controllerIp, auth.username, auth.password, port, site, tlsVerify);
+    return checkUnifiInform(apIp, controllerIp, auth.username, auth.password, port, site, tlsVerify, checkIntervalSec);
   }
-  return checkUnifiApiKey(apIp, controllerIp, auth.apiKey, port, site, tlsVerify);
+  return checkUnifiApiKey(apIp, controllerIp, auth.apiKey, port, site, tlsVerify, checkIntervalSec);
 }
