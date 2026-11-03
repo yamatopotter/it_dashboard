@@ -18,10 +18,33 @@ interface Release {
 
 const RELEASES: Release[] = [
   {
+    version: "0.7.0",
+    date: "3 Nov 2026",
+    label: "Redesign: tela de operação, avisos no Zoho Cliq e relatório mensal",
+    latest: true,
+    changes: [
+      { type: "feat", text: "Nova tela TOWER/1 em /tower — fila de problemas no topo (gravidade e idade), links com tráfego, unidades com o estado de cada equipamento e eventos recentes, tudo com atalhos de teclado e aviso quando os dados congelam" },
+      { type: "feat", text: "Reconhecer (ack) e silenciar agora valem também para links e dispositivos — OPERADOR ou ADMIN reconhece com uma nota, ou silencia por 1 h, 4 h ou 12 h (até 24 h) para manutenção programada; o ack some sozinho quando o link volta" },
+      { type: "feat", text: "Equipamentos que pararam de responder por causa de um link ou gateway caído aparecem agrupados sob o problema principal, em vez de gerar uma enxurrada de alertas" },
+      { type: "feat", text: "Avisos no Zoho Cliq — abertura, reaviso único, recuperação, oscilação (flapping) e worker parado, com botão para abrir o item no WatchIT; configuração e mensagem de teste em Configurações › Sistema (ADMIN)" },
+      { type: "feat", text: "Regras anti-ruído nos avisos: atenção só avisa após 15 min, itens silenciados ou reconhecidos não avisam, avisos de oscilação têm intervalo mínimo e cada episódio é avisado uma única vez" },
+      { type: "feat", text: "Relatório mensal de disponibilidade por link e por unidade, com meta de SLA configurável (padrão do sistema) e escolha do mês — o relatório por dispositivo continua disponível" },
+      { type: "feat", text: "Interfaces alternativas escolhíveis em Configurações › Sistema › Aparência (padrão do sistema e permissão de troca) e no Perfil (preferência de cada usuário)" },
+      { type: "feat", text: "Campo Unidade (Barra, Botafogo, Itaguaí) em dispositivos e links; equipamentos sem unidade aparecem no grupo '?' até serem revisados" },
+      { type: "refactor", text: "Telefonia, Computadores e NVR/câmeras viraram módulos opcionais, desligados por padrão — ligue em Configurações › Sistema (ADMIN); desligado, o módulo some do menu, das contagens e para de sincronizar, sem apagar dados" },
+      { type: "refactor", text: "Menu lateral enxuto — Manual, Changelog e Segurança saíram da navegação (continuam acessíveis pelo endereço)" },
+      { type: "refactor", text: "Todas as interfaces leem um único snapshot (GET /api/tower), com cache curto e ETag para economizar tráfego no polling" },
+      { type: "security", text: "A URL do webhook do Zoho Cliq é criptografada no banco (AES-256-GCM), nunca volta nas respostas da API nem aparece na auditoria, e só aceita https para domínios do Zoho (proteção contra SSRF)" },
+      { type: "security", text: "Ações de ack e silêncio exigem papel OPERADOR ou ADMIN e são registradas na auditoria; configurações de módulos, aparência e Cliq exigem ADMIN; /api/tower exige sessão" },
+      { type: "security", text: "Envios ao Cliq ficam registrados na auditoria (usuário 'cliq') com sucesso ou erro" },
+      { type: "refactor", text: "O aviso por webhook genérico de cada dispositivo e a variável WORKER_STALE_WEBHOOK_URL foram substituídos pelo Zoho Cliq; o campo de webhook no formulário do dispositivo não dispara mais alertas" },
+    ],
+  },
+  {
     version: "0.6.0",
     date: "20 Aug 2026",
     label: "Inventário de computadores via Datto RMM",
-    latest: true,
+    latest: false,
     changes: [
       { type: "feat", text: "Nova página Computadores — inventário de estações de trabalho e servidores sincronizado automaticamente do Datto RMM, com status online/offline e data da última vez visto" },
       { type: "feat", text: "Alertas abertos do Datto RMM (antivírus, disco cheio, etc.) aparecem diretamente na máquina afetada, com selo de prioridade (Crítico, Alto, Moderado, Baixo)" },

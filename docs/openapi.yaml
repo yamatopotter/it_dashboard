@@ -41,6 +41,10 @@ tags:
     description: CRUD de usuários do dashboard (requer papel ADMIN)
   - name: Sistema
     description: Saúde do sistema, dados do overview e versão do build
+  - name: Tower
+    description: Snapshot único das interfaces de operação (TOWER/1, Plantão, NetTop, wtop)
+  - name: Configurações
+    description: Módulos opcionais, aparência, interface do usuário e avisos no Zoho Cliq
 
 # ─── Componentes reutilizáveis ──────────────────────────────────────────────
 components:
@@ -60,6 +64,76 @@ components:
         Pode ser enviado como header `x-webhook-token` ou query string `?token=`.
 
   schemas:
+    ProblemActionResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        maintenanceUntil: { type: string, format: date-time, description: "Presente ao silenciar." }
+
+    ModuleFlags:
+      type: object
+      description: Módulos opcionais (todos desligados por padrão).
+      properties:
+        telephony: { type: boolean }
+        computers: { type: boolean }
+        nvr: { type: boolean }
+
+    Appearance:
+      type: object
+      properties:
+        defaultUi: { type: string, enum: [tower, plantao, nettop, wtop], default: tower }
+        allowUserUi: { type: boolean, default: true }
+
+    CliqConfig:
+      type: object
+      properties:
+        cliqEnabled: { type: boolean }
+        hasWebhook: { type: boolean }
+        cliqChannel: { type: [string, "null"] }
+        cliqRenotifyMinutes: { type: integer, default: 15 }
+        cliqLastTestAt: { type: [string, "null"], format: date-time }
+        cliqLastError: { type: [string, "null"] }
+
+    TowerSnapshot:
+      type: object
+      description: Contrato completo em `lib/tower-types.ts`.
+      properties:
+        health:
+          type: object
+          properties:
+            workerStatus: { type: string, enum: [ok, stale, unknown] }
+            workerAgeSec: { type: [integer, "null"] }
+            generatedAt: { type: string, format: date-time }
+            uptimePct24h: { type: [number, "null"] }
+        problems:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, example: "LINK:clx123" }
+              kind: { type: string, enum: [LINK, DISP, AP] }
+              entityId: { type: string }
+              site: { type: [string, "null"], enum: [BAR, BOT, ITA, null] }
+              name: { type: string }
+              severity: { type: string, enum: [crit, warn, ack, info] }
+              what: { type: string }
+              why: { type: string }
+              sinceSec: { type: integer }
+              children: { type: array, items: { type: object } }
+              acknowledged: { type: boolean }
+              ackBy: { type: [string, "null"] }
+              ackNote: { type: [string, "null"] }
+        links: { type: array, items: { type: object } }
+        devices: { type: array, items: { type: object } }
+        aps: { type: array, items: { type: object } }
+        sites: { type: array, items: { type: object } }
+        events: { type: array, items: { type: object } }
+        monitored:
+          type: object
+          properties:
+            total: { type: integer }
+            online: { type: integer }
+
     # ── Enums ──────────────────────────────────────────────────────────────
     DeviceType:
       type: string
@@ -272,7 +346,7 @@ components:
           type: string
           format: uri
           nullable: true
-          description: URL para receber alertas quando o dispositivo atinge `alertThreshold` falhas consecutivas. Suporta Slack, Teams, Telegram e qualquer endpoint HTTP/HTTPS.
+          description: LEGADO - o campo ainda é aceito e armazenado, mas o worker não dispara mais esse webhook; os avisos de falha passaram para o Zoho Cliq (`/api/settings/cliq`).
           example: "https://hooks.slack.com/services/T00/B00/xxx"
         alertThreshold:
           type: integer
@@ -962,7 +1036,7 @@ components:
           type: string
           format: uri
           nullable: true
-          description: URL de webhook para receber alertas de falha (Slack, Teams, HTTP genérico). Disparado após `alertThreshold` falhas consecutivas com cooldown de 1 hora.
+          description: LEGADO - aceito e armazenado, mas não é mais usado pelo worker; avisos de falha são enviados pelo Zoho Cliq (`/api/settings/cliq`).
           example: "https://hooks.slack.com/services/T00/B00/xxx"
         alertThreshold:
           type: integer
@@ -2141,8 +2215,12 @@ paths:
   /api/reports:
     get:
       tags: [Status]
-      summary: Relatório de disponibilidade por dispositivo
+      summary: Relatório de disponibilidade (mensal ou por dispositivo)
       description: |
+        **Modo mensal (padrão, sem `devices`):** relatório de disponibilidade do mês por link e por unidade
+        (links, rede e Wi-Fi), comparado com a meta de SLA. Use `month` (YYYY-MM, padrão o mês atual) e `target` (0-100).
+
+        **Modo por dispositivo (com `devices`):**
         Retorna um relatório detalhado para um ou mais dispositivos com:
         - **Resumo:** uptime%, total de checks, contagem de incidentes, downtime total, ping médio/min/max
         - **Insights:** alertas automáticos (uptime crítico, ping elevado, etc.)
@@ -2153,11 +2231,25 @@ paths:
         Máximo de 10 dispositivos por requisição.
       parameters:
         - in: query
-          name: devices
-          required: true
+          name: month
           schema:
             type: string
-          description: IDs dos dispositivos separados por vírgula.
+            pattern: '^[0-9]{4}-[0-9]{2}$'
+          description: Mês do relatório mensal (YYYY-MM). Padrão o mês atual. Ignorado quando `devices` é enviado.
+          example: "2026-10"
+        - in: query
+          name: target
+          schema:
+            type: number
+            exclusiveMinimum: 0
+            maximum: 100
+          description: Meta de disponibilidade (%) do relatório mensal. Padrão definido no servidor; 400 se fora do intervalo.
+        - in: query
+          name: devices
+          required: false
+          schema:
+            type: string
+          description: IDs dos dispositivos separados por vírgula. Quando presente, ativa o modo por dispositivo.
           example: "clxyz123,clxyz456"
         - in: query
           name: hours
@@ -2830,6 +2922,348 @@ paths:
                   linksTotal: { type: integer, example: 8 }
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/tower:
+    get:
+      tags: [Tower]
+      summary: Snapshot único da operação
+      description: |
+        Snapshot que alimenta todas as interfaces (TOWER/1, Plantão, NetTop, wtop): saúde do worker, problemas
+        ordenados por gravidade, links, dispositivos, APs, resumo por unidade e eventos recentes. Apenas núcleo
+        (links, rede, Wi-Fi). Cache em memória de 3 s; suporta `If-None-Match` e responde 304 quando o `ETag`
+        coincide (o ETag ignora `health.generatedAt`).
+      parameters:
+        - in: header
+          name: If-None-Match
+          schema: { type: string }
+      responses:
+        "200":
+          description: Snapshot atual.
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TowerSnapshot" }
+        "304":
+          description: Sem mudanças desde o ETag informado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/links/{id}/ack:
+    post:
+      tags: [Links]
+      summary: Reconhecer link caído
+      description: Requer papel OPERADOR ou ADMIN. Registra `AuditLog`.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string }, description: ID do recurso. }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 500, description: "Nota opcional (truncada em 500 caracteres)." }
+      responses:
+        "200":
+          description: Aplicado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemActionResult" }
+        "400":
+          description: Corpo inválido.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Papel insuficiente (requer OPERADOR).
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Links]
+      summary: Remover reconhecimento
+      description: Requer papel OPERADOR ou ADMIN.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string }, description: ID do recurso. }
+      responses:
+        "200":
+          description: Removido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemActionResult" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Papel insuficiente (requer OPERADOR).
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/links/{id}/silence:
+    post:
+      tags: [Links]
+      summary: Silenciar link (manutenção)
+      description: Requer papel OPERADOR ou ADMIN. Registra `AuditLog`.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string }, description: ID do recurso. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minutes]
+              properties:
+                minutes: { type: integer, minimum: 1, maximum: 1440, description: "Duração do silêncio em minutos (define maintenanceUntil)." }
+      responses:
+        "200":
+          description: Aplicado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemActionResult" }
+        "400":
+          description: Corpo inválido.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Papel insuficiente (requer OPERADOR).
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Links]
+      summary: Encerrar silêncio
+      description: Requer papel OPERADOR ou ADMIN.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string }, description: ID do recurso. }
+      responses:
+        "200":
+          description: Removido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemActionResult" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Papel insuficiente (requer OPERADOR).
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/devices/{id}/silence:
+    post:
+      tags: [Dispositivos]
+      summary: Silenciar dispositivo (manutenção)
+      description: Requer papel OPERADOR ou ADMIN. Registra `AuditLog`.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string }, description: ID do recurso. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minutes]
+              properties:
+                minutes: { type: integer, minimum: 1, maximum: 1440, description: "Duração do silêncio em minutos (define maintenanceUntil)." }
+      responses:
+        "200":
+          description: Aplicado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemActionResult" }
+        "400":
+          description: Corpo inválido.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Papel insuficiente (requer OPERADOR).
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Dispositivos]
+      summary: Encerrar silêncio
+      description: Requer papel OPERADOR ou ADMIN.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string }, description: ID do recurso. }
+      responses:
+        "200":
+          description: Removido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemActionResult" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Papel insuficiente (requer OPERADOR).
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/settings/modules:
+    get:
+      tags: [Configurações]
+      summary: Módulos opcionais ligados/desligados
+      description: Qualquer usuário autenticado. Padrão dos três módulos - desligado.
+      responses:
+        "200":
+          description: Flags atuais.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleFlags" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Configurações]
+      summary: Ligar/desligar módulos
+      description: Requer ADMIN. Campos omitidos permanecem. Módulo desligado responde 404 nas suas rotas e some do menu e das contagens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModuleFlags" }
+      responses:
+        "200":
+          description: Flags atualizadas.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleFlags" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Requer ADMIN.
+
+  /api/settings/appearance:
+    get:
+      tags: [Configurações]
+      summary: Interface padrão do sistema
+      responses:
+        "200":
+          description: Configuração atual.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appearance" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Configurações]
+      summary: Definir interface padrão e permissão de troca
+      description: Requer ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Appearance" }
+      responses:
+        "200":
+          description: Atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appearance" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Requer ADMIN.
+
+  /api/profile/ui:
+    put:
+      tags: [Configurações]
+      summary: Preferência de interface do próprio usuário
+      description: Qualquer usuário autenticado. `null` volta ao padrão do sistema. 403 se o ADMIN desativou a troca (`allowUserUi=false`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uiPreference]
+              properties:
+                uiPreference:
+                  type: [string, "null"]
+                  enum: [tower, plantao, nettop, wtop, null]
+      responses:
+        "200":
+          description: Preferência salva.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uiPreference: { type: [string, "null"] }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Troca de interface desativada pelo administrador.
+
+  /api/settings/cliq:
+    get:
+      tags: [Configurações]
+      summary: Configuração dos avisos no Zoho Cliq
+      description: Requer ADMIN. A URL do webhook nunca é devolvida (`hasWebhook`).
+      responses:
+        "200":
+          description: Configuração atual.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CliqConfig" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Requer ADMIN.
+    put:
+      tags: [Configurações]
+      summary: Atualizar avisos no Zoho Cliq
+      description: |
+        Requer ADMIN. A URL é validada (https, sem credenciais, porta 443, host em domínio Zoho) e armazenada
+        com AES-256-GCM. String vazia remove a URL. A auditoria registra apenas os campos alterados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cliqEnabled: { type: boolean }
+                cliqWebhookUrl: { type: [string, "null"], maxLength: 2000 }
+                cliqChannel: { type: [string, "null"], maxLength: 100 }
+                cliqRenotifyMinutes: { type: integer, minimum: 1, maximum: 1440 }
+      responses:
+        "200":
+          description: Atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CliqConfig" }
+        "400":
+          description: URL inválida ou corpo inválido.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Requer ADMIN.
+
+  /api/settings/cliq/test:
+    post:
+      tags: [Configurações]
+      summary: Enviar mensagem de teste ao Zoho Cliq
+      description: Requer ADMIN. Grava `cliqLastTestAt` e `cliqLastError`.
+      responses:
+        "200":
+          description: Enviada.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  cliqLastTestAt: { type: string, format: date-time }
+        "400":
+          description: URL do webhook não configurada.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Requer ADMIN.
+        "502":
+          description: Falha no envio (corpo traz `error`).
 
   /api/version:
     get:

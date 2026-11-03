@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WatchIT Fluxo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tui.css">
+<style>
+  /* Fluxo: documento de leitura; texto em sans, rótulos e dados em mono, mesmos tokens dos protótipos. */
+  :root { --font-text: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; }
+  .doc { max-width: 1080px; margin: 0 auto; padding-block: 8px 48px; }
+  .doc p, .doc li, .doc td, .doc .txt { font: 15px/1.6 var(--font-text); }
+  .doc p { max-width: 68ch; margin: 0 0 10px; }
+  h1 { font: 700 26px/1.25 var(--font-mono); margin: 22px 0 6px; text-wrap: balance; }
+  h1 + .lede { color: var(--dim); }
+  h2.sec { font: 600 13px/1.3 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 40px 0 14px; display: flex; gap: 10px; align-items: baseline; }
+  h2.sec .n { color: var(--dim); }
+  h3 { font: 600 15px/1.35 var(--font-mono); margin: 0 0 6px; }
+  .cols { display: grid; gap: 18px 14px; }
+  .c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 900px) { .c3, .c2 { grid-template-columns: 1fr; } }
+  .scope ul { margin: 6px 0 0; padding-left: 18px; }
+  .scope li { margin-bottom: 4px; }
+  .scope li b { font-weight: 600; }
+
+  /* pipeline */
+  .pipe { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; counter-reset: st; }
+  .st { position: relative; padding: 12px 12px 12px 12px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
+  .st + .st { border-left: 0; }
+  .st:first-child { border-radius: 6px 0 0 6px; } .st:last-child { border-radius: 0 6px 6px 0; }
+  .st .lbl { font: 700 12px/1.3 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .st .who { font: 11px/1.3 var(--font-mono); color: var(--dim); margin: 2px 0 8px; }
+  .st p { font-size: 13.5px !important; line-height: 1.5 !important; margin: 0; }
+  .st::after { content: "▸"; position: absolute; right: -7px; top: 12px; color: var(--dim); background: var(--bg); line-height: 1; z-index: 1; }
+  .st:last-child::after { content: none; }
+  @media (max-width: 1000px) {
+    .pipe { grid-template-columns: 1fr; }
+    .st + .st { border-left: 1px solid var(--line); border-top: 0; }
+    .st:first-child { border-radius: 6px 6px 0 0; } .st:last-child { border-radius: 0 0 6px 6px; }
+    .st::after { content: "▾"; right: auto; left: 16px; top: auto; bottom: -9px; }
+  }
+
+  /* linha do tempo do exemplo */
+  .tl { display: grid; grid-template-columns: 9ch 2ch minmax(0, 1fr); gap: 8px 10px; align-items: start; }
+  .tl .t { font-family: var(--font-mono); color: var(--dim); }
+  .tl .g { font-family: var(--font-mono); text-align: center; }
+  .tl .txt { min-width: 0; }
+  .tl .txt b { font-weight: 600; }
+
+  /* rotina */
+  .routine .box p { font-size: 14px !important; margin: 0; }
+  .routine .when { font: 11px var(--font-mono); color: var(--dim); display: block; margin-bottom: 6px; }
+
+  /* mensagem Cliq */
+  .cliq { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 12px 14px; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; max-width: 520px; }
+  .cliq .av { width: 34px; height: 34px; border-radius: 8px; background: var(--accent); color: var(--bg); display: grid; place-items: center; font: 700 14px var(--font-mono); }
+  .cliq .meta { font: 12px var(--font-text); color: var(--dim); }
+  .cliq .meta b { color: var(--fg); font-weight: 600; }
+  .cliq .card { margin-top: 6px; border-left: 3px solid var(--crit); padding: 6px 10px; background: var(--bg); border-radius: 0 4px 4px 0; }
+  .cliq .card.okc { border-left-color: var(--ok); }
+  .cliq .card h4 { margin: 0 0 4px; font: 600 14px var(--font-text); }
+  .cliq .card p { font-size: 13.5px !important; margin: 0; }
+  .cliq .cb { margin-top: 8px; display: inline-block; border: 1px solid var(--line-hi); border-radius: 4px; padding: 2px 10px; font: 12px var(--font-text); color: var(--info); }
+  table.rules { width: 100%; border-collapse: collapse; }
+  table.rules th { text-align: left; font: 600 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table.rules td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px !important; }
+  table.rules td:first-child { font-family: var(--font-mono); font-size: 13px !important; white-space: nowrap; }
+
+  /* escolha de interface */
+  .pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 700px) { .pick { grid-template-columns: 1fr; } }
+  .opt { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 4px 10px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; cursor: pointer; background: var(--bg); }
+  .opt:has(input:checked) { border-color: var(--accent); background: var(--sel); }
+  .opt input { margin: 3px 0 0; accent-color: var(--accent); }
+  .opt b { font: 600 13px var(--font-mono); }
+  .opt span.d { grid-column: 2; font: 13px/1.45 var(--font-text); color: var(--dim); }
+  .opt a { grid-column: 2; font: 12px var(--font-mono); }
+  .toggle { display: flex; gap: 10px; align-items: center; margin-top: 12px; font: 14px var(--font-text); }
+  .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .stack { display: grid; gap: 6px; font-family: var(--font-mono); font-size: 12.5px; }
+  .stack .layer { border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; background: var(--bg); }
+  .stack .layer.top { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; border: 0; padding: 0; background: none; }
+  .stack .layer.top span { border: 1px dashed var(--accent); border-radius: 4px; padding: 6px; text-align: center; color: var(--accent); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stack .layer .d { color: var(--dim); }
+  @media (max-width: 600px) { .stack .layer.top { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* papéis */
+  .roles td:nth-child(n+2) { text-align: center; font-family: var(--font-mono); }
+  .roles td:first-child { white-space: normal !important; font-family: var(--font-text) !important; font-size: 14px !important; }
+
+  /* roteiro */
+  .phases { display: grid; gap: 10px; }
+  .ph { display: grid; grid-template-columns: 5ch minmax(0, 1fr) 4ch; gap: 12px; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+  .ph .id { font: 700 13px var(--font-mono); color: var(--accent); }
+  .ph h3 { margin: 0 0 2px; }
+  .ph p { margin: 0 !important; color: var(--dim); font-size: 14px !important; }
+  .ph .ef { font: 600 12px var(--font-mono); text-align: right; }
+  .note { border: 1px dashed var(--line-hi); border-radius: 6px; padding: 10px 12px; color: var(--dim); }
+  .note b { color: var(--fg); }
+</style>
+</head>
+<body>
+<nav id="proto-nav" class="proto-nav" aria-label="Propostas"></nav>
+
+<div class="doc">
+  <h1>Fluxo do WatchIT</h1>
+  <p class="lede">Como o sistema ajuda a equipe de TI a perceber, resolver e registrar problemas nas três unidades, só com o que vamos usar de fato.</p>
+
+  <h2 class="sec"><span class="n">1</span>O que fica, o que pausa, o que sai</h2>
+  <div class="cols c3 scope">
+    <section class="box" style="--box: var(--ok)">
+      <h3 class="box-t">NÚCLEO · usamos agora</h3>
+      <ul>
+        <li><b>Links de internet</b>: queda, uso contra o contratado, failover.</li>
+        <li><b>Rede</b>: Mikrotik e switches por ping, SNMP e RouterOS.</li>
+        <li><b>Wi-Fi</b>: APs UniFi (Barra) e Omada (Botafogo), clientes por AP.</li>
+        <li><b>Avisos no Zoho Cliq</b> (novo).</li>
+        <li><b>Relatório mensal</b> de disponibilidade.</li>
+        <li><b>Auditoria</b> de quem fez o quê.</li>
+        <li><b>Login Zoho</b>, usuários e configuração.</li>
+      </ul>
+    </section>
+    <section class="box" style="--box: var(--warn)">
+      <h3 class="box-t">PAUSADO · desligado, código mantido</h3>
+      <ul>
+        <li><b>Telefonia</b>: linhas, aparelhos e sincronização Miradore.</li>
+        <li><b>Computadores</b>: sincronização Datto RMM.</li>
+        <li><b>NVR e câmeras</b>: gravadores e canais sem gravação.</li>
+        <li><b>Alerta por e-mail</b>: substituído pelo Cliq.</li>
+      </ul>
+      <p class="dim" style="margin-top:8px">Some do menu e o worker para de sincronizar. As tabelas e o código continuam lá, e o módulo volta com um interruptor em Configurações.</p>
+    </section>
+    <section class="box" style="--box: var(--dim)">
+      <h3 class="box-t">SAI DA TELA</h3>
+      <ul>
+        <li><b>Manual, manual do dev, manual de testes</b>: viram arquivos <code>docs/*.md</code> e a ajuda <kbd>?</kbd>.</li>
+        <li><b>Changelog</b>: versão no rodapé, com link.</li>
+        <li><b>Segurança</b>: continua em <code>SECURITY_REPORT.md</code>.</li>
+        <li><b>Páginas Mikrotik, UniFi e Omada</b>: viram filtro por tipo e aba no detalhe do equipamento.</li>
+      </ul>
+    </section>
+  </div>
+
+  <h2 class="sec"><span class="n">2</span>Como um problema anda pelo sistema</h2>
+  <div class="pipe">
+    <div class="st"><div class="lbl info">Coletar</div><div class="who">worker · contínuo</div><p>Ping, SNMP e RouterOS em cada equipamento, tráfego dos links a cada 60 s, webhooks de UP/DOWN dos links e consulta às controladoras UniFi e Omada.</p></div>
+    <div class="st"><div class="lbl warn">Detectar</div><div class="who">regra única</div><p>Vira problema depois de 3 falhas seguidas, link acima de 90% por 5 min, AP offline ou failover que não assumiu.</p></div>
+    <div class="st"><div class="lbl accent" style="color:var(--accent)">Agrupar</div><div class="who">por unidade</div><p>Se o link ou o gateway de uma unidade caiu, o que caiu junto aparece recuado embaixo dele. Uma queda é uma linha, não quinze.</p></div>
+    <div class="st"><div class="lbl crit">Avisar</div><div class="who">tela + Zoho Cliq</div><p>A tela mostra na hora. O Cliq avisa o canal da TI na abertura, de novo se ninguém der ack, e na volta.</p></div>
+    <div class="st"><div class="lbl" style="color:var(--accent-2)">Agir</div><div class="who">operador</div><p>Ack com nota (quem está cuidando e o protocolo da operadora), silenciar com prazo, rechecar ou copiar o resumo para o chamado.</p></div>
+    <div class="st"><div class="lbl ok">Fechar</div><div class="who">automático</div><p>Quando o equipamento responde de novo, o problema sai da fila e vira o evento "voltou após 23 min". O ack é limpo sozinho.</p></div>
+    <div class="st"><div class="lbl dim">Rever</div><div class="who">fim do mês</div><p>O relatório soma disponibilidade, quedas e tempo fora por link e unidade. A auditoria mostra quem agiu em cada caso.</p></div>
+  </div>
+
+  <h2 class="sec"><span class="n">3</span>Um caso do começo ao fim</h2>
+  <div class="cols c2">
+    <section class="box" style="--box: var(--crit)">
+      <h3 class="box-t">Link Vivo de Itaguaí cai às 14:17</h3>
+      <div class="tl">
+        <span class="t">14:17:45</span><span class="g crit">✖</span><span class="txt">O netwatch do RB5009 dispara o webhook DOWN. O link entra no topo da fila como <b>CRIT</b>.</span>
+        <span class="t">14:18:26</span><span class="g info">⇄</span><span class="txt">O worker vê a rota padrão de Itaguaí indo para a Tim. O detalhe mostra <b>failover ok em 41 s</b>.</span>
+        <span class="t">14:18:30</span><span class="g warn">◌</span><span class="txt">12 equipamentos de Itaguaí param de responder e ficam agrupados sob o link, sem gerar 12 avisos.</span>
+        <span class="t">14:18:45</span><span class="g crit">▸</span><span class="txt">Uma mensagem chega no canal <b>#ti-alertas</b> do Cliq, com link para abrir o item.</span>
+        <span class="t">14:22:10</span><span class="g" style="color:var(--accent-2)">░</span><span class="txt">Matheus dá ack com a nota "protocolo Vivo 88123". Quem abrir a tela vê que já tem dono, e o reaviso para.</span>
+        <span class="t">14:40:51</span><span class="g ok">●</span><span class="txt">O link volta. O item sai da fila e o Cliq recebe "Link Vivo de Itaguaí voltou após 23 min".</span>
+        <span class="t">01/12</span><span class="g dim">▤</span><span class="txt">O relatório de novembro conta essa queda na disponibilidade do link, para cobrar a operadora.</span>
+      </div>
+    </section>
+    <section class="box" style="--box: var(--accent)">
+      <h3 class="box-t">O que chega no Zoho Cliq</h3>
+      <div class="cliq" aria-label="Exemplo de mensagem no Cliq">
+        <div class="av">W</div>
+        <div>
+          <div class="meta"><b>WatchIT</b> · bot · #ti-alertas · 14:18</div>
+          <div class="card">
+            <h4>✖ Itaguaí · Link Vivo 500M fora</h4>
+            <p>Desde 14:17 (webhook). Failover para Tim ok. 12 equipamentos afetados.</p>
+            <span class="cb">Abrir no WatchIT</span>
+          </div>
+        </div>
+      </div>
+      <div class="cliq" style="margin-top:10px">
+        <div class="av">W</div>
+        <div>
+          <div class="meta"><b>WatchIT</b> · bot · #ti-alertas · 14:40</div>
+          <div class="card okc">
+            <h4>● Itaguaí · Link Vivo 500M voltou</h4>
+            <p>Ficou 23 min fora. Ack: matheus, "protocolo Vivo 88123".</p>
+          </div>
+        </div>
+      </div>
+      <p class="dim" style="margin-top:10px">O botão abre o WatchIT direto no item. Fora da rede da empresa, ele só funciona com VPN.</p>
+    </section>
+  </div>
+
+  <h2 class="sec"><span class="n">4</span>A rotina da equipe</h2>
+  <div class="cols c3 routine">
+    <section class="box" style="--box: var(--info)"><h3 class="box-t">Começo do dia</h3><span class="when">5 min</span>
+      <p>Abrir a tela. Se estiver em "✔ tudo ok há 14h", não há nada a fazer. Conferir o resultado do teste de failover das 05:00 e o que ficou com ack da noite.</p></section>
+    <section class="box" style="--box: var(--ok)"><h3 class="box-t">Durante o dia</h3><span class="when">tela num monitor lateral ou TV</span>
+      <p>Ninguém precisa navegar. Quando algo aparece em vermelho, quem pegar dá ack, e os outros veem que já tem dono.</p></section>
+    <section class="box" style="--box: var(--crit)"><h3 class="box-t">Fora do horário</h3><span class="when">celular</span>
+      <p>Só o Cliq avisa, e só de problemas críticos. O botão abre o item no celular, onde dá para dar ack com nota pela VPN.</p></section>
+    <section class="box" style="--box: var(--warn)"><h3 class="box-t">Manutenção planejada</h3><span class="when">antes de mexer</span>
+      <p>Silenciar o equipamento ou a unidade com prazo (ex.: até 18:00). Não sai aviso no Cliq, e o silêncio expira sozinho.</p></section>
+    <section class="box" style="--box: var(--accent)"><h3 class="box-t">Chamado de usuário</h3><span class="when">"a internet caiu"</span>
+      <p>Filtrar pela unidade (tecla 1, 2 ou 3) e ver em segundos se é link, AP ou só a máquina da pessoa. Copiar o resumo para o chamado.</p></section>
+    <section class="box" style="--box: var(--dim)"><h3 class="box-t">Fim do mês</h3><span class="when">10 min</span>
+      <p>Gerar o relatório de disponibilidade por link e unidade, com quedas e tempo fora. Ele serve para a gestão e para contestar a operadora.</p></section>
+  </div>
+
+  <h2 class="sec"><span class="n">5</span>Avisos no Zoho Cliq</h2>
+  <div class="cols c2">
+    <section class="box" style="--box: var(--crit)">
+      <h3 class="box-t">Quando avisa e quando não</h3>
+      <div class="tbl-scroll">
+      <table class="rules">
+        <thead><tr><th>Situação</th><th>Cliq</th></tr></thead>
+        <tbody>
+          <tr><td>CRIT abre</td><td>Avisa uma vez, já agrupado. Um link caído com 12 dependentes vira uma só mensagem.</td></tr>
+          <tr><td>CRIT sem ack</td><td>Reavisa após 15 min, uma única vez.</td></tr>
+          <tr><td>WARN</td><td>Só avisa se durar mais de 15 min (ex.: link acima de 90%).</td></tr>
+          <tr><td>Volta ao normal</td><td>Avisa com a duração da queda.</td></tr>
+          <tr><td>Liga e desliga</td><td>Agrupa: "caiu 4× em 15 min" em vez de 8 mensagens.</td></tr>
+          <tr><td>Silenciado</td><td>Não avisa até o prazo acabar.</td></tr>
+          <tr><td>Worker parado</td><td>Avisa "WatchIT sem dados há 3 min". Esse é o pior caso, porque a tela parece normal.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+    <section class="box" style="--box: var(--info)">
+      <h3 class="box-t">O que precisa ser implementado</h3>
+      <ul class="txt" style="margin:0;padding-left:18px">
+        <li>No Cliq: criar um bot <b>WatchIT</b> com webhook de entrada e postar no canal da TI. É só uma URL com token, sem servidor exposto.</li>
+        <li>Em Configurações › Avisos: a URL do webhook (guardada criptografada, como as outras chaves), o canal e um botão "enviar mensagem de teste".</li>
+        <li>No worker: trocar o envio atual por webhook genérico e e-mail por um único envio ao Cliq, com as regras ao lado, numa função testável.</li>
+        <li>Na auditoria: registrar cada aviso enviado e cada falha de envio.</li>
+        <li><b>Depois, opcional:</b> botão "dar ack" dentro do Cliq. Exige que o Zoho alcance o WatchIT pela internet, então fica para uma segunda etapa.</li>
+      </ul>
+    </section>
+  </div>
+
+  <h2 class="sec"><span class="n">6</span>Quem faz o quê</h2>
+  <section class="box" style="--box: var(--accent-2)">
+    <h3 class="box-t">Papéis que já existem</h3>
+    <div class="tbl-scroll">
+    <table class="rules roles">
+      <thead><tr><th>Ação</th><th>Admin</th><th>Operador</th><th>Visualizador</th></tr></thead>
+      <tbody>
+        <tr><td>Ver a tela, filtrar e abrir detalhes</td><td class="ok">●</td><td class="ok">●</td><td class="ok">●</td></tr>
+        <tr><td>Dar ack, silenciar, rechecar</td><td class="ok">●</td><td class="ok">●</td><td class="faint">–</td></tr>
+        <tr><td>Cadastrar e editar equipamentos e links</td><td class="ok">●</td><td class="ok">●</td><td class="faint">–</td></tr>
+        <tr><td>Gerar relatório mensal</td><td class="ok">●</td><td class="ok">●</td><td class="ok">●</td></tr>
+        <tr><td>Usuários, avisos, módulos, interface padrão</td><td class="ok">●</td><td class="faint">–</td><td class="faint">–</td></tr>
+        <tr><td>Auditoria</td><td class="ok">●</td><td class="faint">–</td><td class="faint">–</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="dim" style="margin-top:8px">Uma TV na sala da TI usa uma conta de Visualizador, para mostrar a tela sem botões de ação.</p>
+  </section>
+
+  <h2 class="sec"><span class="n">7</span>O administrador escolhe a interface</h2>
+  <div class="cols c2">
+    <section class="box" style="--box: var(--accent)">
+      <h3 class="box-t">Configurações › Aparência <span class="sub">exemplo</span></h3>
+      <form class="pick" id="pick" aria-label="Interface padrão">
+        <label class="opt"><input type="radio" name="ui" id="ui-tower" value="tower" checked><b>TOWER/1 · fila de exceções</b><span class="d">Problemas no topo, links e unidades no meio. Recomendada como padrão.</span><a href="./">ver protótipo →</a></label>
+        <label class="opt"><input type="radio" name="ui" id="ui-plantao" value="plantao"><b>Plantão por unidade</b><span class="d">Uma coluna por unidade e busca universal. Boa para quem atende chamados.</span><a href="plantao.html">ver protótipo →</a></label>
+        <label class="opt"><input type="radio" name="ui" id="ui-nettop" value="nettop"><b>NetTop · rede primeiro</b><span class="d">Failover, tráfego e Wi-Fi em destaque, com SLA do mês.</span><a href="nettop.html">ver protótipo →</a></label>
+        <label class="opt"><input type="radio" name="ui" id="ui-wtop" value="wtop"><b>wtop · btop literal</b><span class="d">Painéis numerados, filtro por texto e paleta Ctrl+K. Para quem vive no teclado.</span><a href="wtop.html">ver protótipo →</a></label>
+      </form>
+      <label class="toggle"><input type="checkbox" id="allow-user" checked> Permitir que cada usuário troque a sua no Perfil</label>
+      <p class="dim" id="pick-msg" style="margin-top:10px" role="status">Padrão para todos: TOWER/1. Cada usuário pode trocar a sua.</p>
+    </section>
+    <section class="box" style="--box: var(--info)">
+      <h3 class="box-t">Por que isso não volta a inchar</h3>
+      <div class="stack" aria-label="Camadas">
+        <div class="layer top"><span>TOWER/1</span><span>Plantão</span><span>NetTop</span><span>wtop</span></div>
+        <div class="layer"><b>Painéis compartilhados</b> <span class="d">· problemas, links, unidades, Wi-Fi, tráfego, detalhe, eventos, SLA</span></div>
+        <div class="layer"><b>Ações e atalhos únicos</b> <span class="d">· ack, silenciar, rechecar, copiar, mapa de teclas, busca</span></div>
+        <div class="layer"><b>Uma regra de "o que está quebrado"</b> <span class="d">· a mesma para tela, Cliq e relatório</span></div>
+        <div class="layer"><b>Um snapshot de dados</b> <span class="d">· uma chamada a cada 5 s, igual para as quatro telas</span></div>
+      </div>
+      <p class="txt" style="margin-top:12px">As quatro interfaces são só arranjos diferentes das mesmas peças. Um recurso novo entra num painel e aparece em todas. Nenhuma interface tem dado, regra ou ação própria.</p>
+      <p class="txt dim">Na prática: um campo "interface padrão" na configuração geral, um campo opcional no usuário e uma tela raiz que escolhe o arranjo. A TOWER/1 sai primeiro, e as outras três entram uma por vez.</p>
+    </section>
+  </div>
+
+  <h2 class="sec"><span class="n">8</span>Ordem de execução</h2>
+  <div class="phases">
+    <div class="ph"><span class="id">F0</span><div><h3>Fechar a branch atual</h3><p>Concluir ou descartar o trabalho pendente em feat/barra-hardening-failover antes de começar.</p></div><span class="ef">—</span></div>
+    <div class="ph"><span class="id">F1</span><div><h3>Módulos e menu enxuto</h3><p>Interruptores por módulo. Pausar Telefonia, Computadores e NVR (menu e sincronização) e tirar manuais, changelog e segurança da navegação. Ganho imediato, sem tela nova.</p></div><span class="ef">P</span></div>
+    <div class="ph"><span class="id">F2</span><div><h3>Núcleo e TOWER/1</h3><p>Snapshot único, regra de problemas testada, painéis compartilhados, ack e silêncio também para links, e a TOWER/1 rodando em paralelo à tela atual.</p></div><span class="ef">M</span></div>
+    <div class="ph"><span class="id">F3</span><div><h3>Avisos no Zoho Cliq</h3><p>Bot com webhook, regras anti-ruído, mensagem de teste, auditoria dos envios e aviso de worker parado.</p></div><span class="ef">P/M</span></div>
+    <div class="ph"><span class="id">F4</span><div><h3>Escolha de interface</h3><p>Configuração do padrão e preferência por usuário. Depois Plantão, NetTop e wtop, uma por branch, todos montados com os mesmos painéis.</p></div><span class="ef">M</span></div>
+    <div class="ph"><span class="id">F5</span><div><h3>Relatório mensal e limpeza</h3><p>Relatório de disponibilidade por link e unidade. As páginas antigas só são apagadas depois de medir que ninguém mais acessa.</p></div><span class="ef">M</span></div>
+  </div>
+  <p class="note" style="margin-top:18px"><b>Observação:</b> os protótipos ainda mostram NVR, PCs e celulares nos exemplos. Na versão real esses blocos somem enquanto os módulos estiverem pausados.</p>
+</div>
+
+<script src="tui.js"></script>
+<script>
+(function () {
+  WT.nav(6);
+  const NAMES = { tower: "TOWER/1", plantao: "Plantão por unidade", nettop: "NetTop", wtop: "wtop" };
+  const msg = document.getElementById("pick-msg");
+  function update() {
+    const v = document.querySelector('input[name="ui"]:checked').value;
+    const allow = document.getElementById("allow-user").checked;
+    msg.textContent = "Padrão para todos: " + NAMES[v] + ". " + (allow ? "Cada usuário pode trocar a sua." : "Todos usam a mesma.");
+  }
+  document.getElementById("pick").addEventListener("change", (e) => { update(); WT.toast("Interface padrão: " + NAMES[e.target.value] + " (simulação)"); });
+  document.getElementById("allow-user").addEventListener("change", update);
+  document.getElementById("pick").addEventListener("submit", (e) => e.preventDefault());
+  WT.keys({ "?": () => WT.help([["?", "fechar esta ajuda"], ["esc", "fechar"]]), Escape: () => WT.closeHelp() });
+})();
+</script>
+</body>
+</html>

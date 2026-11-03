@@ -110,7 +110,7 @@ npm run dev
 npm run worker
 
 # Tests
-npm test                  # Run all tests (~560 tests, ~49 suites)
+npm test                  # Run all tests (~780 tests, ~83 suites)
 npm run test:coverage     # With coverage report
 npm run test:integration  # Integration + load tests (requires PostgreSQL container)
 npm test -- --testPathPatterns="__tests__/api/devices.test.ts"  # Single test file
@@ -167,7 +167,7 @@ npm run db:generate
 
 **Worker graceful shutdown:** `worker/index.ts` traps `SIGTERM`/`SIGINT` and calls `shutdown()` from `scheduler.ts`, which clears all intervals and drains in-flight async operations (tracked via `pendingChecks: Set<Promise<unknown>>`) before calling `db.$disconnect()`. The worker never loses a write mid-flight on container stop.
 
-**Worker heartbeat:** `scheduler.ts` upserts a `WorkerHeartbeat` row every 60 seconds. `/api/health` reads it and reports `workerStatus: "ok" | "stale" | "unknown"` (stale = last heartbeat > 3 minutes ago). When stale, `/api/health` fires a fire-and-forget POST to `WORKER_STALE_WEBHOOK_URL` (if set) with a 1-hour cooldown.
+**Worker heartbeat:** `scheduler.ts` upserts a `WorkerHeartbeat` row every 60 seconds. `/api/health` reads it and reports `workerStatus: "ok" | "stale" | "unknown"` (stale = last heartbeat > 3 minutes ago). When stale, `/api/health` calls `notify({ kind: "WORKER_STALE" })` (Zoho Cliq, `lib/notify.ts`; no-op if Cliq is disabled) with a 1-hour cooldown. The old `WORKER_STALE_WEBHOOK_URL` and per-device `alertWebhookUrl` webhooks are no longer used.
 
 **Fail-fast at startup:** `worker/index.ts` calls `validateKey()` (from `lib/crypto.ts`) and `validateSecret()` (from `lib/webhook.ts`) before starting the scheduler. If `ENCRYPTION_KEY` or `WEBHOOK_SECRET` are missing or too short, the worker exits immediately with a clear error instead of failing silently later.
 
@@ -290,7 +290,7 @@ scripts/
   migrate-credentials.ts  # One-time migration of plaintext credentials to AES-256-GCM
 
 docs/
-  openapi.yaml            # OpenAPI 3.1 spec for all 17 API endpoints
+  openapi.yaml            # OpenAPI 3.1 spec for the API (~43 paths)
 
 __tests__/
   api/                    # API route tests

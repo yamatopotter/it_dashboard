@@ -1,7 +1,7 @@
 # Relatório Geral do Sistema — WatchIT Tower
 
-**Data:** 2026-06-14  
-**Versão:** 0.2.1  
+**Data:** 2026-11-03  
+**Versão:** 0.7.0  
 **Analista:** Claude Code (claude-sonnet-4-6)  
 **Escopo:** Código-fonte completo — Next.js 14 App Router, worker Node.js, Prisma 7 + PostgreSQL
 
@@ -19,7 +19,7 @@ WatchIT Tower é um dashboard de monitoramento de TI para uso exclusivamente loc
 | Arquitetura | 9.1 | ↑ (timeout por verificação no worker, alerta sem duplicação, índices de banco, queries com limite) |
 | Usabilidade | 9.0 | ↑ (error boundaries, telas de erro com retry, sem travar carregando, sem double-submit) |
 | Design | 9.3 | ↑ (contraste WCAG AA rounds 1–3; navegação por teclado e estados ARIA — round 4) |
-| Testes | 9.1 | ↑ (580 testes, 67 suítes; cobertura de 2FA, logout e autorização por papel) |
+| Testes | 9.1 | ↑ (779 testes, 83 suítes; cobertura de 2FA, logout e autorização por papel) |
 | Documentação | 9.5 | → (dev-manual + test-manual, README reescrito) |
 
 ---
@@ -28,17 +28,22 @@ WatchIT Tower é um dashboard de monitoramento de TI para uso exclusivamente loc
 
 ### Estado atual
 
-35 achados catalogados em `SECURITY_REPORT.md`. Todos os críticos, altos e médios foram resolvidos ou aceitos intencionalmente. Apenas 3 itens de infraestrutura permanecem abertos.
+37 achados catalogados em `SECURITY_REPORT.md`. Todos os críticos, altos e médios foram resolvidos ou aceitos intencionalmente. Permanecem abertos 3 itens de infraestrutura e 1 de baixo risco (SEC-040).
 
 **Resumo:**
-- **32 resolvidos** (incluindo todos críticos e altos) + **1 aceito por design** (SEC-030)
-- **3 abertos** — todos de infraestrutura, sem código a corrigir
+- **34 resolvidos** (incluindo todos críticos e altos) + **1 aceito por design** (SEC-030)
+- **4 abertos** — 3 de infraestrutura e SEC-040 (Baixo: estado anti-ruído do Cliq em memória)
 
 | ID | Título | Severidade | Status |
 |---|---|---|---|
 | SEC-005 | TLS não configurado por padrão | 🟡 Médio | Aberto (infra) |
 | SEC-006 | Permissões do banco de dados | 🔵 Baixo | Aberto (infra) |
 | SEC-008 | Worker com privilégios do processo pai | 🔵 Baixo | Aberto (Docker mitiga) |
+| SEC-040 | Estado anti-ruído e cache de config do Cliq em memória | 🔵 Baixo | Aberto |
+
+**Redesign (v0.7.0):**
+- **SEC-038 (Info)** — URL do webhook do Zoho Cliq cifrada (AES-256-GCM) e validada contra SSRF (https + domínios Zoho)
+- **SEC-039 (Info)** — ack/silêncio exigem OPERADOR+; módulos, aparência e Cliq exigem ADMIN; `/api/tower` exige sessão
 
 **Hardening desta auditoria (v0.2.1):**
 - **SEC-028 (Alto)** — `GET /api/links` não expõe mais `webhookToken` a VIEWER (apenas OPERADOR+)
@@ -148,7 +153,7 @@ Worker (Node.js separado)
 
 ### Cobertura atual
 
-- **580 testes** em 67 suítes (run padrão), todos passando
+- **779 testes** em 83 suítes (run padrão; 2 falhas em andamento em `version`/`sidebar` no momento da medição)
 - **Integração:** `__tests__/integration/` — devices CRUD, webhook e2e (PostgreSQL real)
 - **Carga:** `__tests__/worker/load.test.ts` — 50 dispositivos × 1s interval (excluído do npm test)
 - **Scheduler startup:** `__tests__/worker/scheduler-startup.test.ts` (9 testes)
@@ -188,7 +193,7 @@ Worker (Node.js separado)
 | Artefato | Estado |
 |---|---|
 | `CLAUDE.md` | Atualizado — diretriz de branch por request, protocolo de atualização de docs pós-merge |
-| `SECURITY_REPORT.md` | Atualizado — 27 achados, 24 resolvidos, 3 abertos (infra) |
+| `SECURITY_REPORT.md` | Atualizado em 2026-11-03 — 37 achados, 34 resolvidos, 4 abertos |
 | `SYSTEM_REPORT.md` | Este arquivo — atualizado em 2026-06-14 (v0.2.0) |
 | `README.md` | Reescrito com stack atual (Next.js 16, React 19, Prisma 7), todos os protocolos e schema |
 | `docs/openapi.yaml` | Atualizado com todos os endpoints (admin, users, totp, audit, etc.) |
@@ -198,7 +203,21 @@ Worker (Node.js separado)
 
 ### Endpoints documentados no OpenAPI
 
-Todos os 17+ endpoints principais estão documentados incluindo: `/api/admin/audit`, `/api/admin/config`, `/api/admin/cleanup`, `/api/admin/stats`, `/api/users`, `/api/users/{id}`, `/api/users/{id}/totp`, `/api/auth/logout`, `/api/auth/check-2fa`, `/api/version`.
+Todos os endpoints principais estão documentados incluindo: `/api/admin/audit`, `/api/admin/config`, `/api/admin/cleanup`, `/api/admin/stats`, `/api/users`, `/api/users/{id}`, `/api/users/{id}/totp`, `/api/auth/logout`, `/api/auth/check-2fa`, `/api/version`.
+
+**Redesign (v0.7.0):** `GET /api/tower` (snapshot único com ETag, cache de 3 s), `POST|DELETE /api/links/{id}/ack`, `POST|DELETE /api/links/{id}/silence`, `POST|DELETE /api/devices/{id}/silence`, `GET|PUT /api/settings/modules`, `GET|PUT /api/settings/appearance`, `GET|PUT /api/settings/cliq`, `POST /api/settings/cliq/test`, `PUT /api/profile/ui` e `GET /api/reports?month=&target=` (relatório mensal de disponibilidade).
+
+---
+
+## Redesign — foco em links, rede e Wi-Fi (v0.7.0)
+
+- **Módulos opcionais** (`lib/modules.ts`, `lib/module-config.ts`): Telefonia, Computadores e NVR desligados por padrão; flags em `SystemConfig`, gating 404 nas rotas, fora do menu e das contagens, e sincronizações pausadas. Dados e código permanecem.
+- **Snapshot único** (`lib/tower-snapshot.ts`, `lib/problems.ts`, `lib/tower-types.ts`): `GET /api/tower` alimenta todas as interfaces; supressão de equipamentos atrás de link/gateway caído; ETag e cache de 3 s.
+- **Ack e silêncio** para links e dispositivos (`lib/problem-actions.ts`), com auditoria.
+- **Interfaces:** TOWER/1 em `/tower` (`components/tui`, `components/tower`, `hooks/use-tower.ts`); Plantão, NetTop e wtop são interfaces alternativas escolhíveis em Configurações › Sistema › Aparência e no Perfil.
+- **Avisos Zoho Cliq** (`lib/cliq.ts`, `lib/notify.ts`): substituem o webhook genérico por dispositivo e `WORKER_STALE_WEBHOOK_URL`; anti-ruído, deduplicação por episódio e auditoria.
+- **Relatório mensal** (`lib/sla.ts`, `lib/report-availability.ts`): disponibilidade por link e unidade, meta configurável.
+- **Banco:** campo `site` em `Device`/`Link`, ack/manutenção em `Link`, colunas de módulos/aparência/Cliq em `SystemConfig`, `uiPreference` em `User` (migration `20261103120000_redesign_foundation`). Protótipos em `docs/redesign/`.
 
 ---
 

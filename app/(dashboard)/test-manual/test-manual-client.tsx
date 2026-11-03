@@ -156,7 +156,7 @@ export default function TestManualClient() {
           <div data-section id="overview">
             <SectionTitle id="overview">Visão geral</SectionTitle>
             <P>
-              O WatchIT Tower possui uma suite com <strong>586 testes</strong> em <strong>69 suítes</strong>{" "}
+              O WatchIT Tower possui uma suite com <strong>779 testes</strong> em <strong>83 suítes</strong>{" "}
               (run padrão) cobrindo API routes, worker de monitoramento, componentes React,
               bibliotecas utilitárias, segurança e fluxos de integração end-to-end.
             </P>
@@ -285,7 +285,7 @@ NEXTAUTH_SECRET=<min 32 chars>`}
                 ["devices-bulk.test.ts",      "POST /api/devices/bulk, range de IPs, limite de 256"],
                 ["devices-check.test.ts",     "POST /api/devices/[id]/check (trigger manual de check)"],
                 ["devices-export.test.ts",    "GET /api/devices/export (CSV, proteção de fórmula)"],
-                ["health.test.ts",            "GET /api/health — uptime%, worker liveness, webhook stale"],
+                ["health.test.ts",            "GET /api/health — uptime%, worker liveness, aviso de worker stale (Cliq)"],
                 ["incidents.test.ts",         "GET /api/incidents — paginação, filtros por tipo/status"],
                 ["links.test.ts",             "CRUD completo de links, campos de bandwidth"],
                 ["links-webhook.test.ts",     "POST /api/links/[id]/up|down — verificação HMAC-SHA256"],
@@ -295,7 +295,11 @@ NEXTAUTH_SECRET=<min 32 chars>`}
                 ["overview.test.ts",          "GET /api/overview — sparklines, link segments, NaN guard"],
                 ["status.test.ts",            "GET /api/status/[deviceId] — histórico com ?hours="],
                 ["timeline.test.ts",          "GET /api/timeline — eventos unificados, dedup, ?hours="],
-                ["reports.test.ts",           "GET /api/reports/[id] — downtime, ping, CPU/memória"],
+                ["reports.test.ts",           "GET /api/reports — modo mensal (month/target) e por dispositivo (downtime, ping, CPU/memória)"],
+                ["tower.test.ts",             "GET /api/tower — snapshot, ETag/304, 401 sem sessão"],
+                ["problem-actions.test.ts",   "ack/silêncio de links e dispositivos — papel OPERADOR+, limites de minutos, auditoria"],
+                ["settings-modules.test.ts",  "GET/PUT /api/settings/modules — ADMIN, flags padrão desligadas"],
+                ["settings-cliq.test.ts",     "GET/PUT /api/settings/cliq e /test — URL cifrada, validação SSRF, ADMIN"],
                 ["users.test.ts",             "GET/POST /api/users — roles, bcrypt hash, totpEnabled"],
                 ["users-id.test.ts",          "PUT/DELETE /api/users/[id], TOTP enable/disable/verify"],
                 ["admin-audit.test.ts",       "GET /api/admin/audit — logs paginados com filtros"],
@@ -336,7 +340,7 @@ NEXTAUTH_SECRET=<min 32 chars>`}
                 ["alert.test.ts",             "dispatchAlert — webhook POST, cooldown, HMAC header"],
                 ["scheduler.test.ts",         "startScheduler/shutdown — drain de pendingChecks, idempotência"],
                 ["scheduler-startup.test.ts", "fail-fast: ENCRYPTION_KEY e WEBHOOK_SECRET ausentes aborta worker"],
-                ["scheduler-alert.test.ts",   "caminho de alerta: claim atômico (updateMany), cooldown, sem re-alerta após threshold"],
+                ["scheduler-alert.test.ts",   "caminho de alerta (Zoho Cliq via notify): claim atômico (updateMany), cooldown, sem re-alerta após threshold"],
               ]}
             />
 
@@ -404,6 +408,8 @@ prismaMock.deviceStatus.upsert.mockResolvedValue({ ... });`}
               rows={[
                 ["crypto.test.ts",       "encrypt/decrypt roundtrip, IV aleatório por chamada, erro sem ENCRYPTION_KEY, comprimento incorreto"],
                 ["webhook.test.ts",      "generateWebhookToken, verifyWebhookToken com timingSafeEqual, rejeita token inválido"],
+                ["cliq.test.ts / notify.test.ts", "validateCliqUrl (SSRF), mensagens, regras anti-ruído, silêncio, ack e dedup por episódio"],
+                ["problems.test.ts / sla.test.ts", "regra de problemas (supressão por link caído), cálculo de disponibilidade mensal"],
                 ["format.test.ts",       "formatUptime (dias/horas/minutos), formatResponseTime (ms/s), formatPercent (arredondamento)"],
                 ["logger.test.ts",       "Saída JSON no stdout para info/warn, stderr para error, campos ctx incluídos"],
                 ["prisma-error.test.ts", "handlePrismaError mapeia P2002 (unique) e P2025 (not found) para HTTP codes"],
