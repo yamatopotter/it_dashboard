@@ -8,6 +8,7 @@ jest.mock("routeros", () => ({
 
 import { RouterOSAPI } from "routeros";
 import { checkRouterOS } from "@/worker/monitors/routeros";
+import { closeAllRouterOS } from "@/worker/connections/routeros-pool";
 
 const MockRouterOSAPI = RouterOSAPI as jest.MockedClass<typeof RouterOSAPI>;
 
@@ -15,7 +16,8 @@ let mockConnect: jest.Mock;
 let mockClose: jest.Mock;
 let mockWrite: jest.Mock;
 
-beforeEach(() => {
+beforeEach(async () => {
+  await closeAllRouterOS(); // pooled connections must not leak between tests
   jest.clearAllMocks();
   mockConnect = jest.fn().mockResolvedValue(undefined);
   mockClose   = jest.fn();
@@ -133,7 +135,7 @@ describe("checkRouterOS", () => {
     expect(result.memoryUsed).toBeNull();
   });
 
-  it("closes the connection after a successful read", async () => {
+  it("keeps the connection pooled after a successful read and closes it on closeAll", async () => {
     mockWrite
       .mockResolvedValueOnce([{
         "uptime":       "1h",
@@ -145,10 +147,12 @@ describe("checkRouterOS", () => {
 
     await checkRouterOS("192.168.1.1", "admin", "pass");
 
+    expect(mockClose).not.toHaveBeenCalled();
+    await closeAllRouterOS();
     expect(mockClose).toHaveBeenCalled();
   });
 
-  it("captures errors and stays resolved when reads throw (resource + DHCP), still closing", async () => {
+  it("captures errors and stays resolved when reads throw (resource + DHCP), still pooled/closable", async () => {
     mockWrite.mockRejectedValue(new Error("API error"));
 
     const result = await checkRouterOS("192.168.1.1", "admin", "pass");
@@ -158,6 +162,7 @@ describe("checkRouterOS", () => {
     expect(result.resourceError).toContain("API error");
     expect(result.dhcpError).toContain("API error");
     expect(result.uptime).toBeNull();
+    await closeAllRouterOS();
     expect(mockClose).toHaveBeenCalled();
   });
 

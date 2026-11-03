@@ -6,6 +6,9 @@ import { checkRouterOS } from "./monitors/routeros";
 import { checkUnifi } from "./monitors/unifi";
 import { checkOmada, resolveOmadaSiteId } from "./monitors/omada";
 import { checkLinkTraffic } from "./monitors/link-traffic";
+import { closeAllRouterOS } from "./connections/routeros-pool";
+import { destroyAllAgents } from "./connections/http-agent";
+import { traced, flushStats, type MonitorPerf } from "./connections/stats";
 import { NvrClient, validateRecording } from "./monitors/nvr";
 import { processChannelIssues } from "./nvr-channels";
 import { syncMiradorePhones } from "./miradore-sync";
@@ -91,6 +94,9 @@ export async function shutdown(timeoutMs = 10_000): Promise<void> {
     if (typeof t === "object" && t !== null && "unref" in t) (t as NodeJS.Timeout).unref();
   });
   await Promise.race([Promise.allSettled([...pendingChecks]), deadline]);
+  // Close pooled RouterOS sessions and keep-alive HTTPS sockets after in-flight work drained
+  await Promise.allSettled([closeAllRouterOS()]);
+  destroyAllAgents();
 }
 
 export async function runChecks(device: Device): Promise<boolean> {
@@ -106,6 +112,10 @@ export async function runChecks(device: Device): Promise<boolean> {
     return true;
   }
 
+  // Per-monitor duration and connection/session reuse (only for pooled protocols)
+  const perf: Record<string, MonitorPerf> = {};
+  const perfOf = (name: string) => (p: MonitorPerf) => { if (p.reused !== null) perf[name] = p; };
+
   const results = await Promise.allSettled([
     device.pingEnabled ? checkPing(device.ip) : Promise.resolve(null),
     device.httpEnabled
@@ -117,7 +127,9 @@ export async function runChecks(device: Device): Promise<boolean> {
     (() => {
       if (!device.routerosEnabled) return Promise.resolve(null);
       const creds = resolveRouterosCredentials(device);
-      return creds ? checkRouterOS(device.ip, creds.user, creds.pass, device.routerosPort) : Promise.resolve(null);
+      return creds
+        ? traced(() => checkRouterOS(device.ip, creds.user, creds.pass, device.routerosPort), perfOf("routeros"))
+        : Promise.resolve(null);
     })(),
     (() => {
       if (!device.unifiEnabled) return Promise.resolve(null);
@@ -125,12 +137,12 @@ export async function runChecks(device: Device): Promise<boolean> {
       if (device.unifiAuthMethod === "userpass") {
         const creds = resolveUnifiCredentials(device);
         return creds
-          ? checkUnifi(device.ip, controllerIp, { method: "userpass", username: creds.username, password: creds.password }, device.unifiPort, device.unifiSite, device.unifiTlsVerify)
+          ? traced(() => checkUnifi(device.ip, controllerIp, { method: "userpass", username: creds.username, password: creds.password }, device.unifiPort, device.unifiSite, device.unifiTlsVerify, device.checkInterval), perfOf("unifi"))
           : Promise.resolve(null);
       }
       const apiKey = resolveUnifiApiKey(device);
       return apiKey
-        ? checkUnifi(device.ip, controllerIp, { method: "apikey", apiKey }, device.unifiPort, device.unifiSite, device.unifiTlsVerify)
+        ? traced(() => checkUnifi(device.ip, controllerIp, { method: "apikey", apiKey }, device.unifiPort, device.unifiSite, device.unifiTlsVerify, device.checkInterval), perfOf("unifi"))
         : Promise.resolve(null);
     })(),
     (async () => {
@@ -161,7 +173,11 @@ export async function runChecks(device: Device): Promise<boolean> {
         });
       }
 
-      return checkOmada(device.ip, controllerIp, device.omadacId, creds.clientId, creds.clientSecret, siteId, device.omadaTlsVerify);
+      const omadacId = device.omadacId;
+      return traced(
+        () => checkOmada(device.ip, controllerIp, omadacId, creds.clientId, creds.clientSecret, siteId, device.omadaTlsVerify, 443, device.checkInterval),
+        perfOf("omada"),
+      );
     })(),
   ]);
 
@@ -267,20 +283,26 @@ export async function runChecks(device: Device): Promise<boolean> {
     }),
   ], { timeout: 5_000 });
 
+  const perfFields = Object.fromEntries(
+    Object.entries(perf).flatMap(([k, v]) => [[`${k}Ms`, v.durationMs], [`${k}Reused`, v.reused]]),
+  );
   if (omadaResult) {
     log("info", `${isOnline ? "✓" : "✗"} ${device.name}`, {
+      ...perfFields,
       ip: device.ip,
       clients: omadaResult.totalClients,
       ssids: omadaResult.ssids.length,
     });
   } else if (unifiResult) {
     log("info", `${isOnline ? "✓" : "✗"} ${device.name}`, {
+      ...perfFields,
       ip: device.ip,
       clients: unifiResult.totalClients,
       ssids: unifiResult.ssids.length,
     });
   } else if (routerosResult) {
     log("info", `${isOnline ? "✓" : "✗"} ${device.name}`, {
+      ...perfFields,
       ip: device.ip,
       dhcpClients: routerosResult.clients.length,
       pingMs: pingMs ?? null,
@@ -473,12 +495,11 @@ async function runLinkChecks(link: Link & { mikrotikDevice: Device | null }) {
   if (!creds) return;
 
   try {
-    const result = await checkLinkTraffic(
-      dev.ip,
-      creds.user,
-      creds.pass,
-      dev.routerosPort,
-      link.mikrotikInterface,
+    let perf: MonitorPerf | null = null;
+    const iface = link.mikrotikInterface;
+    const result = await traced(
+      () => checkLinkTraffic(dev.ip, creds.user, creds.pass, dev.routerosPort, iface),
+      (p) => { perf = p; },
     );
 
     await db.link.update({
@@ -489,7 +510,9 @@ async function runLinkChecks(link: Link & { mikrotikDevice: Device | null }) {
       },
     });
 
+    const p = perf as MonitorPerf | null;
     log("info", `[Link] ${link.name}`, {
+      ...(p ? { durationMs: p.durationMs, reused: p.reused } : {}),
       downloadMbps: (result.downloadBps / 1_000_000).toFixed(1),
       uploadMbps:   (result.uploadBps   / 1_000_000).toFixed(1),
     });
@@ -526,6 +549,8 @@ export async function startScheduler() {
       .catch(() => {});
   void updateHeartbeat();
   makeInterval(updateHeartbeat, 60_000);
+  // Aggregated connection-reuse summary every 5 minutes
+  makeInterval(flushStats, 5 * 60_000);
 
   // Zoho Cliq: reaviso único para CRIT sem ack após cliqRenotifyMinutes
   makeInterval(() => void trackAsync(checkRenotify()), 60_000);

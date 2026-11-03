@@ -6,7 +6,7 @@ jest.mock("https", () => ({ request: jest.fn() }));
 jest.mock("http",  () => ({ request: jest.fn() }));
 
 import * as https from "https";
-import { checkOmada, resolveOmadaSiteId } from "@/worker/monitors/omada";
+import { checkOmada, resolveOmadaSiteId, resetOmadaCache } from "@/worker/monitors/omada";
 
 const mockRequest = https.request as jest.Mock;
 
@@ -36,7 +36,7 @@ function mockQueue(responses: ReturnType<typeof fakeRes>[]) {
   });
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => { jest.clearAllMocks(); resetOmadaCache(); });
 
 // ── Shared fixtures ────────────────────────────────────────────────────────────
 

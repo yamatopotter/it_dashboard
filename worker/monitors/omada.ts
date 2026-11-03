@@ -1,5 +1,8 @@
 import * as https from "https";
 import * as http from "http";
+import { getAgent } from "../connections/http-agent";
+import { SharedCache, snapshotTtlMs } from "../connections/ttl-cache";
+import { recordConn, shortHash } from "../connections/stats";
 
 // Cap controller responses to avoid buffering an unbounded payload in worker memory.
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -64,10 +67,12 @@ function rawRequest(
   bodyStr: string | undefined,
   allHeaders: Record<string, string>,
   tlsVerify: boolean,
+  retried = false,
 ): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
     const req = https.request(
-      { hostname: host, port, path, method, headers: allHeaders, rejectUnauthorized: tlsVerify },
+      { hostname: host, port, path, method, headers: allHeaders, rejectUnauthorized: tlsVerify,
+        agent: getAgent(host, port, tlsVerify) },
       (res) => {
         const status = res.statusCode ?? 0;
         let raw = "";
@@ -81,9 +86,15 @@ function rawRequest(
         });
       },
     );
-    req.on("error", (err: NodeJS.ErrnoException) =>
-      reject(normalizeNetworkError(err, host)),
-    );
+    req.on("error", (err: NodeJS.ErrnoException) => {
+      // A keep-alive socket may have been closed by the controller while idle:
+      // retry once on a fresh socket (only when the failed socket was a reused one).
+      if (!retried && (err.code === "ECONNRESET" || err.code === "EPIPE") && (req as { reusedSocket?: boolean }).reusedSocket) {
+        rawRequest(host, port, path, method, bodyStr, allHeaders, tlsVerify, true).then(resolve, reject);
+        return;
+      }
+      reject(normalizeNetworkError(err, host));
+    });
     req.setTimeout(10_000, () => req.destroy(new Error("Timeout")));
     if (bodyStr) req.write(bodyStr);
     req.end();
@@ -177,6 +188,8 @@ function bandLabel(id: number): string {
 
 // ── Shared auth helper ────────────────────────────────────────────────────────
 
+// Fetches a brand-new token (never cached). Used directly by the credential test
+// routes and site discovery; the monitor goes through the token cache below.
 export async function getOmadaToken(
   controllerIp: string,
   omadacId: string,
@@ -185,6 +198,15 @@ export async function getOmadaToken(
   tlsVerify: boolean,
   port = 443,
 ): Promise<string> {
+  return (await fetchToken(controllerIp, omadacId, clientId, clientSecret, tlsVerify, port)).accessToken;
+}
+
+interface CachedToken { accessToken: string; expiresAt: number }
+
+async function fetchToken(
+  controllerIp: string, omadacId: string, clientId: string, clientSecret: string,
+  tlsVerify: boolean, port: number,
+): Promise<CachedToken> {
   const res = await apiRequest(
     controllerIp, port,
     `/openapi/authorize/token?grant_type=client_credentials`,
@@ -199,7 +221,36 @@ export async function getOmadaToken(
     if (code === -44106) throw new Error("client_id ou client_secret inválidos");
     throw new Error(`Falha na autenticação Omada (código ${code})`);
   }
-  return body.result.accessToken;
+  // Renew with slack: 60 s or 10 % of the lifetime, whichever is larger
+  const ttlMs = (body.result.expiresIn > 0 ? body.result.expiresIn : 7200) * 1000;
+  const slack = Math.max(60_000, ttlMs * 0.1);
+  return { accessToken: body.result.accessToken, expiresAt: Date.now() + Math.max(0, ttlMs - slack) };
+}
+
+interface OmadaSnapshot {
+  devices: DeviceItem[];
+  clients: ClientItem[];
+}
+
+// Token / site-snapshot caches. Keys hold a short hash of the secret, never the secret.
+const tokenCache = new SharedCache<CachedToken>();
+const snapshotCache = new SharedCache<OmadaSnapshot>();
+
+// Test helper: forget every cached token and snapshot
+export function resetOmadaCache(): void {
+  tokenCache.clear();
+  snapshotCache.clear();
+}
+
+function tokenKey(ctrl: string, port: number, tls: boolean, omadacId: string, clientId: string, secret: string): string {
+  return `${ctrl}:${port}:${tls ? 1 : 0}:${omadacId}:${clientId}:${shortHash(secret)}`;
+}
+
+// Omada errorCodes meaning "token expired / invalid" (-44112 expired, -44113 invalid)
+function isTokenRejected(res: { status: number; body: unknown }): boolean {
+  if (res.status === 401) return true;
+  const code = (res.body as { errorCode?: number } | null)?.errorCode;
+  return code === -44112 || code === -44113;
 }
 
 // ── Utility: list sites (used by test-omada route) ────────────────────────────
@@ -257,23 +308,60 @@ export async function checkOmada(
   siteId: string,
   tlsVerify: boolean,
   port = 443,
+  checkIntervalSec?: number,
 ): Promise<OmadaResult> {
-  // 1. Obtain access token
-  const token = await getOmadaToken(controllerIp, omadacId, clientId, clientSecret, tlsVerify, port);
-  const authHeaders = { Authorization: `AccessToken=${token}` };
+  const key = tokenKey(controllerIp, port, tlsVerify, omadacId, clientId, clientSecret);
+  const sKey = `${key}:${siteId}`;
 
-  // 2. Fetch devices list and clients list in parallel — neither depends on the other
-  const [devicesRes, clientsRes] = await Promise.all([
-    apiRequest(controllerIp, port,
-      `/openapi/v1/${omadacId}/sites/${siteId}/devices?page=1&pageSize=200`,
-      "GET", null, authHeaders, tlsVerify),
-    apiRequest(controllerIp, port,
-      `/openapi/v1/${omadacId}/sites/${siteId}/clients?page=1&pageSize=200&clientType=0`,
-      "GET", null, authHeaders, tlsVerify),
-  ]);
+  // 1. Access token (cached per controller+credential until near expiry)
+  let tokenReused = true;
+  const getToken = async () => {
+    const t = await tokenCache.get(
+      key,
+      () => fetchToken(controllerIp, omadacId, clientId, clientSecret, tlsVerify, port),
+      (v) => Date.now() < v.expiresAt,
+    );
+    if (!t.hit) tokenReused = false;
+    return t.value.accessToken;
+  };
 
-  const devices: DeviceItem[] =
-    (devicesRes.body as { result?: { data?: DeviceItem[] } })?.result?.data ?? [];
+  // 2. Site snapshot (devices + clients): one pair of requests per site per TTL
+  //    window, shared by every AP of that site polled in the same cycle.
+  const fetchSnapshot = async (): Promise<OmadaSnapshot> => {
+    for (let attempt = 0; ; attempt++) {
+      const authHeaders = { Authorization: `AccessToken=${await getToken()}` };
+      const [devicesRes, clientsRes] = await Promise.all([
+        apiRequest(controllerIp, port,
+          `/openapi/v1/${omadacId}/sites/${siteId}/devices?page=1&pageSize=200`,
+          "GET", null, authHeaders, tlsVerify),
+        apiRequest(controllerIp, port,
+          `/openapi/v1/${omadacId}/sites/${siteId}/clients?page=1&pageSize=200&clientType=0`,
+          "GET", null, authHeaders, tlsVerify),
+      ]);
+      if (attempt === 0 && (isTokenRejected(devicesRes) || isTokenRejected(clientsRes))) {
+        tokenCache.invalidate(key); // refresh the token once and retry
+        tokenReused = false;
+        continue;
+      }
+      return {
+        devices: (devicesRes.body as { result?: { data?: DeviceItem[] } })?.result?.data ?? [],
+        clients: (clientsRes.body as { result?: { data?: ClientItem[] } })?.result?.data ?? [],
+      };
+    }
+  };
+
+  let snap;
+  try {
+    const maxAge = snapshotTtlMs(checkIntervalSec);
+    snap = await snapshotCache.get(sKey, fetchSnapshot, (_v, age) => age < maxAge);
+  } catch (err) {
+    recordConn("omada", "error");
+    throw err;
+  }
+  // Served from the snapshot cache (or shared in-flight) → no new session needed
+  recordConn("omada", snap.hit || tokenReused ? "reused" : "opened");
+
+  const devices: DeviceItem[] = snap.value.devices;
 
   const ap =
     devices.find((d) => d.ip === apIp) ??
@@ -285,8 +373,7 @@ export async function checkOmada(
     );
   }
 
-  const allClients: ClientItem[] =
-    (clientsRes.body as { result?: { data?: ClientItem[] } })?.result?.data ?? [];
+  const allClients: ClientItem[] = snap.value.clients;
   const apClients = ap.mac
     ? allClients.filter((c) => c.apMac === ap.mac)
     : allClients;
