@@ -2,175 +2,128 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Topbar } from "@/components/topbar";
-import { ReportView } from "@/components/report-view";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Download, Printer, ChevronDown, Check, X, Loader2, Users, Table2, GitCompare } from "lucide-react";
-import { DEVICE_TYPE_ICON } from "@/lib/device-constants";
+import { FileText, Printer, Loader2, Table2, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import { exportToPdf } from "@/lib/pdf-export";
-import type { Device, DeviceStatus } from "@prisma/client";
-import type { DeviceReport } from "@/app/api/reports/route";
+import { SITE_NAMES, isSiteKey } from "@/lib/modules";
+import { buildAvailabilityCsv, formatDowntime } from "@/lib/report-csv";
+import type { AvailabilityReport } from "@/app/api/reports/route";
+import type { DayAvailability, DayState } from "@/lib/sla";
 
-type DeviceWithStatus = Device & { currentStatus: DeviceStatus | null };
+const MONTH_NAMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const TARGETS = [99, 99.5, 99.9];
 
-const PERIOD_OPTIONS = [
-  { label: "Últimas 24h",    hours: 24 },
-  { label: "Últimos 7 dias", hours: 168 },
-  { label: "Últimos 30 dias", hours: 720 },
-];
+function currentMonthKey(): string {
+  // America/Sao_Paulo = UTC-3 (sem horário de verão)
+  const d = new Date(Date.now() - 3 * 3_600_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
-// ── Device multi-select ───────────────────────────────────────────────────────
+function shiftMonth(key: string, delta: number): string {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
-function DeviceSelector({
-  devices,
-  selected,
-  onChange,
-}: {
-  devices: DeviceWithStatus[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+function monthLabel(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1]} de ${y}`;
+}
 
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+const siteName = (s: string | null) => (isSiteKey(s) ? SITE_NAMES[s] : "Sem unidade");
+const fmtPct = (v: number | null) => (v == null ? "sem dado" : `${v.toFixed(v >= 99.995 || v === 0 ? 0 : 3).replace(".", ",")}%`);
 
-  function toggle(id: string) {
-    onChange(selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id]);
+const STATE_CLASS: Record<DayState, string> = {
+  ok: "bg-success",
+  partial: "bg-warning",
+  down: "bg-destructive",
+  nodata: "bg-muted-foreground/40",
+  future: "border border-dashed border-border bg-transparent",
+};
+
+function dayLabel(d: DayAvailability): string {
+  switch (d.state) {
+    case "ok": return `dia ${d.day}: sem queda`;
+    case "partial": return `dia ${d.day}: queda de ${formatDowntime(d.downtimeSec)}`;
+    case "down": return `dia ${d.day}: fora o dia todo (${formatDowntime(d.downtimeSec)})`;
+    case "nodata": return `dia ${d.day}: sem dado`;
+    default: return `dia ${d.day}: sem medição (futuro)`;
   }
+}
 
-  const label = selected.length === 0
-    ? "Selecionar dispositivos"
-    : selected.length === 1
-    ? devices.find(d => d.id === selected[0])?.name ?? "1 selecionado"
-    : `${selected.length} dispositivos`;
-
+function DayStrip({ perDay, link }: { perDay: DayAvailability[]; link: string }) {
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 px-3 h-9 rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted transition-colors min-w-[220px] justify-between"
-      >
-        <span className={selected.length === 0 ? "text-muted-foreground" : ""}>{label}</span>
-        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-72 bg-popover border border-border rounded-xl shadow-xl overflow-hidden">
-          <div className="px-3 py-2 border-b border-border/60 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">
-              {selected.length} / 10 selecionados
-            </span>
-            {selected.length > 0 && (
-              <button
-                onClick={() => onChange([])}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                <X className="h-3 w-3" /> Limpar
-              </button>
-            )}
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {devices.map(device => {
-              const TypeIcon = DEVICE_TYPE_ICON[device.type];
-              const isSelected = selected.includes(device.id);
-              const isOnline = device.currentStatus?.isOnline ?? false;
-              const disabled = !isSelected && selected.length >= 10;
-
-              return (
-                <button
-                  key={device.id}
-                  onClick={() => !disabled && toggle(device.id)}
-                  disabled={disabled}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                    isSelected ? "bg-primary/5" : disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                    isSelected ? "bg-primary border-primary" : "border-border"
-                  }`}>
-                    {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
-                  </div>
-                  <TypeIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{device.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{device.ip}</p>
-                  </div>
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? "bg-success" : "bg-destructive"}`} />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+    <div role="list" aria-label={`Faixa diária de ${link}`} className="flex gap-[2px]">
+      {perDay.map(d => (
+        <span
+          key={d.day}
+          role="listitem"
+          title={dayLabel(d)}
+          aria-label={dayLabel(d)}
+          className={`h-5 min-w-[6px] flex-1 rounded-[2px] ${STATE_CLASS[d.state]}`}
+        />
+      ))}
     </div>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+function Legend() {
+  const items: Array<[DayState, string]> = [
+    ["ok", "sem queda"], ["partial", "parcial"], ["down", "queda"], ["nodata", "sem dado"], ["future", "sem medição (futuro)"],
+  ];
+  return (
+    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      {items.map(([s, label]) => (
+        <li key={s} className="flex items-center gap-1.5">
+          <span aria-hidden className={`inline-block h-3 w-3 rounded-[2px] ${STATE_CLASS[s]}`} />
+          {label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AvailabilityBar({ pct, met }: { pct: number | null; met: boolean | null }) {
+  if (pct == null) return <span className="text-xs text-muted-foreground">sem dado</span>;
+  return (
+    <div className="flex items-center gap-2 min-w-[130px]">
+      <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden" aria-hidden>
+        <div className={`h-full ${met ? "bg-success" : "bg-destructive"}`} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+      </div>
+      <span className={`text-sm font-semibold tabular-nums ${met ? "" : "text-destructive"}`}>{fmtPct(pct)}</span>
+    </div>
+  );
+}
 
 export default function ReportsPage() {
-  const [devices, setDevices] = useState<DeviceWithStatus[]>([]);
-  const [devicesLoading, setDevicesLoading] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [hours, setHours] = useState(168);
-  const [compare, setCompare] = useState(false);
-  const [showClients, setShowClients] = useState(true);
-  const [reports, setReports] = useState<DeviceReport[] | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [exportingPdf, setExportingPdf] = useState(false);
-  const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
+  const [month, setMonth] = useState(currentMonthKey);
+  const [target, setTarget] = useState(99.5);
+  const [report, setReport] = useState<AvailabilityReport | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  const loadDevices = useCallback(async () => {
-    setDevicesLoading(true);
-    try {
-      const res = await fetch("/api/devices");
-      if (res.ok) setDevices(await res.json());
-    } finally {
-      setDevicesLoading(false);
-    }
-  }, []);
-
-  // Load devices and pre-select from query param (?device=id) — client-only
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const deviceParam = params.get("device");
-    if (deviceParam) setSelected([deviceParam]);
-    loadDevices();
-  }, [loadDevices]);
-
-  // Show clients toggle only when at least one UNIFI_AP or OMADA_AP is selected
-  const hasWifi = selected.some(id => ["UNIFI_AP", "OMADA_AP"].includes(devices.find(d => d.id === id)?.type ?? ""));
-
-  async function generate() {
-    if (selected.length === 0) return;
-    setGenerating(true);
+  const load = useCallback(async () => {
+    setLoading(true);
     setError(null);
     try {
-      const compareParam = compare ? "&compareFrom=auto" : "";
-      const res = await fetch(`/api/reports?devices=${selected.join(",")}&hours=${hours}${compareParam}`);
+      const res = await fetch(`/api/reports?month=${month}&target=${target}`);
       if (!res.ok) {
-        const body = await res.json();
-        setError(body.error ?? "Erro ao gerar relatório.");
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Erro ao carregar o relatório.");
+        setReport(null);
         return;
       }
-      const data: DeviceReport[] = await res.json();
-      setReports(data);
-      setGeneratedAt(new Date());
-      setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      setReport(await res.json());
     } catch {
-      setError("Erro de rede ao gerar relatório.");
+      setError("Erro de rede ao carregar o relatório.");
     } finally {
-      setGenerating(false);
+      setLoading(false);
     }
-  }
+  }, [month, target]);
+
+  useEffect(() => { load(); }, [load]);
 
   async function handleExportPdf() {
     if (!reportRef.current) return;
@@ -185,202 +138,191 @@ export default function ReportsPage() {
   }
 
   function handleDownloadCsv() {
-    if (!reports) return;
-    const rows: string[] = ["dispositivo,ip,timestamp,online,ping_ms,cpu_pct,mem_pct"];
-    for (const r of reports) {
-      const rosMap = new Map((r.routerosHistory ?? []).map(p => [p.timestamp, p]));
-      for (const p of r.pingHistory) {
-        const ros = rosMap.get(p.timestamp);
-        rows.push([
-          `"${r.device.name.replace(/"/g, '""')}"`,
-          r.device.ip,
-          p.timestamp,
-          p.isOnline ? "1" : "0",
-          p.pingMs ?? "",
-          ros?.cpuLoad ?? "",
-          ros?.memoryUsed ?? "",
-        ].join(","));
-      }
-    }
-    const blob = new Blob([rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    if (!report) return;
+    const csv = buildAvailabilityCsv(report, siteName);
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `disponibilidade-${report.month}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function handleDownloadHtml() {
-    if (!reportRef.current) return;
-    const style = Array.from(document.styleSheets)
-      .map(ss => { try { return Array.from(ss.cssRules).map(r => r.cssText).join("\n"); } catch { return ""; } })
-      .join("\n");
-    const date = new Date().toISOString().slice(0, 10);
-    const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Relatório ${date} — WatchIT Tower</title>
-  <style>${style}</style>
-  <style>body { background: white; padding: 24px; margin: 0; }</style>
-</head>
-<body>${reportRef.current.innerHTML}</body>
-</html>`;
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relatorio-${date}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  const isCurrent = month === currentMonthKey();
+  const below = report?.links.filter(l => l.metTarget === false) ?? [];
 
   return (
     <>
-      <Topbar
-        title="Relatórios"
-        icon={FileText}
-        subtitle="Gere relatórios detalhados de saúde por dispositivo"
-      />
+      <Topbar title="Disponibilidade mensal" icon={FileText} subtitle="Links de internet, rede e Wi-Fi — SLA do mês" />
 
       <div className="p-7 space-y-6">
-        {/* Config bar */}
         <div className="no-print flex flex-wrap items-end gap-3 p-4 bg-card border border-border rounded-xl">
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dispositivos</p>
-            {devicesLoading ? (
-              <Skeleton className="h-9 w-56" />
-            ) : (
-              <DeviceSelector
-                devices={devices}
-                selected={selected}
-                onChange={setSelected}
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mês</p>
+            <div className="flex items-center gap-1">
+              <button aria-label="Mês anterior" onClick={() => setMonth(m => shiftMonth(m, -1))}
+                className="h-9 w-9 rounded-lg border border-border hover:bg-muted flex items-center justify-center">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <input
+                type="month"
+                aria-label="Selecionar mês"
+                value={month}
+                max={currentMonthKey()}
+                onChange={e => e.target.value && setMonth(e.target.value)}
+                className="h-9 px-3 rounded-lg border border-border bg-background text-sm"
               />
-            )}
+              <button aria-label="Próximo mês" disabled={isCurrent} onClick={() => setMonth(m => shiftMonth(m, 1))}
+                className="h-9 w-9 rounded-lg border border-border hover:bg-muted disabled:opacity-40 flex items-center justify-center">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Período</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Meta de disponibilidade</p>
             <div className="flex gap-1">
-              {PERIOD_OPTIONS.map(opt => (
-                <button
-                  key={opt.hours}
-                  onClick={() => setHours(opt.hours)}
+              {TARGETS.map(t => (
+                <button key={t} onClick={() => setTarget(t)}
                   className={`px-3 h-9 rounded-lg text-sm font-medium border transition-colors ${
-                    hours === opt.hours
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background text-muted-foreground border-border hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
+                    target === t ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:bg-muted"
+                  }`}>
+                  {String(t).replace(".", ",")}%
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Comparison toggle */}
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Comparação</p>
-            <button
-              onClick={() => setCompare(v => !v)}
-              className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors flex items-center gap-2 ${
-                compare
-                  ? "bg-primary/10 border-primary/30 text-primary"
-                  : "bg-background border-border text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              <GitCompare className="h-4 w-4" />
-              {compare ? "Período anterior: ativo" : "Comparar com anterior"}
+          <div className="flex gap-2 ml-auto">
+            <button onClick={handleExportPdf} disabled={!report || exportingPdf}
+              className="h-9 px-4 rounded-lg border border-border text-sm font-medium hover:bg-muted disabled:opacity-50 flex items-center gap-2">
+              {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {exportingPdf ? "Gerando PDF..." : "Exportar PDF"}
+            </button>
+            <button onClick={handleDownloadCsv} disabled={!report}
+              className="h-9 px-4 rounded-lg border border-border text-sm font-medium hover:bg-muted disabled:opacity-50 flex items-center gap-2">
+              <Table2 className="h-4 w-4" /> Exportar CSV
             </button>
           </div>
-
-          {/* Clients toggle — only shown when a UniFi AP or Omada AP is selected */}
-          {hasWifi && (
-            <div className="space-y-1.5">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Opções Wi-Fi</p>
-              <button
-                onClick={() => setShowClients(v => !v)}
-                className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors flex items-center gap-2 ${
-                  showClients
-                    ? "bg-primary/10 border-primary/30 text-primary"
-                    : "bg-background border-border text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <Users className="h-4 w-4" />
-                {showClients ? "Clientes: visível" : "Clientes: oculto"}
-              </button>
-            </div>
-          )}
-
-          <button
-            onClick={generate}
-            disabled={selected.length === 0 || generating}
-            className="h-9 px-5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          >
-            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            {generating ? "Gerando..." : "Gerar relatório"}
-          </button>
-
-          {reports && (
-            <>
-              <button
-                onClick={handleExportPdf}
-                disabled={exportingPdf}
-                className="h-9 px-4 rounded-lg border border-border text-sm font-medium hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-              >
-                {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                {exportingPdf ? "Gerando PDF..." : "Exportar PDF"}
-              </button>
-              <button
-                onClick={handleDownloadHtml}
-                className="h-9 px-4 rounded-lg border border-border text-sm font-medium hover:bg-muted transition-colors flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Baixar HTML
-              </button>
-              <button
-                onClick={handleDownloadCsv}
-                className="h-9 px-4 rounded-lg border border-border text-sm font-medium hover:bg-muted transition-colors flex items-center gap-2"
-              >
-                <Table2 className="h-4 w-4" />
-                Exportar CSV
-              </button>
-            </>
-          )}
         </div>
 
-        {/* Error */}
         {error && (
-          <div className="no-print px-4 py-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive font-medium">
+          <div role="alert" className="no-print px-4 py-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive font-medium">
             {error}
           </div>
         )}
 
-        {/* Empty state */}
-        {!reports && !generating && (
-          <div className="no-print text-center py-20 text-muted-foreground">
-            <FileText className="h-12 w-12 mx-auto mb-4 opacity-20" />
-            <p className="font-medium">Selecione os dispositivos e clique em &quot;Gerar relatório&quot;</p>
-            <p className="text-sm mt-1">O relatório aparecerá aqui e poderá ser exportado como PDF ou HTML.</p>
-          </div>
-        )}
-
-        {/* Generating skeleton */}
-        {generating && (
-          <div className="no-print space-y-4 max-w-4xl mx-auto">
-            <Skeleton className="h-32 w-full rounded-xl" />
+        {loading && (
+          <div className="space-y-4">
             <Skeleton className="h-24 w-full rounded-xl" />
-            <Skeleton className="h-48 w-full rounded-xl" />
-            <Skeleton className="h-48 w-full rounded-xl" />
+            <Skeleton className="h-64 w-full rounded-xl" />
           </div>
         )}
 
-        {/* Report */}
-        {reports && generatedAt && (
-          <div ref={reportRef}>
-            <ReportView reports={reports} generatedAt={generatedAt} showClients={showClients} />
+        {!loading && report && (
+          <div ref={reportRef} className="space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold capitalize">Disponibilidade de {monthLabel(report.month)}</h2>
+              <p className="text-sm text-muted-foreground">
+                Meta: {String(report.target).replace(".", ",")}%
+                {isCurrent && " · mês em andamento: dias futuros ainda não medidos"}
+                {" · fuso America/São Paulo"}
+              </p>
+            </div>
+
+            {/* Resumo por unidade */}
+            <section aria-label="Resumo por unidade" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {report.units.map(u => (
+                <div key={u.site} className={`rounded-xl border p-4 bg-card ${u.metTarget === false ? "border-destructive/40" : "border-border"}`}>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{u.name}</p>
+                  <p className={`mt-1 text-2xl font-bold tabular-nums ${u.metTarget === false ? "text-destructive" : ""}`}>{fmtPct(u.availabilityPct)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {u.linkCount} link{u.linkCount !== 1 ? "s" : ""} · {u.drops} queda{u.drops !== 1 ? "s" : ""} · fora {formatDowntime(u.downtimeSec)}
+                  </p>
+                  {u.linksBelowTarget > 0 && (
+                    <p className="text-xs text-destructive font-medium mt-1">{u.linksBelowTarget} abaixo da meta</p>
+                  )}
+                </div>
+              ))}
+            </section>
+
+            {below.length > 0 && (
+              <div role="status" className="flex items-start gap-2 px-4 py-3 rounded-lg border border-destructive/30 bg-destructive/10 text-sm">
+                <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                <span>
+                  <strong>{below.length} link{below.length !== 1 ? "s" : ""} abaixo da meta:</strong>{" "}
+                  {below.map(l => `${l.name} (${fmtPct(l.availabilityPct)})`).join(", ")}
+                </span>
+              </div>
+            )}
+
+            {/* Links */}
+            <section aria-label="Links" className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-semibold">Links de internet</h3>
+                <Legend />
+              </div>
+              {report.links.length === 0 ? (
+                <p className="p-6 text-sm text-muted-foreground">Nenhum link cadastrado.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                        <th className="px-4 py-2 font-semibold">Link</th>
+                        <th className="px-4 py-2 font-semibold">Disponibilidade</th>
+                        <th className="px-4 py-2 font-semibold">Fora</th>
+                        <th className="px-4 py-2 font-semibold">Quedas</th>
+                        <th className="px-4 py-2 font-semibold">Maior queda</th>
+                        <th className="px-4 py-2 font-semibold min-w-[320px]">Dia a dia</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.links.map(l => (
+                        <tr key={l.id} className={`border-b border-border/60 last:border-0 ${l.metTarget === false ? "bg-destructive/5" : ""}`}>
+                          <td className="px-4 py-3">
+                            <p className="font-medium">{l.name}</p>
+                            <p className="text-xs text-muted-foreground">{siteName(l.site)}</p>
+                          </td>
+                          <td className="px-4 py-3"><AvailabilityBar pct={l.availabilityPct} met={l.metTarget} /></td>
+                          <td className="px-4 py-3 tabular-nums">{formatDowntime(l.downtimeSec)}</td>
+                          <td className="px-4 py-3 tabular-nums">{l.drops}</td>
+                          <td className="px-4 py-3 tabular-nums">{l.longestDropSec > 0 ? formatDowntime(l.longestDropSec) : "—"}</td>
+                          <td className="px-4 py-3"><DayStrip perDay={l.perDay} link={l.name} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {/* Rede e Wi-Fi */}
+            <section aria-label="Rede e Wi-Fi" className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="px-4 py-3 border-b border-border">
+                <h3 className="font-semibold">Rede e Wi-Fi — menor disponibilidade</h3>
+                <p className="text-xs text-muted-foreground">
+                  Proporção de verificações online (Mikrotik, switches e APs). Top 10
+                  {report.devices.withoutData > 0 && ` · ${report.devices.withoutData} sem dado no mês`}
+                </p>
+              </div>
+              {report.devices.worst.length === 0 ? (
+                <p className="p-6 text-sm text-muted-foreground">Sem verificações registradas no período.</p>
+              ) : (
+                <ul className="divide-y divide-border/60">
+                  {report.devices.worst.map(d => (
+                    <li key={d.id} className="px-4 py-2.5 flex items-center gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{d.name}</p>
+                        <p className="text-xs text-muted-foreground">{siteName(d.site)} · {d.type.replace("_", " ")}</p>
+                      </div>
+                      <AvailabilityBar pct={d.availabilityPct} met={d.availabilityPct >= report.target} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 {
   "name": "it_dashboard",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,6 +14,7 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "create-user": "tsx scripts/create-user.ts",
+    "backfill:site": "tsx scripts/backfill-site.ts",
     "test": "jest --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --forceExit",

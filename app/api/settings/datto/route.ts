@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/with-auth";
 import { encrypt } from "@/lib/crypto";
 import { parseAndValidate } from "@/lib/parse-body";
 import { z } from "zod";
+import { requireModule } from "@/lib/module-config";
 
 const updateSchema = z.object({
   dattoPlatform: z.string().min(1).max(50).optional().nullable(),
@@ -18,6 +19,8 @@ const updateSchema = z.object({
 export async function GET(req: Request) {
   const unauth = await requireRole("ADMIN");
   if (unauth) return unauth;
+  const off = await requireModule("computers");
+  if (off) return off;
 
   const config = await db.systemConfig.findUnique({ where: { id: 1 } });
   if (!config) {
@@ -46,6 +49,8 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   const unauth = await requireRole("ADMIN");
   if (unauth) return unauth;
+  const off = await requireModule("computers");
+  if (off) return off;
 
   const body = await parseAndValidate(req, updateSchema);
   if (!body.ok) return body.response;

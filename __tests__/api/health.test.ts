@@ -8,6 +8,8 @@ jest.mock("@/lib/auth", () => ({
   auth: jest.fn().mockResolvedValue({ user: { id: "1", email: "admin@local" } }),
 }));
 
+jest.mock("@/lib/notify", () => ({ notify: jest.fn().mockResolvedValue({ sent: false }) }));
+
 jest.mock("@/lib/db", () => ({
   db: {
     statusHistory:   { count: jest.fn() },

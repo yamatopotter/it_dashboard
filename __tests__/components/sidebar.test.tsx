@@ -41,12 +41,46 @@ describe("Sidebar", () => {
 
   it("renders all main navigation links", async () => {
     render(<Sidebar />);
-    expect(screen.getByText("Visão geral")).toBeInTheDocument();
+    expect(screen.getByText("Painel")).toBeInTheDocument();
     expect(screen.getByText("Dispositivos")).toBeInTheDocument();
     expect(screen.getByText("Links de Internet")).toBeInTheDocument();
     expect(screen.getByText("Incidentes")).toBeInTheDocument();
+    expect(screen.getByText("Visão antiga")).toBeInTheDocument();
     expect(screen.getByText("Relatórios")).toBeInTheDocument();
-    expect(screen.getByText("Segurança")).toBeInTheDocument();
+  });
+
+  it("points Visão antiga to /overview", () => {
+    render(<Sidebar />);
+    expect(screen.getByText("Visão antiga").closest("a")).toHaveAttribute("href", "/overview");
+  });
+
+  it("hides Celulares and Computadores when modules are off", () => {
+    render(<Sidebar />);
+    expect(screen.queryByText("Celulares")).not.toBeInTheDocument();
+    expect(screen.queryByText("Computadores")).not.toBeInTheDocument();
+  });
+
+  it("shows Celulares and Computadores when modules are on", () => {
+    render(<Sidebar modules={{ telephony: true, computers: true, nvr: false }} />);
+    expect(screen.getByText("Celulares")).toBeInTheDocument();
+    expect(screen.getByText("Computadores")).toBeInTheDocument();
+  });
+
+  it("no longer lists manuals/changelog/security in the main list", () => {
+    render(<Sidebar />);
+    for (const t of ["Manual", "Manual Dev", "Manual Testes", "Changelog", "Segurança"]) {
+      expect(screen.queryByText(t)).not.toBeInTheDocument();
+    }
+  });
+
+  it("shows the version in the footer once /api/version answers", async () => {
+    mockFetch.mockImplementation(async (url: string) =>
+      url === "/api/version"
+        ? { ok: true, json: async () => ({ version: "1.2", build: "99" }) }
+        : { ok: false, json: async () => ({}) }
+    );
+    render(<Sidebar />);
+    expect(await screen.findByText("v1.2 · build 99")).toBeInTheDocument();
   });
 
   it("renders user name in footer", async () => {
@@ -79,12 +113,12 @@ describe("Sidebar", () => {
     expect(signOut).toHaveBeenCalledWith({ callbackUrl: "/login" });
   });
 
-  it("marks Visão geral as active when pathname is '/'", () => {
+  it("marks Painel as active when pathname is '/'", () => {
     const { usePathname } = require("next/navigation");
     usePathname.mockReturnValue("/");
 
     render(<Sidebar />);
-    const link = screen.getByText("Visão geral").closest("a");
+    const link = screen.getByText("Painel").closest("a");
     expect(link).toHaveAttribute("href", "/");
   });
 

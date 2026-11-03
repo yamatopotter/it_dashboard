@@ -611,7 +611,7 @@ async function runChecks(device: Device) {
               <Code>/api/health</Code> lê esse registro e compara o timestamp com o horário atual:</P>
             <UL>
               <LI><strong>ok</strong> — heartbeat nos últimos 3 minutos</LI>
-              <LI><strong>stale</strong> — heartbeat entre 3 e 10 minutos atrás → dispara webhook de alerta</LI>
+              <LI><strong>stale</strong> — heartbeat entre 3 e 10 minutos atrás → dispara aviso no Zoho Cliq (cooldown 1h)</LI>
               <LI><strong>unknown</strong> — sem registro (worker nunca rodou)</LI>
             </UL>
 
@@ -945,7 +945,7 @@ npm run test:coverage
                   ["NEXTAUTH_URL", "Sim", "URL base da aplicação (ex: http://localhost:3000)"],
                   ["ENCRYPTION_KEY", "Sim (worker)", "32 bytes hex para AES-256-GCM. Worker aborta sem ela"],
                   ["WEBHOOK_SECRET", "Sim (worker)", "Mín. 32 chars para HMAC-SHA256. Worker aborta sem ela"],
-                  ["WORKER_STALE_WEBHOOK_URL", "Não", "URL para notificação quando worker ficar stale (cooldown 1h)"],
+                  ["APP_URL", "Não", "URL pública usada nos botões das mensagens do Zoho Cliq (o aviso de worker stale é configurado em Sistema, não por variável)"],
                   ["NODE_ENV", "Não", "development | production. Afeta logging e otimizações"],
                 ].map(([k, req, desc]) => (
                   <tr key={k}>
@@ -1008,8 +1008,8 @@ pm2 save && pm2 startup
               e sem as restrições de rede de produção.
             </Callout>
             <P>Em produção, monitore <Code>/api/health</Code> periodicamente. O campo <Code>workerStatus</Code>
-              indica se o worker está ativo. Configure <Code>WORKER_STALE_WEBHOOK_URL</Code> para receber alertas
-              automáticos quando o worker parar de responder.</P>
+              indica se o worker está ativo. Ative os avisos do Zoho Cliq em Configurações › Sistema para receber
+              alerta automático quando o worker parar de responder.</P>
           </Sec>
 
         </main>

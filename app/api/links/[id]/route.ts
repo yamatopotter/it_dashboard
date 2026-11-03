@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { siteSchema } from "@/lib/schemas/device";
 import { requireAuth, requireRole, getSessionRole } from "@/lib/with-auth";
 import { parseAndValidate } from "@/lib/parse-body";
 import { notFoundOnP2025 } from "@/lib/prisma-error";
@@ -13,6 +14,7 @@ const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional().nullable(),
   location: z.string().max(100).optional().nullable(),
+  site: siteSchema,
   mikrotikDeviceId: z.string().optional().nullable(),
   mikrotikInterface: z.string().max(50).optional().nullable(),
   contractedDownloadBps: z.number().int().positive().optional().nullable(),

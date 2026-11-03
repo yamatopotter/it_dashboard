@@ -104,6 +104,16 @@ describe("POST /api/links", () => {
     expect(res.status).toBe(401);
   });
 
+  it("aceita site válido, normaliza vazio para null e rejeita inválido", async () => {
+    (mockDb.link.create as jest.Mock).mockResolvedValue(fakeLink);
+    const mk = (site: unknown) => makeReq("http://localhost/api/links", { method: "POST", body: JSON.stringify({ name: "L", site }) });
+    expect((await createLink(mk("ITA"))).status).toBe(201);
+    expect((mockDb.link.create as jest.Mock).mock.calls.at(-1)[0].data.site).toBe("ITA");
+    expect((await createLink(mk(""))).status).toBe(201);
+    expect((mockDb.link.create as jest.Mock).mock.calls.at(-1)[0].data.site).toBeNull();
+    expect((await createLink(mk("ZZZ"))).status).toBe(400);
+  });
+
   it("creates a link with valid body and returns 201", async () => {
     (mockDb.link.create as jest.Mock).mockResolvedValue(fakeLink);
 

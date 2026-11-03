@@ -12,6 +12,12 @@ import {
 } from "@/app/api/devices/[id]/route";
 import { GET as statusGET } from "@/app/api/status/[deviceId]/route";
 import { POST as testOmadaPOST } from "@/app/api/devices/test-omada/route";
+import { GET as towerGET } from "@/app/api/tower/route";
+import { POST as linkAckPOST } from "@/app/api/links/[id]/ack/route";
+import { POST as linkSilencePOST } from "@/app/api/links/[id]/silence/route";
+import { POST as devSilencePOST } from "@/app/api/devices/[id]/silence/route";
+import { GET as appearanceGET, PUT as appearancePUT } from "@/app/api/settings/appearance/route";
+import { PUT as profileUiPUT } from "@/app/api/profile/ui/route";
 import { NextRequest } from "next/server";
 
 jest.mock("@/lib/auth", () => ({
@@ -33,6 +39,21 @@ const FAKE_PARAMS_ID = Promise.resolve({ id: "device-1" });
 const FAKE_PARAMS_STATUS = Promise.resolve({ deviceId: "device-1" });
 
 describe("Route authentication enforcement", () => {
+  it("aparência e interface do perfil -> 401 sem sessao", async () => {
+    const mk = (m: string) => new Request("http://localhost/api/x", { method: m, body: JSON.stringify({}) });
+    expect((await appearanceGET()).status).toBe(401);
+    expect((await appearancePUT(mk("PUT"))).status).toBe(401);
+    expect((await profileUiPUT(mk("PUT"))).status).toBe(401);
+  });
+
+  it("GET /api/tower e ações de problemas -> 401 sem sessao", async () => {
+    expect((await towerGET(new Request("http://localhost/api/tower"))).status).toBe(401);
+    const mk = () => new NextRequest("http://localhost/api/x", { method: "POST", body: JSON.stringify({ minutes: 60 }) });
+    expect((await linkAckPOST(mk(), { params: FAKE_PARAMS_ID })).status).toBe(401);
+    expect((await linkSilencePOST(mk(), { params: FAKE_PARAMS_ID })).status).toBe(401);
+    expect((await devSilencePOST(mk(), { params: FAKE_PARAMS_ID })).status).toBe(401);
+  });
+
   it("GET /api/devices → 401 without session", async () => {
     const res = await devicesGET(new NextRequest("http://localhost/api/devices"));
     expect(res.status).toBe(401);

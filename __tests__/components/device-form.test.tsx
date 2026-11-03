@@ -119,8 +119,8 @@ describe("DeviceForm", () => {
     // Blank credentials on edit must be OMITTED (so the API preserves them), not sent as ""
     expect(body.routerosUser).toBeUndefined();
     expect(body.routerosPass).toBeUndefined();
-    // Empty alert webhook must be sent as null (not "" — the server rejects "" as invalid URL)
-    expect(body.alertWebhookUrl).toBeNull();
+    // O webhook por dispositivo é legado (avisos vão pelo Zoho Cliq): o formulário não o envia mais
+    expect(body.alertWebhookUrl).toBeUndefined();
   });
 
   it("shows create submit button", () => {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyWebhookToken } from "@/lib/webhook";
 import { writeAudit, extractIp } from "@/lib/audit";
+import { notify } from "@/lib/notify";
 
 async function handleUp(req: Request, id: string) {
   const url = new URL(req.url);
@@ -20,8 +21,13 @@ async function handleUp(req: Request, id: string) {
   if (!link.isOnline) {
     await db.$transaction([
       db.linkEvent.create({ data: { linkId: id, type: "UP", timestamp: now } }),
-      db.link.update({ where: { id }, data: { isOnline: true, lastEventAt: now } }),
+      db.link.update({ where: { id }, data: { isOnline: true, lastEventAt: now, offlineAcknowledgedAt: null, offlineAcknowledgedBy: null, offlineAcknowledgedNote: null } }),
     ]);
+  }
+
+  // Zoho Cliq: notify() aplica silêncio, ack e deduplicação por episódio
+  if (!link.isOnline) {
+    void notify({ kind: "RECOVER", entityType: "link", id, name: link.name, site: link.site });
   }
 
   // SEC-022: audit webhook events with source IP

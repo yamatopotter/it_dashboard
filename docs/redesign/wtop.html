@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WatchIT wtop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tui.css">
+<style>
+  /* wtop: btop literal. Painéis numerados ¹–⁴ à esquerda, DETALHE fixo à direita,
+     filtro estilo k9s na lista de dispositivos e paleta de comandos para o resto. */
+  .g-wtop { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  #p1 { grid-column: 1; grid-row: 1; }
+  #p2 { grid-column: 2; grid-row: 1; }
+  #p3 { grid-column: 1; grid-row: 2; }
+  #p4 { grid-column: 1; grid-row: 3; }
+  #pd { grid-column: 2; grid-row: 2 / span 2; align-self: start; position: sticky; top: 8px; }
+  .box[data-panel] { cursor: default; }
+
+  .lk { grid-template-columns: 10ch 2ch 6ch minmax(6ch, 1fr) 5ch minmax(8ch, 1fr); }
+  .sd { grid-template-columns: 9ch minmax(0, 1fr) 6ch 9ch; }
+  .sd .dots { white-space: normal; overflow: visible; }
+  .sum { color: var(--dim); padding: 6px 6px 0; border-top: 1px dashed var(--line); margin-top: 6px; }
+  .pb { grid-template-columns: 2ch minmax(10ch, 1.3fr) 5ch minmax(0, 1fr) 7ch; }
+  .pb.child > span:nth-child(2) { padding-left: 2ch; }
+  .dv { grid-template-columns: 3ch minmax(14ch, 1.5fr) 14ch 10ch 9ch; }
+  #devrows { min-width: 50ch; }
+  .thead button {
+    background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
+    text-transform: inherit; letter-spacing: inherit; text-align: left;
+  }
+  .thead button[aria-sort="ascending"]::after { content: " ▲"; color: var(--accent-2); }
+  .thead button[aria-sort="descending"]::after { content: " ▼"; color: var(--accent-2); }
+
+  .filter { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .filter label { color: var(--accent-2); }
+  .filter input {
+    flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); color: var(--fg);
+    font: inherit; padding: 2px 6px; border-radius: 3px;
+  }
+  .filter input:focus { border-color: var(--accent-2); outline: none; }
+  .filter-msg { color: var(--dim); font-size: 12px; min-height: 1.4em; padding: 0 6px 4px; }
+
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 10px 0 8px; }
+  .tabs button {
+    border: 1px solid var(--line); background: none; color: var(--dim);
+    border-radius: 3px; padding: 0 8px; cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { color: var(--fg); border-color: var(--accent); background: var(--sel); }
+  .sp-l { color: var(--dim); font-size: 12px; margin-top: 8px; }
+  .hist { display: flex; flex-direction: column; gap: 2px; }
+  .empty { color: var(--dim); padding: 6px; }
+
+  .palette { place-items: start center; padding-top: 12vh; }
+  .palette .box { width: min(620px, 100%); }
+  .palette input {
+    width: 100%; background: var(--bg); border: 1px solid var(--accent); color: var(--fg);
+    font: inherit; padding: 6px 8px; border-radius: 3px; margin-bottom: 8px;
+  }
+  .palette input:focus { outline: none; }
+  .pal { grid-template-columns: 6ch minmax(0, 1fr) auto; }
+
+  @media (max-width: 900px) { #pd { position: static; } }
+  @media (max-width: 600px) {
+    .lk { grid-template-columns: 10ch 2ch 6ch minmax(6ch, 1fr) 5ch; }
+    .lk .c-spark { display: none; }
+    .sd { grid-template-columns: 9ch minmax(0, 1fr) 6ch; }
+    .sd .c-ap { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav id="proto-nav" class="proto-nav" aria-label="Propostas"></nav>
+
+<header class="topbar">
+  <span class="brand">wtop</span>
+  <span class="clock" id="clock"></span>
+  <span>worker <span class="ok">●</span> <span id="hb">12s</span></span>
+  <span>dados <span class="ok">●</span> <span id="data-age">3s</span></span>
+  <span class="chips" id="site-chips"></span>
+  <span class="spacer"></span>
+  <span class="alertcount" id="alertcount"></span>
+</header>
+
+<main class="grid g-wtop" id="main">
+  <section class="box" id="p1" data-panel="1" style="--box: var(--info)">
+    <h2 class="box-t"><span class="k">¹</span><span>links</span><span class="sub">↓ atual · uso · 1h</span></h2>
+    <div class="rows" id="links"></div>
+  </section>
+
+  <section class="box" id="p2" data-panel="2" style="--box: var(--accent-2)">
+    <h2 class="box-t"><span class="k">²</span><span>sedes</span><span class="sub">1 ponto = 1 dispositivo</span></h2>
+    <div class="rows" id="sedes"></div>
+    <div class="sum" id="sedes-sum"></div>
+  </section>
+
+  <section class="box" id="p3" data-panel="3" style="--box: var(--crit)">
+    <h2 class="box-t"><span class="k">³</span><span>problemas (<span id="pcount">0</span>)</span><span class="sub">gravidade ▼</span></h2>
+    <div class="rows" id="probs"></div>
+  </section>
+
+  <section class="box" id="p4" data-panel="4" style="--box: var(--warn)">
+    <h2 class="box-t"><span class="k">⁴</span><span>dispositivos</span><span class="sub" id="filter-echo"></span></h2>
+    <span class="box-r" id="devcount"></span>
+    <div class="filter">
+      <label for="flt">/</label>
+      <input id="flt" type="text" autocomplete="off" spellcheck="false" placeholder="sede:ita tipo:switch off nome-ou-ip">
+    </div>
+    <div class="filter-msg" id="filter-msg"></div>
+    <div class="tbl-scroll"><div class="rows" id="devrows"></div></div>
+  </section>
+
+  <section class="box" id="pd" style="--box: var(--accent)">
+    <h2 class="box-t"><span>DETALHE</span><span class="sub" id="dname"></span></h2>
+    <span class="box-r"><kbd>esc</kbd> fecha</span>
+    <div id="detail"></div>
+  </section>
+</main>
+
+<footer class="keys">
+  <span><kbd>1</kbd>–<kbd>4</kbd> painel</span><span><kbd>tab</kbd> próximo</span><span><kbd>j</kbd><kbd>k</kbd> mover</span>
+  <span><kbd>⏎</kbd> detalhe</span><span><kbd>/</kbd> filtro</span><span><kbd>g</kbd><kbd>b</kbd>/<kbd>o</kbd>/<kbd>i</kbd>/<kbd>t</kbd> sede</span>
+  <span><kbd>a</kbd> ack</span><span><kbd>s</kbd> silenciar</span><span><kbd>:</kbd> comandos</span>
+  <span class="hide-sm"><kbd>Ctrl</kbd>+<kbd>K</kbd> paleta</span><span><kbd>?</kbd> ajuda</span>
+</footer>
+
+<script src="tui.js"></script>
+<script>
+(function () {
+  const W = WT;
+  W.nav(3);
+
+  // ── dados locais (fictícios, coerentes com WT.*) ──
+  const DEVS = W.DEVICES.map((d) => Object.assign({}, d)).concat([
+    { id: "sw-ita-exped", site: "ITA", name: "SW-ITA-EXPED", type: "switch", ip: "192.168.0.13", st: "sup", ping: null },
+    { id: "ap-ita-01", site: "ITA", name: "AP-ITA-01", type: "omada", ip: "192.168.0.51", st: "sup", ping: null },
+    { id: "css326-b", site: "ITA", name: "CSS326-ITA-B", type: "switch", ip: "192.168.0.4", st: "unk", ping: null, note: "SwOS sem SNMP" },
+    { id: "sw-bar-core", site: "BAR", name: "SW-BAR-CORE", type: "switch", ip: "172.16.1.2", st: "ok", ping: 1 },
+    { id: "sw-bar-2and", site: "BAR", name: "SW-BAR-2AND", type: "switch", ip: "172.16.1.3", st: "ok", ping: 2 },
+    { id: "u6-coz", site: "BAR", name: "U6-Lite-Coz", type: "unifi", ip: "172.16.1.21", st: "ok", ping: 3 },
+    { id: "imp-bar", site: "BAR", name: "IMP-BAR-RECEP", type: "impressora", ip: "172.16.1.90", st: "ok", ping: 4 },
+    { id: "sw-bot-1", site: "BOT", name: "SW-BOT-1", type: "switch", ip: "10.0.0.2", st: "ok", ping: 1 },
+    { id: "sw-bot-2", site: "BOT", name: "SW-BOT-2", type: "switch", ip: "10.0.0.3", st: "ok", ping: 1 },
+    { id: "srv-bot-ad", site: "BOT", name: "SRV-BOT-AD", type: "servidor", ip: "10.0.0.10", st: "ok", ping: 1 },
+  ]);
+
+  const PROBS = [
+    { id: "p1", sev: "crit", name: "ITA-Vivo", kind: "link", what: "DOWN", age: 862, site: "ITA", ref: { type: "link", id: "ita-vivo" } },
+    { id: "p1c", sev: "crit", child: true, name: "SW-ITA-ESTOQ", kind: "sw", what: "timeout · +11 suprimidos", age: 780, site: "ITA", ref: { type: "dev", id: "sw-ita-estoq" } },
+    { id: "p2", sev: "crit", name: "NVR-02", kind: "nvr", what: "offline", age: 190, site: "BOT", ref: { type: "dev", id: "nvr-02" } },
+    { id: "p3", sev: "warn", name: "BAR-Claro", kind: "link", what: "uso 93%", age: 400, site: "BAR", ref: { type: "link", id: "bar-claro" } },
+    { id: "p4", sev: "ack", name: "AP-Recepção", kind: "ap", what: 'ack · "troca de cabo"', age: 6000, site: "BOT", ref: { type: "dev", id: "ap-recepcao" } },
+  ];
+
+  const CMDS = [
+    ["usuários", "Abriria /config › Usuários"],
+    ["novo dispositivo", "Abriria o formulário de novo dispositivo"],
+    ["inventário", "Abriria o inventário (PCs e celulares, somente leitura)"],
+    ["relatório 10/2026", "Gerando relatório de outubro/2026 em CSV (simulação)"],
+    ["perfil 2FA", "Abriria Perfil › autenticação em dois fatores"],
+    ["configurações", "Abriria /config"],
+    ["histórico de incidentes", "Abriria /historico"],
+  ];
+
+  const ST_ORDER = { crit: 0, sup: 1, ack: 2, unk: 3, ok: 4 };
+  const SITE_ALIAS = { bar: "BAR", barra: "BAR", bot: "BOT", botafogo: "BOT", ita: "ITA", itaguai: "ITA", "itaguaí": "ITA" };
+  const TYPE_ALIAS = { sw: ["switch"], switch: ["switch"], ap: ["omada", "unifi"], mk: ["mikrotik"], cam: ["camera"], srv: ["servidor"], imp: ["impressora"] };
+
+  // ── estado ──
+  let site = "ALL", focus = 3, tab = "resumo", gPending = false, gTimer = null;
+  let detail = { type: "dev", id: "sw-ita-estoq" };
+  let sort = { key: "st", dir: 1 };
+  let dataAge = 3, palSel = 0, palItems = [];
+  const sel = { 1: 0, 2: 0, 3: 1, 4: 0 };
+  const flt = document.getElementById("flt");
+  flt.value = "sede:ita tipo:switch";
+
+  function seed(id) { let s = 0; for (const ch of id) s += ch.charCodeAt(0); return (s % 17) + 1; }
+  function siteName(id) { return (W.SITES.find((s) => s.id === id) || {}).name || id; }
+  function inSite(s) { return site === "ALL" || s === site; }
+
+  // ── filtro estilo k9s ──
+  function parseFilter(q) {
+    const r = { site: null, types: null, off: false, text: [], unknown: [] };
+    q.trim().toLowerCase().split(/\s+/).filter(Boolean).forEach((tok) => {
+      const m = tok.match(/^(\w+):(.+)$/);
+      if (m && (m[1] === "sede" || m[1] === "site")) {
+        if (SITE_ALIAS[m[2]]) r.site = SITE_ALIAS[m[2]]; else r.unknown.push(tok);
+      } else if (m && m[1] === "tipo") {
+        r.types = TYPE_ALIAS[m[2]] || [m[2]];
+      } else if (m) {
+        r.unknown.push(tok);
+      } else if (tok === "off") {
+        r.off = true;
+      } else {
+        r.text.push(tok);
+      }
+    });
+    return r;
+  }
+
+  function ipNum(ip) { return ip.split(".").reduce((a, b) => a * 256 + (+b || 0), 0); }
+
+  function linksV() { return W.LINKS.filter((l) => inSite(l.site)); }
+  function sedesV() { return W.SITES.filter((s) => inSite(s.id)); }
+  function probsV() { return PROBS.filter((p) => inSite(p.site)); }
+  function devsV() {
+    const f = parseFilter(flt.value);
+    const list = DEVS.filter((d) =>
+      inSite(d.site) &&
+      (!f.site || d.site === f.site) &&
+      (!f.types || f.types.some((t) => d.type.startsWith(t))) &&
+      (!f.off || d.st !== "ok") &&
+      f.text.every((t) => (d.name + " " + d.ip).toLowerCase().includes(t)));
+    const k = sort.key, dir = sort.dir;
+    list.sort((a, b) => {
+      let x, y;
+      if (k === "st") { x = ST_ORDER[a.st]; y = ST_ORDER[b.st]; }
+      else if (k === "ip") { x = ipNum(a.ip); y = ipNum(b.ip); }
+      else if (k === "ping") { x = a.ping == null ? 1e9 : a.ping; y = b.ping == null ? 1e9 : b.ping; }
+      else { x = String(a[k]).toLowerCase(); y = String(b[k]).toLowerCase(); }
+      return (x < y ? -1 : x > y ? 1 : 0) * dir || a.name.localeCompare(b.name);
+    });
+    return { list, f };
+  }
+
+  function target() {
+    if (!detail) return null;
+    return detail.type === "link" ? W.LINKS.find((l) => l.id === detail.id) : DEVS.find((d) => d.id === detail.id);
+  }
+
+  // ── render ──
+  function renderChips() {
+    const opts = [["g t", "ALL", "todas"], ["g b", "BAR", "bar"], ["g o", "BOT", "bot"], ["g i", "ITA", "ita"]];
+    document.getElementById("site-chips").innerHTML = opts.map((o) =>
+      `<button type="button" class="chip" data-site="${o[1]}" aria-pressed="${site === o[1]}"><kbd>${o[0]}</kbd> ${o[2]}</button>`).join("");
+  }
+
+  function renderLinks() {
+    const ls = linksV();
+    if (sel[1] >= ls.length) sel[1] = Math.max(0, ls.length - 1);
+    document.getElementById("links").innerHTML = ls.map((l, i) => {
+      const s = i === sel[1] ? " sel" : "";
+      const label = W.esc(l.site + "-" + l.name);
+      if (l.state === "down") {
+        return `<div class="row lk${s}" data-p="1" data-i="${i}"><span>${label}</span><span class="crit">✖</span>` +
+          `<span class="crit" style="grid-column: 3 / -1">DOWN <span data-down="${l.id}">${W.age(l.downFor + W.elapsed())}</span> <span class="dim">(webhook)</span></span></div>`;
+      }
+      const p = W.pct(l);
+      const color = p >= 90 ? "var(--crit)" : p >= 70 ? "var(--warn)" : "var(--info)";
+      return `<div class="row lk${s}" data-p="1" data-i="${i}" title="${l.role === "active" ? "rota ativa" : l.role === "failover" ? "assumiu por failover" : "standby"}">` +
+        `<span>${label}</span><span class="ok">●</span><span>↓${l.down}M</span><span>${W.bar(p)}</span>` +
+        `<span class="${W.level(p)}">${p}%${p >= 90 ? "!" : ""}</span><span class="c-spark">${W.spark(l.hist.slice(-24), color, 16)}</span></div>`;
+    }).join("");
+  }
+
+  function renderSedes() {
+    const ss = sedesV();
+    if (sel[2] >= ss.length) sel[2] = Math.max(0, ss.length - 1);
+    document.getElementById("sedes").innerHTML = ss.map((s, i) => {
+      const c = W.COUNTS[s.id], on = c.dev[0] - c.dev[1] - c.dev[2];
+      const cls = c.dev[2] ? "crit" : c.dev[1] ? "warn" : "ok";
+      return `<div class="row sd${i === sel[2] ? " sel" : ""}" data-p="2" data-i="${i}"><span>${s.name.toUpperCase()}</span>${W.dots(s.id)}` +
+        `<span class="${cls}">${on}/${c.dev[0]}</span><span class="c-ap dim">ap ${c.ap[0]}/${c.ap[1]}</span></div>`;
+    }).join("");
+    const ids = ss.map((s) => s.id);
+    const sum = (k, j) => ids.reduce((a, id) => a + W.COUNTS[id][k][j], 0);
+    const nvrs = DEVS.filter((d) => d.type === "nvr" && ids.includes(d.site));
+    document.getElementById("sedes-sum").innerHTML =
+      `pcs ${sum("pc", 0)}/${sum("pc", 1)} · cel 37 · nvr ${nvrs.filter((d) => d.st === "ok").length}/${nvrs.length} · cam ${sum("cam", 0)}/${sum("cam", 1)}`;
+  }
+
+  function renderProbs() {
+    const ps = probsV();
+    if (sel[3] >= ps.length) sel[3] = Math.max(0, ps.length - 1);
+    document.getElementById("pcount").textContent = ps.filter((p) => !p.child).length;
+    document.getElementById("p3").classList.toggle("hot", ps.some((p) => p.sev === "crit"));
+    const open = PROBS.filter((p) => !p.child && p.sev !== "ack").length;
+    document.getElementById("alertcount").textContent = open ? "⚠ " + open : "";
+    const el = document.getElementById("probs");
+    if (!ps.length) { el.innerHTML = '<div class="empty"><span class="ok">✔</span> nenhum problema nesta sede</div>'; return; }
+    el.innerHTML = ps.map((p, i) => {
+      const g = p.sev === "ack" ? "░" : W.GLYPH[p.sev];
+      const gc = p.sev === "ack" ? "dim" : p.sev;
+      return `<div class="row pb${p.child ? " child" : ""}${p.sev === "ack" ? " muted" : ""}${i === sel[3] ? " sel" : ""}" data-p="3" data-i="${i}">` +
+        `<span class="${gc}">${p.child ? "└" : ""}${p.child ? "" : g}</span>` +
+        `<span>${p.child ? `<span class="${gc}">${g}</span> ` : ""}${W.esc(p.name)}</span>` +
+        `<span class="dim">${p.kind}</span><span class="${p.sev === "ack" ? "dim" : ""}">${W.esc(p.what)}</span>` +
+        `<span data-age="${p.id}">${W.age(p.age + W.elapsed())}</span></div>`;
+    }).join("");
+  }
+
+  const ST_TXT = { ok: ["●", "ok"], crit: ["✖", "crit"], sup: ["◌", "warn"], unk: ["◌", "faint"], ack: ["░", "dim"] };
+  function pingTxt(d) {
+    if (d.st === "ok") return `${d.ping}ms`;
+    if (d.st === "sup") return '<span class="warn">supr.</span>';
+    if (d.st === "unk") return '<span class="faint">não mon.</span>';
+    return '<span class="crit">--</span>';
+  }
+
+  function renderDevs() {
+    const { list, f } = devsV();
+    if (sel[4] >= list.length) sel[4] = Math.max(0, list.length - 1);
+    const q = flt.value.trim();
+    document.getElementById("filter-echo").textContent = q ? "/" + q : "todos";
+    document.getElementById("devcount").textContent = list.length + "/" + DEVS.length;
+    const msg = [];
+    if (f.unknown.length) msg.push('<span class="warn">ignorado: ' + W.esc(f.unknown.join(" ")) + "</span>");
+    if (site !== "ALL") msg.push("sede do topo: " + site);
+    document.getElementById("filter-msg").innerHTML = msg.join(" · ") || "sede:bar|bot|ita · tipo:switch|ap|nvr|mk|cam · off · texto livre";
+    const cols = [["st", "ST"], ["name", "NOME"], ["ip", "IP"], ["type", "TIPO"], ["ping", "PING"]];
+    const head = '<div class="row dv thead">' + cols.map((c) => {
+      const s = sort.key === c[0] ? (sort.dir > 0 ? "ascending" : "descending") : "none";
+      return `<span><button type="button" data-sort="${c[0]}" aria-sort="${s}">${c[1]}</button></span>`;
+    }).join("") + "</div>";
+    const rows = list.map((d, i) => {
+      const t = ST_TXT[d.st];
+      return `<div class="row dv${i === sel[4] ? " sel" : ""}${d.st === "sup" || d.st === "unk" ? " muted" : ""}" data-p="4" data-i="${i}" data-dev="${d.id}">` +
+        `<span class="${t[1]}">${t[0]}</span><span>${W.esc(d.name)}</span><span>${d.ip}</span><span class="dim">${d.type}</span><span>${pingTxt(d)}</span></div>`;
+    }).join("");
+    document.getElementById("devrows").innerHTML = head + (rows || '<div class="empty">nada corresponde ao filtro</div>');
+  }
+
+  function vendorTab(t) {
+    if (!t) return null;
+    if (detail.type === "link" || t.type === "mikrotik") return "routeros";
+    return { omada: "omada", unifi: "unifi", nvr: "canais" }[t.type] || null;
+  }
+
+  function devResumo(d) {
+    const s = seed(d.id);
+    const down = d.st === "crit" || d.st === "sup" || d.st === "ack";
+    const h1 = down ? W.series(s, 24, 3, 2).concat([0, 0, 0, 0, 0, 0]) : W.series(s, 30, d.ping || 3, 2);
+    const h24 = down ? W.series(s + 3, 44, 3, 2).concat([0, 0, 0, 0]) : W.series(s + 3, 48, d.ping || 3, 2);
+    const lastOk = { ok: "agora · 14:32", crit: "14:28:52", sup: "14:18:02", ack: "12:52:10", unk: "nunca (não monitorado)" }[d.st];
+    const fails = { ok: "0", crit: '<span class="crit">3/3</span> (limite de alerta 3)', sup: '<span class="warn">suprimido</span>: link ITA-Vivo DOWN', ack: "ack · matheus", unk: "—" }[d.st];
+    const neigh = DEVS.filter((x) => x.site === d.site && x.id !== d.id && (x.type === "mikrotik" || x.type === "switch") && x.st === "ok").slice(0, 2)
+      .map((x) => `${W.esc(x.name)} <span class="ok">●</span> ${x.ping}ms`).join(" · ") || '<span class="dim">nenhum alcançável</span>';
+    const color = down ? "var(--crit)" : "var(--ok)";
+    return `<dl class="kv"><dt>ip</dt><dd>${d.ip} · ${d.type} · ${d.site}</dd><dt>último ok</dt><dd>${lastOk}</dd>` +
+      `<dt>falhas</dt><dd>${fails}</dd>${d.note ? `<dt>nota</dt><dd>${W.esc(d.note)}</dd>` : ""}<dt>vizinhos</dt><dd>${neigh}</dd></dl>` +
+      `<div class="sp-l">ping 1h (ms)</div>${W.spark(h1, color, 36)}<div class="sp-l">ping 24h</div>${W.spark(h24, color, 28)}`;
+  }
+
+  function linkResumo(l) {
+    const p = W.pct(l);
+    const role = { active: "rota ativa", standby: "standby", failover: "assumiu por failover" }[l.role];
+    return `<dl class="kv"><dt>estado</dt><dd>${l.state === "down" ? '<span class="crit">DOWN desde 14:17:45</span> (webhook)' : `<span class="${W.level(p)}">${p}% do contratado</span> · ${role}`}</dd>` +
+      `<dt>tráfego</dt><dd>↓${l.down}M ↑${l.up}M de ${l.cap}M</dd><dt>latência</dt><dd>${l.lat == null ? "--" : l.lat + "ms"} · perda ${l.loss}%</dd>` +
+      `<dt>circuito</dt><dd>${l.circuit} · ☎ ${l.phone}</dd><dt>gateway</dt><dd>${W.SITES.find((s) => s.id === l.site).gw} ${l.iface}</dd>` +
+      `<dt>30 dias</dt><dd>${l.sla.toFixed(2)}% disponível</dd></dl>` +
+      `<div class="sp-l">↓ tráfego 1h (Mbps)</div>${W.spark(l.hist, l.state === "down" ? "var(--crit)" : "var(--info)", 44)}`;
+  }
+
+  function histTab(t) {
+    const lines = detail.type === "link"
+      ? (t.state === "down"
+        ? [["14:18", "info", "·", "rota padrão → Tim (failover em 41s)"], ["14:17", "crit", "✖", "DOWN via webhook (netwatch)"], ["29/10 03:12", "ok", "●", "voltou após 4 min"]]
+        : [["12:47", "warn", "▲", "acima de 90% por 5 min"], ["05:00", "ok", "●", "teste diário de failover ok"]])
+      : (t.st === "ok"
+        ? [["09:14", "dim", "✎", "matheus editou o intervalo para 60s"], ["ontem 22:10", "ok", "●", "voltou após 2 min"]]
+        : [["14:18", "crit", "✖", "timeout (3 falhas seguidas)"], ["09:14", "dim", "✎", "matheus editou o intervalo"], ["ontem 22:10", "ok", "●", "voltou após 2 min"]]);
+    return '<div class="hist">' + lines.map((x) => `<div><span class="dim">${x[0]}</span> <span class="${x[1]}">${x[2]}</span> ${W.esc(x[3])}</div>`).join("") + "</div>";
+  }
+
+  function vendorBody(t, v) {
+    if (v === "routeros" && detail.type === "link") {
+      return `<dl class="kv"><dt>interface</dt><dd>${t.iface} · running=${t.state === "down" ? '<span class="crit">false</span>' : "true"}</dd>` +
+        `<dt>netwatch</dt><dd>8.8.8.8 via ${t.iface} · ${t.state === "down" ? '<span class="crit">down</span>' : '<span class="ok">up</span>'}</dd>` +
+        `<dt>rota</dt><dd>${t.role === "standby" ? "distance 2 (reserva)" : "distance 1 (ativa)"}</dd></dl>`;
+    }
+    if (v === "routeros") return `<dl class="kv"><dt>RouterOS</dt><dd>7.16.2 · uptime 41d</dd><dt>cpu</dt><dd>${t.cpu || 0}%</dd><dt>interfaces</dt><dd>14 · 3 em uso de WAN</dd></dl>`;
+    if (v === "omada") return '<dl class="kv"><dt>controlador</dt><dd>OC200 10.0.0.19</dd><dt>clientes</dt><dd>0 (offline)</dd><dt>uplink</dt><dd>SW-BOT-2 porta 9</dd></dl>';
+    if (v === "unifi") return '<dl class="kv"><dt>controlador</dt><dd>Cloud Key 172.16.1.200</dd><dt>clientes</dt><dd>22</dd><dt>canal</dt><dd>36/5G · util 52%</dd></dl>';
+    if (v === "canais") return `<dl class="kv"><dt>canais</dt><dd>32 · ${t.st === "ok" ? "32 gravando" : '<span class="crit">sem resposta do NVR</span>'}</dd><dt>disco</dt><dd>4 TB · 71% usado</dd></dl>`;
+    return "";
+  }
+
+  function cfgTab(t) {
+    return `<dl class="kv"><dt>unidade</dt><dd>${siteName(t.site)}</dd><dt>intervalo</dt><dd>60s</dd>` +
+      `<dt>checks</dt><dd>${detail.type === "link" ? "webhook + tráfego RouterOS" : t.type === "switch" ? "ping + snmp" : "ping"}</dd>` +
+      `<dt>alerta</dt><dd>após 3 falhas</dd><dt>manutenção</dt><dd>nenhuma</dd></dl>`;
+  }
+
+  function renderDetail() {
+    const t = target();
+    const el = document.getElementById("detail");
+    if (!t) {
+      document.getElementById("dname").textContent = "";
+      el.innerHTML = '<div class="empty">nenhum item selecionado · <kbd>⏎</kbd> em qualquer linha abre aqui</div>';
+      return;
+    }
+    const title = detail.type === "link" ? t.site + "-" + t.name : t.name;
+    document.getElementById("dname").textContent = "· " + title;
+    const v = vendorTab(t);
+    const tabs = ["resumo", "histórico", v, "cfg"].filter(Boolean);
+    if (!tabs.includes(tab)) tab = "resumo";
+    let body;
+    if (tab === "resumo") body = detail.type === "link" ? linkResumo(t) : devResumo(t);
+    else if (tab === "histórico") body = histTab(t);
+    else if (tab === "cfg") body = cfgTab(t);
+    else body = vendorBody(t, v);
+    el.innerHTML = `<div class="tabs" role="tablist">${tabs.map((x) => `<button type="button" role="tab" data-tab="${x}" aria-selected="${x === tab}">${x}</button>`).join("")}</div>` +
+      body +
+      '<div class="btns" style="margin-top:10px">' +
+      [["p", "ping"], ["w", "web"], ["c", "copiar IP"], ["a", "ack"], ["s", "silenciar"], ["n", "nota"], ["e", "editar"]]
+        .map((b) => `<button type="button" class="btn" data-act="${b[0]}"><kbd>${b[0]}</kbd>${b[1]}</button>`).join("") + "</div>";
+  }
+
+  function renderFocus() {
+    document.querySelectorAll("[data-panel]").forEach((b) => b.classList.toggle("focus", +b.dataset.panel === focus));
+  }
+
+  function render() { renderChips(); renderLinks(); renderSedes(); renderProbs(); renderDevs(); renderDetail(); renderFocus(); }
+
+  // ── ações ──
+  function setFocus(n) {
+    focus = n; renderFocus();
+    const box = document.querySelector('[data-panel="' + n + '"]');
+    if (box && window.matchMedia("(max-width: 900px)").matches) box.scrollIntoView({ block: "nearest" });
+  }
+
+  function openDetail(ref) {
+    detail = ref; tab = "resumo"; render();
+    if (window.matchMedia("(max-width: 900px)").matches) document.getElementById("pd").scrollIntoView({ block: "nearest" });
+  }
+
+  function enter() {
+    if (focus === 1) { const l = linksV()[sel[1]]; if (l) openDetail({ type: "link", id: l.id }); }
+    else if (focus === 2) { const s = sedesV()[sel[2]]; if (s) { site = site === s.id ? "ALL" : s.id; render(); W.toast(site === "ALL" ? "Todas as sedes" : "Filtrando todos os painéis por " + s.name); } }
+    else if (focus === 3) { const p = probsV()[sel[3]]; if (p) openDetail(p.ref); }
+    else if (focus === 4) { const d = devsV().list[sel[4]]; if (d) openDetail({ type: "dev", id: d.id }); }
+  }
+
+  function move(delta) {
+    const n = [0, linksV().length, sedesV().length, probsV().length, devsV().list.length][focus];
+    sel[focus] = Math.max(0, Math.min(n - 1, sel[focus] + delta));
+    render();
+  }
+
+  function setSite(s) { site = s; render(); W.toast(s === "ALL" ? "Todas as sedes" : "Sede: " + siteName(s)); }
+
+  function act(k) {
+    const t = target();
+    if (!t) { W.toast("Abra um item no DETALHE primeiro (⏎)"); return; }
+    const name = detail.type === "link" ? t.site + "-" + t.name : t.name;
+    const ip = detail.type === "link" ? W.SITES.find((s) => s.id === t.site).gw + " " + t.iface : t.ip;
+    if (k === "p") {
+      const ok = detail.type === "link" ? t.state !== "down" : t.st === "ok";
+      W.toast("ping " + ip + ": " + (ok ? "4/4 respostas · " + (t.ping || t.lat || 1) + "ms" : "timeout ×4"));
+    } else if (k === "w") W.toast("Abriria a interface web/Winbox de " + name);
+    else if (k === "c") {
+      try { navigator.clipboard.writeText(ip).then(() => W.toast("IP copiado: " + ip), () => W.toast(ip)); }
+      catch (e) { W.toast(ip); }
+    } else if (k === "a") {
+      const p = PROBS.find((x) => x.ref.id === detail.id);
+      if (!p || p.sev === "ack") { W.toast(p ? name + " já está com ack" : name + " não tem problema aberto"); return; }
+      p.sev = "ack"; p.what = 'ack · "verificando"';
+      if (detail.type === "dev" && t.st === "crit") t.st = "ack";
+      W.toast("Ack registrado em " + name + " (simulação)"); render();
+    } else if (k === "s") W.toast(name + " silenciado até 15:32 · prazo obrigatório (simulação)");
+    else if (k === "n") W.toast("Abriria campo de nota para " + name);
+    else if (k === "e") W.toast("Abriria Configurações › editar " + name);
+  }
+
+  // ── paleta de comandos ──
+  function fuzzy(q, s) {
+    q = q.toLowerCase(); s = s.toLowerCase();
+    if (!q) return 0;
+    let pos = -1, score = 0;
+    for (const ch of q) {
+      const i = s.indexOf(ch, pos + 1);
+      if (i < 0) return -1;
+      score += i - pos - 1; pos = i;
+    }
+    return score + (s.startsWith(q) ? 0 : 1);
+  }
+
+  function palAll() {
+    return CMDS.map((c) => ({ kind: "cmd", label: c[0], run: () => W.toast(c[1]) }))
+      .concat(W.LINKS.map((l) => ({ kind: "link", label: l.site + "-" + l.name + " " + l.cap + "M", run: () => openDetail({ type: "link", id: l.id }) })))
+      .concat(DEVS.map((d) => ({ kind: "disp", label: d.name + " " + d.ip, run: () => openDetail({ type: "dev", id: d.id }) })));
+  }
+
+  function palRender() {
+    const q = document.getElementById("pal-in").value;
+    palItems = palAll().map((it) => ({ it, sc: fuzzy(q, it.label) })).filter((x) => x.sc >= 0)
+      .sort((a, b) => a.sc - b.sc).slice(0, 9).map((x) => x.it);
+    if (palSel >= palItems.length) palSel = Math.max(0, palItems.length - 1);
+    document.getElementById("pal-list").innerHTML = palItems.map((it, i) =>
+      `<div class="row pal${i === palSel ? " sel" : ""}" data-pal="${i}"><span class="dim">${it.kind}</span><span>${W.esc(it.label)}</span><span class="dim">${i === palSel ? "⏎" : ""}</span></div>`).join("") ||
+      '<div class="empty">nada encontrado</div>';
+  }
+
+  function palOpen() {
+    if (document.getElementById("wt-pal")) return;
+    W.closeHelp();
+    const ov = document.createElement("div");
+    ov.id = "wt-pal"; ov.className = "overlay palette";
+    ov.innerHTML = '<section class="box" role="dialog" aria-label="Paleta de comandos" style="--box: var(--accent)"><h2 class="box-t">comandos e ativos</h2>' +
+      '<input id="pal-in" type="text" autocomplete="off" spellcheck="false" placeholder="digite: usuários, relatório, nvr-02, 192.168…" aria-label="Buscar comando ou ativo">' +
+      '<div class="rows" id="pal-list"></div></section>';
+    ov.addEventListener("click", (e) => {
+      if (e.target === ov) { palClose(); return; }
+      const r = e.target.closest("[data-pal]");
+      if (r) { palSel = +r.dataset.pal; palRun(); }
+    });
+    document.body.appendChild(ov);
+    const inp = document.getElementById("pal-in");
+    inp.addEventListener("input", () => { palSel = 0; palRender(); });
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); palSel = Math.min(palSel + 1, palItems.length - 1); palRender(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); palSel = Math.max(palSel - 1, 0); palRender(); }
+      else if (e.key === "Enter") { e.preventDefault(); palRun(); }
+    });
+    palSel = 0; palRender(); inp.focus();
+  }
+  function palClose() { const ov = document.getElementById("wt-pal"); if (ov) { ov.remove(); return true; } return false; }
+  function palRun() { const it = palItems[palSel]; palClose(); if (it) it.run(); }
+
+  // ── eventos de clique ──
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#wt-pal")) return;
+    const chip = e.target.closest("[data-site]");
+    if (chip) { setSite(chip.dataset.site); return; }
+    const sb = e.target.closest("[data-sort]");
+    if (sb) { const k = sb.dataset.sort; sort = { key: k, dir: sort.key === k ? -sort.dir : 1 }; setFocus(4); renderDevs(); return; }
+    const tb = e.target.closest("[data-tab]");
+    if (tb) { tab = tb.dataset.tab; renderDetail(); return; }
+    const ab = e.target.closest("[data-act]");
+    if (ab) { act(ab.dataset.act); return; }
+    const row = e.target.closest("[data-p][data-i]");
+    if (row) { focus = +row.dataset.p; sel[focus] = +row.dataset.i; enter(); renderFocus(); return; }
+    const box = e.target.closest("[data-panel]");
+    if (box) setFocus(+box.dataset.panel);
+  });
+
+  flt.addEventListener("input", () => { sel[4] = 0; renderDevs(); });
+  flt.addEventListener("focus", () => setFocus(4));
+  flt.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); flt.blur(); focus = 4; enter(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); flt.blur(); setFocus(4); }
+  });
+
+  // Tab cicla os painéis só quando nenhum controle está focado, para não quebrar a navegação nativa.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || e.ctrlKey || e.altKey || e.metaKey) return;
+    const a = document.activeElement;
+    if (a && a !== document.body) return;
+    e.preventDefault();
+    setFocus(e.shiftKey ? ((focus + 2) % 4) + 1 : (focus % 4) + 1);
+  });
+
+  // ── atalhos ──
+  function gKey(fn) {
+    return () => { if (!gPending) return; gPending = false; clearTimeout(gTimer); fn(); };
+  }
+  const HELP = [["1 2 3 4", "focar links / sedes / problemas / dispositivos"], ["tab", "próximo painel (shift+tab volta)"], ["j / k", "mover no painel focado"],
+    ["⏎", "abrir no DETALHE (em sedes: filtrar)"], ["esc", "fechar paleta, filtro ou detalhe"], ["/", "filtrar dispositivos (sede:ita tipo:switch off texto)"],
+    ["g t / b / o / i", "sede: todas / Barra / Botafogo / Itaguaí"], ["g u", "filtrar pela sede do item aberto"],
+    ["p w c", "ping / abrir web / copiar IP"], ["a s", "ack / silenciar com prazo"], ["n e", "nota / editar"], [": ou Ctrl+K", "paleta: ativos e comandos raros"]];
+
+  W.keys({
+    "1": () => setFocus(1), "2": () => setFocus(2), "3": () => setFocus(3), "4": () => setFocus(4),
+    j: () => move(1), k: () => move(-1), ArrowDown: () => move(1), ArrowUp: () => move(-1),
+    Enter: enter,
+    Escape: () => {
+      if (palClose() || W.closeHelp()) return;
+      if (document.activeElement === flt) { flt.blur(); return; }
+      detail = null; renderDetail();
+    },
+    "/": () => { setFocus(4); flt.focus(); flt.select(); },
+    ":": palOpen, "Ctrl+k": palOpen,
+    g: () => { gPending = true; clearTimeout(gTimer); gTimer = setTimeout(() => { gPending = false; }, 1500); W.toast("g… t todas · b Barra · o Botafogo · i Itaguaí · u sede do item"); },
+    t: gKey(() => setSite("ALL")), b: gKey(() => setSite("BAR")), o: gKey(() => setSite("BOT")), i: gKey(() => setSite("ITA")),
+    u: gKey(() => { const t = target(); if (t) setSite(t.site); else W.toast("Nenhum item aberto no DETALHE"); }),
+    a: () => act("a"), s: () => act("s"), p: () => act("p"), w: () => act("w"), c: () => act("c"), n: () => act("n"), e: () => act("e"),
+    "?": () => { palClose(); W.help(HELP); },
+  });
+
+  // ── ao vivo ──
+  function tick() {
+    document.getElementById("clock").textContent = W.clock();
+    PROBS.forEach((p) => { const el = document.querySelector('[data-age="' + p.id + '"]'); if (el) el.textContent = W.age(p.age + W.elapsed()); });
+    W.LINKS.forEach((l) => { const el = document.querySelector('[data-down="' + l.id + '"]'); if (el) el.textContent = W.age(l.downFor + W.elapsed()); });
+    dataAge = (dataAge + 1) % 5;
+    document.getElementById("data-age").textContent = dataAge + "s";
+    document.getElementById("hb").textContent = (12 + (W.elapsed() % 50)) + "s";
+    if (dataAge === 0) {
+      W.jitter(); renderLinks();
+      if (detail && detail.type === "link" && tab === "resumo") renderDetail();
+    }
+  }
+
+  render(); tick();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

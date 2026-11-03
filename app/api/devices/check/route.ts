@@ -1,3 +1,7 @@
+// NOTA: `runChecks` roda dentro do processo Next, e não no worker. Os contadores de falhas
+// consecutivas (consecutiveFailures/backoff do scheduler) vivem na memória do processo do worker,
+// portanto "rechecar" por aqui NÃO os atualiza: grava DeviceStatus/StatusHistory, mas o limiar de
+// alertThreshold do worker continua contando só as suas próprias verificações.
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/with-auth";
 import { db } from "@/lib/db";

@@ -18,7 +18,7 @@ jest.mock("@/lib/db", () => ({
     tokenBlacklist:  { deleteMany: jest.fn() },
     link:            { findMany: jest.fn(), update: jest.fn() },
     workerHeartbeat: { upsert: jest.fn() },
-    systemConfig:    { upsert: jest.fn(), update: jest.fn() },
+    systemConfig:    { upsert: jest.fn(), update: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
     $transaction:    jest.fn(),
   },
 }));

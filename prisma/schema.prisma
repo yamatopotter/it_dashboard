@@ -89,6 +89,12 @@ model Device {
   alertThreshold  Int      @default(3) // consecutive failures before firing alert
   lastAlertAt     DateTime?
 
+  // Unidade normalizada (BAR | BOT | ITA) — null aparece no grupo "?" até ser revisada
+  site             String?
+  // Avisos Zoho Cliq: quando avisou a abertura e o reaviso do episódio atual (limpos ao voltar)
+  cliqNotifiedAt   DateTime?
+  cliqRenotifiedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -102,6 +108,7 @@ model Device {
   nvrChannelIssues  NvrChannelIssue[]
 
   @@index([type])
+  @@index([site])
   @@index([parentNvrId])
 }
 
@@ -169,6 +176,7 @@ model User {
   totpEnabled   Boolean   @default(false)
   // SEC-021: força revalidação após troca de senha
   passwordChangedAt DateTime?
+  uiPreference      String?  // tower | plantao | nettop | wtop — null = usa o padrão do sistema
 }
 
 // SEC-021: token blacklist para invalidação imediata após logout ou troca de senha
@@ -211,6 +219,19 @@ model Link {
   uploadBps   Int?
   latencyMs   Int?
 
+  // Unidade normalizada (BAR | BOT | ITA)
+  site String?
+
+  // Manutenção e ack (mesma semântica de Device)
+  maintenanceUntil        DateTime?
+  offlineAcknowledgedAt   DateTime?
+  offlineAcknowledgedBy   String?
+  offlineAcknowledgedNote String?
+
+  // Avisos Zoho Cliq (limpos quando o link volta)
+  cliqNotifiedAt   DateTime?
+  cliqRenotifiedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -218,6 +239,7 @@ model Link {
   events         LinkEvent[]
 
   @@index([mikrotikDeviceId])
+  @@index([site])
 }
 
 model LinkEvent {
@@ -304,6 +326,23 @@ model SystemConfig {
   dattoSyncIntervalMinutes Int     @default(30)
   dattoLastSyncAt          DateTime?
   dattoLastSyncError       String?
+
+  // Módulos opcionais — desligados por padrão (redesign: foco em links, rede e Wi-Fi)
+  moduleTelephony Boolean @default(false)
+  moduleComputers Boolean @default(false)
+  moduleNvr       Boolean @default(false)
+
+  // Interface padrão (tower | plantao | nettop | wtop) e se o usuário pode trocar a sua
+  defaultUi   String  @default("tower")
+  allowUserUi Boolean @default(true)
+
+  // Avisos no Zoho Cliq (webhook de entrada de um bot)
+  cliqEnabled         Boolean   @default(false)
+  cliqWebhookUrlEnc   String?   // AES-256-GCM encrypted
+  cliqChannel         String?   // canal de destino (exibição/override)
+  cliqRenotifyMinutes Int       @default(15)
+  cliqLastTestAt      DateTime?
+  cliqLastError       String?
 }
 
 model NvrChannelIssue {

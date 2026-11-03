@@ -28,6 +28,11 @@ export async function syncDattoDevices(): Promise<void> {
   try {
     const config = await db.systemConfig.findUnique({ where: { id: 1 } });
 
+    if (!config?.moduleComputers) {
+      log("info", "Módulo Computadores desligado: Datto RMM sync ignorado");
+      return;
+    }
+
     if (!config?.dattoSyncEnabled) {
       log("info", "Datto RMM sync desabilitado");
       return;

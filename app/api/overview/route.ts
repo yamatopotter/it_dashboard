@@ -3,12 +3,13 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/with-auth";
 import { db } from "@/lib/db";
+import { getModules } from "@/lib/module-config";
 
 // In-process cache (15s TTL). Assumes single-instance deployment — same premise as
 // the in-memory login rate limiter (SEC-014). In a multi-process/serverless setup
 // each instance would keep its own cache; move to Redis/unstable_cache if scaling out.
 const CACHE_TTL_MS = 15_000;
-let cache: { data: OverviewData; expiresAt: number } | null = null;
+let cache: { data: OverviewData; expiresAt: number; nvrOn: boolean } | null = null;
 
 export function resetOverviewCache() { cache = null; }
 
@@ -24,13 +25,15 @@ export async function GET(_req: Request) {
   if (unauth) return unauth;
   const now = Date.now();
 
-  if (cache && now < cache.expiresAt) {
+  const nvrOn = (await getModules()).nvr;
+
+  if (cache && cache.nvrOn === nvrOn && now < cache.expiresAt) {
     return NextResponse.json(cache.data);
   }
   const since24h = new Date(now - 24 * 3_600_000);
   const since6h  = new Date(now - 6  * 3_600_000);
 
-  const [pingHistory, links, linkEvents, lastEventsBefore] = await Promise.all([
+  let [pingHistory, links, linkEvents, lastEventsBefore] = await Promise.all([
     // Sparklines only need the last 60 samples per device — fetch exactly those
     // (windowed) instead of pulling 6h of history for every device and slicing in JS.
     db.$queryRaw<{ deviceId: string; pingMs: number | null; isOnline: boolean }[]>`
@@ -58,6 +61,13 @@ export async function GET(_req: Request) {
       select: { linkId: true, type: true },
     }),
   ]);
+
+  // Módulo NVR desligado: DVR/CAMERA não entram nas sparklines
+  if (!nvrOn) {
+    const hidden = await db.device.findMany({ where: { type: { in: ["DVR", "CAMERA"] } }, select: { id: true } });
+    const hiddenIds = new Set(hidden.map((d) => d.id));
+    pingHistory = pingHistory.filter((r) => !hiddenIds.has(r.deviceId));
+  }
 
   // Sparklines: last 60 checks per device (ping = null when offline)
   const sparklines: Record<string, (number | null)[]> = {};
@@ -133,6 +143,6 @@ export async function GET(_req: Request) {
   }
 
   const payload: OverviewData = { sparklines, linkSegments };
-  cache = { data: payload, expiresAt: now + CACHE_TTL_MS };
+  cache = { data: payload, expiresAt: now + CACHE_TTL_MS, nvrOn };
   return NextResponse.json(payload);
 }

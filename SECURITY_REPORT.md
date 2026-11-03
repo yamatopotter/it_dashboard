@@ -1,7 +1,7 @@
 # Relatório de Segurança — WatchIT Tower
 
-**Última atualização:** 2026-06-14 (v0.2.1 — SEC-028/029/031/032/033/036/037 resolvidos, SEC-030 aceito; SEC-021 completado; community SNMP criptografada também no bulk-create)  
-**Versão do sistema:** 0.2.1  
+**Última atualização:** 2026-11-03 (v0.7.0 — redesign: SEC-038/039 resolvidos, SEC-040 aberto; Zoho Cliq com URL cifrada e validada contra SSRF, ack/silêncio com RBAC)  
+**Versão do sistema:** 0.7.0  
 **Analista:** Análise automatizada via Claude Code  
 **Escopo:** Código-fonte completo — Next.js 14 (frontend/API), worker de monitoramento, banco PostgreSQL
 
@@ -16,9 +16,9 @@ O WatchIT Tower é uma aplicação interna para monitoramento de equipamentos de
 | 🔴 Crítico  | 1     | 1         | 0      |
 | 🟠 Alto     | 4     | 4         | 0      |
 | 🟡 Médio    | 7     | 5 + 1⚠️   | 1      |
-| 🔵 Baixo    | 6     | 4         | 2      |
-| ℹ️ Info     | 17    | 13 + 4⚠️  | 0      |
-| **Total**  | **35**| **32**    | **3**  |
+| 🔵 Baixo    | 7     | 4         | 3      |
+| ℹ️ Info     | 19    | 15 + 4⚠️  | 0      |
+| **Total**  | **37**| **34**    | **4**  |
 
 > ⚠️ = Aceito / won't-fix por design intencional ou limitação de framework
 
@@ -352,6 +352,35 @@ O endpoint público revela se um username tem 2FA ativo antes da verificação d
 
 ---
 
+### SEC-038 — Webhook do Zoho Cliq: segredo em repouso e SSRF
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO
+**Categoria:** Exposição de dados sensíveis / SSRF (OWASP A02, A10)
+**Resolvido em:** branch `feat/redesign-tower`
+
+A URL do webhook do Cliq é um segredo (quem a possui posta no canal). `PUT /api/settings/cliq` (ADMIN) a criptografa com AES-256-GCM (`cliqWebhookUrlEnc`); a API devolve apenas `hasWebhook`, e a auditoria registra só os nomes dos campos alterados. `validateCliqUrl()` (`lib/cliq.ts`) exige `https`, sem credenciais na URL, sem porta customizada e host em domínio Zoho (`zoho.com`, `.eu`, `.in`, `.com.au`, `.com.cn`, `.jp`), o que impede usar o envio de avisos como SSRF para a rede interna. O envio tem timeout de 10 s e cada mensagem vai para o `AuditLog` (usuário `cliq`).
+
+---
+
+### SEC-039 — Ack, silêncio, módulos e aparência: controle de acesso
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO
+**Categoria:** Controle de acesso (OWASP A01)
+**Resolvido em:** branch `feat/redesign-tower`
+
+Novas rotas nasceram com autorização explícita: `POST/DELETE /api/links/:id/ack|silence` e `/api/devices/:id/silence` exigem `OPERADOR`+ (silêncio limitado a 1–1440 min, nota de ack truncada em 500 caracteres) e gravam `AuditLog`; `PUT /api/settings/modules|appearance|cliq` e `POST /api/settings/cliq/test` exigem `ADMIN`; `GET /api/tower` exige sessão. Rotas dos módulos opcionais (telefonia, computadores, NVR) respondem 404 quando o módulo está desligado. `PUT /api/profile/ui` só altera a preferência do próprio usuário. O 401 sem sessão é coberto por `__tests__/security/api-auth.test.ts` e os papéis por `__tests__/api/problem-actions.test.ts`, `settings-modules.test.ts` e `settings-cliq.test.ts`.
+
+---
+
+### SEC-040 — Estado anti-ruído e cache de configuração do Cliq em memória
+**Severidade:** 🔵 BAIXO — 🔓 ABERTO
+**Categoria:** Configuração / disponibilidade
+**Arquivos:** `lib/notify.ts`, `app/api/health/route.ts`
+
+`notify()` guarda a configuração do Cliq em cache de 30 s por processo (web e worker têm caches separados), e o intervalo de oscilação (30 min) e o do aviso de worker parado (1 h) ficam em memória. Consequências: desativar o Cliq ou trocar a URL pode levar até 30 s para valer; um restart zera os intervalos e pode repetir um aviso de oscilação ou de worker parado. Risco baixo (instância única, avisos duplicados e não vazamento). Os avisos de abertura/reaviso/recuperação não dependem desse estado: são deduplicados por episódio no banco (`cliqNotifiedAt`). Observação relacionada: `up`/`down` seguem protegidos apenas por token HMAC compartilhado (SEC-016/SEC-028); com o Cliq ativo, um token vazado também permite gerar avisos falsos.
+
+**Mitigação sugerida:** persistir os intervalos no banco ou reduzir o TTL do cache; rotacionar `WEBHOOK_SECRET` se houver suspeita de vazamento.
+
+---
+
 ## Plano de Mitigação — Itens Abertos
 
 | # | Item | Severidade | Esforço | Prioridade |
@@ -359,6 +388,7 @@ O endpoint público revela se um username tem 2FA ativo antes da verificação d
 | SEC-005 | Configurar TLS/HTTPS via reverse proxy | 🟡 Médio | Infra (1h) | Alta |
 | SEC-006 | Permissões do banco / credenciais mínimas | 🔵 Baixo | Infra (30min) | Média |
 | SEC-008 | Sempre usar container Docker em produção | 🔵 Baixo | Infra (0) | Baixa |
+| SEC-040 | Persistir estado anti-ruído / reduzir TTL do cache do Cliq | 🔵 Baixo | Código (1h) | Baixa |
 
 ---
 
@@ -372,4 +402,4 @@ Para adicionar achados, edite este arquivo seguindo o padrão de cada seção `#
 
 ## Contexto de Uso
 
-O WatchIT Tower é projetado para uso **exclusivamente na rede local interna**. O nível de risco é **baixo**. Todos os achados de código foram resolvidos. Os 3 itens abertos restantes são de infraestrutura (TLS via proxy, permissões do banco, execução em Docker) e adequados para resolução pelo administrador do ambiente.
+O WatchIT Tower é projetado para uso **exclusivamente na rede local interna**. O nível de risco é **baixo**. Todos os achados de código foram resolvidos. Dos 4 itens abertos, 3 são de infraestrutura (TLS via proxy, permissões do banco, execução em Docker), adequados para resolução pelo administrador do ambiente, e 1 é um ajuste de baixo risco no estado em memória dos avisos (SEC-040).

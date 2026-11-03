@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WatchIT NetTop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tui.css">
+<style>
+  /* NetTop: rede primeiro — WAN/failover e unidades no topo, tráfego largo, APs + eventos, faixa de SLA embaixo. */
+  [hidden] { display: none !important; } /* página sem esqueleto: o reset não vem de fora */
+  .only-sm { display: none; }
+  .g-net { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  .g-net .full { grid-column: 1 / -1; }
+  .tabs .chip { padding: 0 9px; }
+  .wan-site { padding: 4px 0 6px; border-bottom: 1px dashed var(--line); }
+  .wan-site:last-of-type { border-bottom: 0; }
+  .wan-site.bad { border-left: 2px solid var(--crit); padding-left: 6px; }
+  .wan { grid-template-columns: 9ch 2ch 10ch minmax(6ch, 1fr) 5ch 6ch; }
+  .wan .sname { color: var(--fg); font-weight: 600; }
+  .wan-note { color: var(--dim); padding: 0 6px 0 calc(9ch + 16px); font-size: 12px; }
+  .unit2 { grid-template-columns: 4ch 10ch 7ch 9ch 8ch; cursor: default; }
+  .unit2:hover { background: none; }
+  .routes { color: var(--dim); padding: 6px 6px 0; border-top: 1px dashed var(--line); margin-top: 6px; display: grid; grid-template-columns: 12ch 1fr; gap: 0 10px; }
+  .traffic-head { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: baseline; margin-bottom: 6px; }
+  .traffic-head .linkname { color: var(--fg); font-weight: 600; }
+  svg.traffic { display: block; width: 100%; height: 120px; }
+  svg.traffic .cap { stroke: var(--warn); stroke-dasharray: 4 4; stroke-width: 1; fill: none; opacity: .8; }
+  svg.traffic .gl { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 4; fill: none; }
+  .axis { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; }
+  .tstats { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 6px; }
+  .tstats .mini { display: inline-block; width: 70px; vertical-align: middle; }
+  .tstats .mini svg.spark { height: 16px; }
+  .legend-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+  .ap { grid-template-columns: minmax(10ch, 1.4fr) 4ch 4ch 6ch minmax(8ch, 1fr) 5ch 7ch; }
+  .ap.thead { cursor: default; }
+  .tree { margin: 0; white-space: pre; line-height: 1.6; }
+  .evrow { grid-template-columns: 6ch 2ch minmax(0, 1fr); cursor: default; }
+  .evrow:hover { background: none; }
+  .sla-row { display: grid; grid-template-columns: 15ch minmax(0, 1fr) 24ch; gap: 4px 12px; align-items: center; padding: 3px 0; }
+  .cells { display: grid; gap: 2px; }
+  .cells span { height: 14px; border-radius: 2px; background: var(--ok); }
+  .cells .c-part { background: var(--warn); }
+  .cells .c-down { background: var(--crit); }
+  .cells .c-nd { background: repeating-linear-gradient(135deg, var(--faint) 0 2px, transparent 2px 5px); }
+  .cells .c-fut { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+  .cells .c-today { outline: 1px solid var(--accent); outline-offset: 1px; }
+  .sla-days { display: grid; gap: 2px; color: var(--dim); font-size: 10px; }
+  .sla-days span { text-align: center; overflow: hidden; }
+  .sla-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--dim); font-size: 12px; margin-top: 8px; }
+  .failbanner { margin-top: 10px; }
+  .statelegend { color: var(--dim); font-size: 12px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+  .hosts-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .hosts-filter input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line-hi); border-radius: 3px; padding: 2px 8px; min-width: 0; width: 22ch; }
+  .host { grid-template-columns: 2ch 5ch 4ch minmax(10ch, 1.2fr) minmax(10ch, 1fr) 10ch; }
+  .wifi { grid-template-columns: minmax(10ch, 1.4fr) 8ch 4ch 4ch 6ch minmax(8ch, 1fr) 5ch 7ch 8ch; }
+  .tbl-scroll .rows { min-width: 560px; }
+  @media (max-width: 600px) {
+    .wan { grid-template-columns: 4ch 2ch minmax(0, 1fr) 5ch; }
+    .wan .c-bar, .wan .c-val { display: none; }
+    .wan .only-sm { display: inline; }
+    .wan-note { padding-left: 6px; }
+    .sla-row { grid-template-columns: 1fr auto; }
+    .sla-row .cells, .sla-row .sla-days { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+
+<nav id="proto-nav" class="proto-nav" aria-label="Propostas"></nav>
+
+<header class="topbar">
+  <span class="brand">WatchIT</span>
+  <span class="clock" id="clock"></span>
+  <span>worker <span class="ok">●</span> <span id="hb">12s</span></span>
+  <span id="alerts" class="alertcount"></span>
+  <span class="spacer"></span>
+  <span class="chips tabs" id="tabs"></span>
+</header>
+
+<div id="failbanner" class="frozen failbanner" hidden>
+  <span>✖ CRIT · FAILOVER FALHOU · ITA: rota padrão não mudou em 60s · unidade sem internet</span>
+  <button type="button" id="unfail">voltar ao normal</button>
+</div>
+
+<!-- ── aba Rede ── -->
+<main class="grid g-net" id="tab-rede">
+  <section class="box" style="--box: var(--info)">
+    <h2 class="box-t"><span class="k">¹</span><span>WAN / failover</span><span class="sub">◉ rota ativa · ○ standby</span></h2>
+    <div id="wan"></div>
+    <div class="statelegend">WARN = link caiu, failover ok · <span class="crit">CRIT = FAILOVER FALHOU</span> (rota padrão não mudou em 60s) · <kbd>x</kbd> simula</div>
+  </section>
+
+  <section class="box" style="--box: var(--accent-2)">
+    <h2 class="box-t"><span class="k">²</span><span>unidades</span></h2>
+    <div class="rows" id="units"></div>
+    <div class="routes" id="routes"></div>
+  </section>
+
+  <section class="box full" style="--box: var(--info)">
+    <h2 class="box-t"><span class="k">³</span><span>tráfego 60min</span><span class="sub" id="traffic-title"></span></h2>
+    <span class="box-r"><kbd>←</kbd><kbd>→</kbd> link</span>
+    <div id="traffic"></div>
+  </section>
+
+  <section class="box" id="box-ap" style="--box: var(--warn)">
+    <h2 class="box-t"><span class="k">⁴</span><span id="ap-title">APs</span><span class="sub" id="ap-sub">pior primeiro</span></h2>
+    <span class="box-r"><kbd>t</kbd> topologia</span>
+    <div id="aps"></div>
+  </section>
+
+  <section class="box" style="--box: var(--dim)">
+    <h2 class="box-t"><span class="k">⁵</span><span>eventos</span></h2>
+    <div class="rows" id="events"></div>
+  </section>
+
+  <section class="box full" style="--box: var(--accent)">
+    <h2 class="box-t"><span>SLA</span><span class="sub" id="sla-title"></span></h2>
+    <span class="box-r"><button type="button" class="chip" id="sla-month"></button></span>
+    <div id="sla"></div>
+  </section>
+</main>
+
+<!-- ── aba Wi-Fi ── -->
+<main class="grid" id="tab-wifi" hidden>
+  <section class="box" style="--box: var(--warn)">
+    <h2 class="box-t"><span>Wi-Fi</span><span class="sub">UniFi + Omada numa tabela só · pior primeiro</span></h2>
+    <div class="tbl-scroll"><div class="rows" id="wifi"></div></div>
+  </section>
+</main>
+
+<!-- ── aba Hosts ── -->
+<main class="grid" id="tab-hosts" hidden>
+  <section class="box" style="--box: var(--accent-2)">
+    <h2 class="box-t"><span>hosts</span><span class="sub">dispositivos · PCs (Datto) · celulares (Miradore)</span></h2>
+    <div class="hosts-filter">
+      <label for="hq" class="dim">/ filtro</label>
+      <input id="hq" type="search" placeholder="nome, IP, dono…" autocomplete="off">
+      <span class="chips" id="host-kinds"></span>
+    </div>
+    <div class="tbl-scroll"><div class="rows" id="hosts"></div></div>
+  </section>
+</main>
+
+<!-- ── aba Log ── -->
+<main class="grid" id="tab-log" hidden>
+  <section class="box" style="--box: var(--dim)">
+    <h2 class="box-t"><span>log</span><span class="sub">incidentes, auditoria e eventos</span></h2>
+    <div class="rows" id="log"></div>
+  </section>
+  <section class="box" style="--box: var(--accent)">
+    <h2 class="box-t"><span>SLA</span><span class="sub" id="sla-title-2"></span></h2>
+    <div id="sla-2"></div>
+  </section>
+</main>
+
+<footer class="keys">
+  <span><kbd>1</kbd>–<kbd>4</kbd> aba</span><span><kbd>j</kbd><kbd>k</kbd> <kbd>←</kbd><kbd>→</kbd> link</span><span><kbd>⏎</kbd> detalhe</span>
+  <span><kbd>a</kbd> ack</span><span><kbd>r</kbd> rechecar</span><span><kbd>s</kbd> silenciar</span>
+  <span><kbd>y</kbd> copiar cmd RouterOS</span><span><kbd>t</kbd> topologia</span><span><kbd>/</kbd> buscar host</span>
+  <span class="hide-sm"><kbd>x</kbd> simular failover falhou</span><span><kbd>?</kbd> ajuda</span>
+</footer>
+
+<script src="tui.js"></script>
+<script>
+(function () {
+  const W = WT;
+  W.nav(5);
+
+  let tab = "rede", linkSel = 0, topo = false, showAllAps = false, failFail = false, slaMonth = "nov", hostKind = "ALL";
+  const LINKS = W.LINKS;
+  const SITE_NAME = { BAR: "BARRA", BOT: "BOTAFOGO", ITA: "ITAGUAÍ" };
+
+  // ── tráfego 60 min por link (fictício, determinístico) ──
+  const T60 = {};
+  LINKS.forEach((l, i) => {
+    let down = W.series(i + 2, 60, l.down * 0.85 || l.cap * 0.5, (l.down || l.cap * 0.5) * 0.25).map((v) => Math.min(l.cap, v));
+    let up = W.series(i + 7, 60, (l.up || l.cap * 0.1) * 0.9, (l.up || l.cap * 0.1) * 0.3);
+    if (l.id === "ita-vivo") { down = down.map((v, k) => (k >= 45 ? 0 : v)); up = up.map((v, k) => (k >= 45 ? 0 : v)); }
+    if (l.id === "ita-tim") { down = down.map((v, k) => (k >= 46 ? Math.round(l.down * (0.92 + (k % 3) * 0.03)) : Math.round(v * 0.15))); up = up.map((v, k) => (k >= 46 ? v : Math.round(v * 0.2))); }
+    if (l.state !== "down") down[59] = l.down;
+    T60[l.id] = { down, up, lat: W.series(i + 3, 14, l.lat || 0, 3) };
+  });
+
+  // ── APs (UniFi na Barra, Omada em Botafogo/Itaguaí) ──
+  const APS = W.APS.map((a) => Object.assign({ ctrl: a.site === "BAR" ? "UniFi" : "Omada", up: a.st === "crit" ? "—" : "12d 4h" }, a));
+  [["BAR", 3, "U6-Lite-BAR-0"], ["BOT", 9, "EAP225-BOT-0"], ["ITA", 5, "EAP225-ITA-0"]].forEach(([s, n, pre], j) => {
+    for (let i = 1; i <= n; i++) {
+      const u = 15 + ((i * 17 + j * 11) % 50);
+      APS.push({ name: pre + i, site: s, cli: 3 + ((i * 7 + j * 5) % 27), ch: i % 2 ? (36 + 4 * (i % 4)) + "/5G" : (1 + 5 * (i % 3)) + "/2G", util: u, sig: -(55 + ((i * 3 + j) % 15)), st: "ok", ctrl: s === "BAR" ? "UniFi" : "Omada", up: (3 + i) + "d " + (i * 3 % 24) + "h" });
+    }
+  });
+  function apRank(a) { return a.st === "crit" ? 0 : a.util >= 80 ? 1 : 2; }
+  const APS_SORTED = APS.slice().sort((a, b) => apRank(a) - apRank(b) || (b.util || 0) - (a.util || 0));
+
+  // ── SLA ──
+  const SLA = {
+    out: { days: 31, today: 32, label: "out/2026 (fechado)", marks: {
+      "bar-claro": { part: [14] }, "bar-vivo": { part: [5, 22], nd: [18] }, "bot-algar": { part: [9] },
+      "bot-oi": { down: [11], part: [12, 25] }, "ita-vivo": { down: [8], part: [3, 17, 29], nd: [21] }, "ita-tim": { part: [8] } } },
+    nov: { days: 30, today: 3, label: "nov/2026 · dia 1→30 (parcial)", marks: {
+      "bar-vivo": { nd: [1] }, "bot-oi": { part: [1] }, "ita-vivo": { part: [2, 3] } } },
+  };
+  function slaPct(l, m) {
+    if (m === "out") return { pct: l.sla, fora: Math.round((1 - l.sla / 100) * 31 * 1440), nd: (SLA.out.marks[l.id].nd || []).length ? 25 : 0 };
+    const total = 2 * 1440 + 14 * 60 + 32 + W.elapsed() / 60;
+    const fora = l.id === "ita-vivo" ? 40 + 14.4 + W.elapsed() / 60 : l.id === "bot-oi" ? 12 : 0;
+    return { pct: 100 * (1 - fora / total), fora: Math.round(fora), nd: l.id === "bar-vivo" ? 25 : 0 };
+  }
+  function hm(min) { return Math.floor(min / 60) + "h" + String(min % 60).padStart(2, "0"); }
+
+  // ── render ──
+  function renderTabs() {
+    const opts = [["1", "rede", "Rede"], ["2", "wifi", "Wi-Fi"], ["3", "hosts", "Hosts"], ["4", "log", "Log"]];
+    document.getElementById("tabs").innerHTML = opts.map((o) =>
+      '<button type="button" class="chip" data-tab="' + o[1] + '" aria-pressed="' + (tab === o[1]) + '"><kbd>' + o[0] + "</kbd> " + o[2] + "</button>").join("");
+    ["rede", "wifi", "hosts", "log"].forEach((t) => (document.getElementById("tab-" + t).hidden = tab !== t));
+  }
+
+  function isActive(l) { return failFail ? l.id !== "ita-tim" && l.role === "active" : l.role === "active" || (l.role === "failover" && l.site === "ITA"); }
+
+  function renderWan() {
+    const html = W.SITES.map((s) => {
+      const ls = LINKS.filter((l) => l.site === s.id);
+      const bad = ls.some((l) => l.state === "down");
+      const rows = ls.map((l) => {
+        const i = LINKS.indexOf(l), p = W.pct(l);
+        const g = l.state === "down" ? '<span class="crit">✖</span>' : isActive(l) ? '<span class="info">◉</span>' : '<span class="dim">○</span>';
+        const nm = l.name.toUpperCase() + "-" + l.cap;
+        let tail;
+        if (l.state === "down") tail = '<span class="c-bar crit">DOWN ' + W.age(l.downFor + W.elapsed()) + '</span><span class="crit only-sm">DOWN</span><span class="c-val"></span>';
+        else if (!isActive(l)) tail = '<span class="c-bar dim">standby</span><span class="dim">' + l.lat + 'ms</span><span class="c-val ok">ok</span>';
+        else tail = '<span class="c-bar">' + W.bar(p) + '</span><span class="' + W.level(p) + '">' + p + "%" + (p >= 90 ? "!" : "") + '</span><span class="c-val">↓' + l.down + "M</span>";
+        return '<div class="row wan' + (i === linkSel ? " sel" : "") + '" data-link="' + i + '"><span class="sname">' + (l === ls[0] ? SITE_NAME[s.id] : "") + "</span>" + g + "<span>" + nm + "</span>" + tail + "</div>";
+      }).join("");
+      let note = "";
+      if (s.id === "ITA") note = failFail ? '<div class="wan-note crit">⇄ failover NÃO ocorreu · rota padrão ainda em VIVO-500 há 60s+</div>' : '<div class="wan-note">⇄ <span class="warn">failover ok em 41s</span> · teste 05:00 <span class="ok">✔</span></div>';
+      else note = '<div class="wan-note">teste diário 05:00 <span class="ok">✔</span></div>';
+      return '<div class="wan-site' + (bad ? " bad" : "") + '"><div class="rows">' + rows + "</div>" + note + "</div>";
+    }).join("");
+    document.getElementById("wan").innerHTML = html;
+  }
+
+  function renderUnits() {
+    document.getElementById("units").innerHTML = '<div class="row unit2 thead"><span>un.</span><span>gateway</span><span>sw</span><span>AP</span><span>clientes</span></div>' +
+      W.SITES.map((s) => {
+        const c = W.COUNTS[s.id];
+        const gwBad = s.id === "ITA" && failFail;
+        return '<div class="row unit2"><span>' + s.id + '</span><span><span class="' + (gwBad ? "crit" : "ok") + '">●</span> ' + s.gw + "</span>" +
+          '<span class="' + (c.sw[0] === c.sw[1] ? "" : "warn") + '">' + c.sw[0] + "/" + c.sw[1] + (s.id === "ITA" ? "*" : "") + "</span>" +
+          '<span class="' + (c.ap[0] === c.ap[1] ? "" : "warn") + '">' + c.ap[0] + "/" + c.ap[1] + "</span><span>" + (gwBad ? '<span class="crit">sem saída</span>' : c.cli) + "</span></div>";
+      }).join("") +
+      '<div class="row unit2 muted" style="grid-template-columns:1fr"><span>* CSS326 ×2 (SwOS): não monitorado ◌</span></div>';
+    const route = (sid) => { const l = LINKS.find((x) => x.site === sid && isActive(x) && x.state !== "down"); return l ? l.name.toUpperCase() : '<span class="crit">nenhuma</span>'; };
+    document.getElementById("routes").innerHTML = "<span>rota padrão</span><span>BAR=" + route("BAR") + " · BOT=" + route("BOT") + " · ITA=" +
+      (failFail ? '<span class="crit">VIVO (caído)</span>' : route("ITA") + ' <span class="warn">(failover)</span>') + "</span>";
+  }
+
+  function trafficSvg(t, cap) {
+    const w = 600, h = 120, max = Math.max(cap, ...t.down) * 1.05;
+    const pts = (arr) => arr.map((v, i) => ((i / (arr.length - 1)) * w).toFixed(1) + "," + (h - (v / max) * (h - 4)).toFixed(1)).join(" ");
+    const capY = (h - (cap / max) * (h - 4)).toFixed(1);
+    return '<svg class="traffic" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-label="tráfego 60 minutos">' +
+      [0.25, 0.5, 0.75].map((f) => '<line class="gl" x1="0" x2="' + w + '" y1="' + h * f + '" y2="' + h * f + '"/>').join("") +
+      '<line class="cap" x1="0" x2="' + w + '" y1="' + capY + '" y2="' + capY + '" vector-effect="non-scaling-stroke"/>' +
+      '<polygon fill="var(--info)" opacity=".25" points="0,' + h + " " + pts(t.down) + " " + w + "," + h + '"/>' +
+      '<polyline fill="none" stroke="var(--info)" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' + pts(t.down) + '"/>' +
+      '<polygon fill="var(--accent-2)" opacity=".35" points="0,' + h + " " + pts(t.up) + " " + w + "," + h + '"/>' +
+      '<polyline fill="none" stroke="var(--accent-2)" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' + pts(t.up) + '"/></svg>';
+  }
+
+  function renderTraffic() {
+    const l = LINKS[linkSel], t = T60[l.id];
+    document.getElementById("traffic-title").textContent = "· " + l.site + " / " + l.name.toUpperCase() + "-" + l.cap + " (" + l.iface + ")";
+    const peak = Math.max(...t.down);
+    const down = l.state === "down";
+    document.getElementById("traffic").innerHTML =
+      '<div class="traffic-head"><span class="linkname">' + l.site + " " + l.name + " " + l.cap + "M</span>" +
+      '<span><i class="legend-sw" style="background:var(--info)"></i>↓ <b>' + (down ? '<span class="crit">0M · DOWN</span>' : l.down + "M") + "</b></span>" +
+      '<span><i class="legend-sw" style="background:var(--accent-2)"></i>↑ ' + (down ? "0M" : l.up + "M") + "</span>" +
+      '<span class="warn">┄ contratado ' + l.cap + "M</span><span>pico " + peak + "M</span></div>" +
+      trafficSvg(t, l.cap) +
+      '<div class="axis"><span>−60 min</span><span>−45</span><span>−30</span><span>−15</span><span>agora</span></div>' +
+      '<div class="tstats"><span>latência <span class="mini">' + W.spark(t.lat, down ? "var(--crit)" : "var(--accent-2)", 16) + "</span> " + (down ? '<span class="crit">—</span>' : l.lat + "ms") + "</span>" +
+      '<span>perda <span class="' + (l.loss ? "crit" : "ok") + '">' + l.loss.toFixed(1) + "%</span></span>" +
+      "<span>uso " + (down ? '<span class="crit">—</span>' : '<span class="' + W.level(W.pct(l)) + '">' + W.pct(l) + "%</span>") + "</span>" +
+      '<span class="dim">medido no ' + W.SITES.find((s) => s.id === l.site).gw + " · " + l.iface + "</span></div>";
+  }
+
+  function apRow(a, idx) {
+    const util = a.util == null ? '<span class="crit">offline ' + a.off + "</span>" : W.bar(a.util);
+    return '<div class="row ap' + (a.st === "crit" ? " " : "") + '" data-ap="' + idx + '"><span class="' + (a.st === "crit" ? "crit" : a.util >= 80 ? "warn" : "") + '">' + (a.st === "crit" ? "✖ " : a.util >= 80 ? "▲ " : "") + a.name + "</span>" +
+      "<span>" + a.site + "</span><span>" + (a.cli == null ? "--" : a.cli) + "</span><span>" + a.ch + "</span><span>" + util + "</span>" +
+      '<span class="' + (a.util >= 80 ? "warn" : "dim") + '">' + (a.util == null ? "" : a.util + "%" + (a.util >= 80 ? "!" : "")) + "</span>" +
+      '<span class="dim">' + (a.sig == null ? "--" : a.sig + "dBm") + "</span></div>";
+  }
+
+  function renderAps() {
+    document.getElementById("ap-title").textContent = topo ? "topologia" : "APs";
+    document.getElementById("ap-sub").textContent = topo ? "MK → switches → APs" : "pior primeiro";
+    const el = document.getElementById("aps");
+    if (topo) { el.innerHTML = '<div class="tbl-scroll"><pre class="tree">' + treeHtml() + "</pre></div>"; return; }
+    const bad = APS_SORTED.filter((a) => apRank(a) < 2), ok = APS_SORTED.filter((a) => apRank(a) === 2);
+    const shown = showAllAps ? APS_SORTED : bad.concat(ok.slice(0, 2));
+    el.innerHTML = '<div class="tbl-scroll"><div class="rows"><div class="row ap thead"><span>AP</span><span>un.</span><span>cli</span><span>canal</span><span>util</span><span></span><span>sinal</span></div>' +
+      shown.map((a) => apRow(a, APS.indexOf(a))).join("") +
+      '<div class="row child" id="ap-more"><span>' + (showAllAps ? "▴ mostrar só os piores" : "… " + (ok.length - 2) + " APs ok (mostrar)") + "</span></div></div></div>";
+  }
+
+  function treeHtml() {
+    const g = (st) => '<span class="' + st + '">' + W.GLYPH[st] + "</span>";
+    const itaGw = failFail ? g("crit") : g("ok");
+    const lines = [
+      [g("ok") + " MK-BARRA 172.16.1.1 · cpu 9%", ""],
+      ["├─ " + g("ok") + " SW-BAR-CORE", ""],
+      ["│  ├─ " + g("ok") + " U6-Lite-Coz · 22 cli", ""],
+      ["│  └─ " + g("ok") + " U6-Pro-Sala · 31 cli", ""],
+      ["└─ " + g("ok") + " UniFi CloudKey 172.16.1.200", ""],
+      [g("ok") + " MK-BOTAFOGO 10.0.0.1 · cpu 31%", ""],
+      ["├─ " + g("ok") + " SW-1", ""],
+      ["│  └─ " + g("ok") + " 6 APs EAP225 · 74 cli", ""],
+      ["├─ " + g("ok") + " SW-2", ""],
+      ["│  ├─ " + g("warn") + ' EAP225-Recep · <span class="warn">util 84%</span>', ""],
+      ["│  ├─ " + g("crit") + ' EAP225-Sala2 · <span class="crit">offline 42m</span>', ""],
+      ["│  └─ " + g("crit") + ' NVR-02 · <span class="crit">offline</span>', ""],
+      ["└─ " + g("ok") + " Omada OC200 10.0.0.19", ""],
+      [itaGw + " RB5009 192.168.0.1 · ether1 VIVO " + g("crit") + " · ether2 TIM " + (failFail ? '<span class="dim">○</span>' : '<span class="info">◉</span>'), ""],
+      ["├─ " + g("ok") + " SW-ITA-CORE", ""],
+      ["│  ├─ " + g("unk") + ' CSS326-ITA-A · <span class="dim">não monitorado (SwOS)</span>', ""],
+      ["│  └─ " + g("unk") + ' CSS326-ITA-B · <span class="dim">não monitorado (SwOS)</span>', ""],
+      ["└─ " + g("ok") + " 6 APs EAP225 · 64 cli", ""],
+    ];
+    return lines.map((l) => l[0]).join("\n");
+  }
+
+  function renderEvents() {
+    const ev = [{ t: "14:18", sev: "crit", text: "ITA VIVO-500 DOWN" }, { t: "14:18", sev: "info", text: "ITA rota padrão → TIM (⇄ 41s)" },
+      { t: "13:50", sev: "warn", text: "BOT EAP225-Sala2 offline" }, { t: "13:02", sev: "warn", text: "BAR CLARO >90% por 5 min" },
+      { t: "05:00", sev: "ok", text: "ITA teste de failover ok" }, { t: "05:00", sev: "ok", text: "BAR/BOT teste de failover ok" }];
+    if (failFail) ev.unshift({ t: "14:19", sev: "crit", text: "ITA FAILOVER FALHOU: rota padrão parada em VIVO" });
+    document.getElementById("events").innerHTML = ev.map((e) => '<div class="row evrow"><span class="dim">' + e.t + '</span><span class="' + e.sev + '">' + (e.sev === "info" ? "⇄" : W.GLYPH[e.sev]) + "</span><span>" + W.esc(e.text) + "</span></div>").join("");
+  }
+
+  function slaHtml(m) {
+    const cfg = SLA[m];
+    const cols = "grid-template-columns: repeat(" + cfg.days + ", minmax(0, 1fr))";
+    let html = '<div class="sla-row"><span></span><div class="sla-days" style="' + cols + '">' +
+      Array.from({ length: cfg.days }, (_, i) => "<span>" + ((i + 1) % 5 === 0 || i === 0 ? i + 1 : "") + "</span>").join("") + "</div><span></span></div>";
+    html += LINKS.map((l) => {
+      const mk = cfg.marks[l.id] || {};
+      const cells = Array.from({ length: cfg.days }, (_, i) => {
+        const d = i + 1;
+        let c = d > cfg.today ? "c-fut" : (mk.down || []).includes(d) ? "c-down" : (mk.part || []).includes(d) ? "c-part" : (mk.nd || []).includes(d) ? "c-nd" : "";
+        if (d === cfg.today) c += " c-today";
+        return '<span class="' + c + '" title="dia ' + d + '"></span>';
+      }).join("");
+      const s = slaPct(l, m), okMeta = s.pct >= 99.5;
+      return '<div class="sla-row"><span>' + l.site + " " + l.name.toUpperCase() + "-" + l.cap + '</span><div class="cells" style="' + cols + '">' + cells + "</div>" +
+        '<span><span class="' + (okMeta ? "ok" : "crit") + '">' + s.pct.toFixed(2) + "% " + (okMeta ? "✔" : "✖") + '</span> <span class="dim">' + hm(s.fora) + " fora" + (s.nd ? " · " + s.nd + "m sem dado" : "") + "</span></span></div>";
+    }).join("");
+    html += '<div class="sla-legend"><span><i class="legend-sw" style="background:var(--ok)"></i>disponível</span><span><i class="legend-sw" style="background:var(--warn)"></i>queda parcial no dia</span>' +
+      '<span><i class="legend-sw" style="background:var(--crit)"></i>indisponível (&gt;1h)</span><span><i class="legend-sw" style="background:repeating-linear-gradient(135deg,var(--faint) 0 2px,transparent 2px 5px)"></i>sem dado (não conta como queda)</span>' +
+      '<span><i class="legend-sw" style="box-shadow:inset 0 0 0 1px var(--line)"></i>futuro</span><span>meta 99.5%</span></div>';
+    return html;
+  }
+
+  function renderSla() {
+    document.getElementById("sla-title").textContent = "· " + SLA[slaMonth].label;
+    document.getElementById("sla-month").textContent = slaMonth === "nov" ? "ver out/2026" : "ver nov/2026";
+    document.getElementById("sla").innerHTML = slaHtml(slaMonth);
+    document.getElementById("sla-title-2").textContent = "· " + SLA.out.label;
+    document.getElementById("sla-2").innerHTML = slaHtml("out");
+  }
+
+  function renderWifi() {
+    document.getElementById("wifi").innerHTML = '<div class="row wifi thead"><span>AP</span><span>contr.</span><span>un.</span><span>cli</span><span>canal</span><span>util</span><span></span><span>sinal</span><span>uptime</span></div>' +
+      APS_SORTED.map((a) => '<div class="row wifi" data-ap="' + APS.indexOf(a) + '"><span class="' + (a.st === "crit" ? "crit" : a.util >= 80 ? "warn" : "") + '">' + a.name + '</span><span class="dim">' + a.ctrl + "</span><span>" + a.site + "</span><span>" + (a.cli == null ? "--" : a.cli) + "</span><span>" + a.ch + "</span><span>" +
+        (a.util == null ? '<span class="crit">offline ' + a.off + "</span>" : W.bar(a.util)) + '</span><span class="dim">' + (a.util == null ? "" : a.util + "%") + '</span><span class="dim">' + (a.sig == null ? "--" : a.sig + "dBm") + '</span><span class="dim">' + a.up + "</span></div>").join("");
+  }
+
+  const HOSTS = W.DEVICES.map((d) => ({ kind: "DISP", name: d.name, site: d.site, st: d.st, a: d.ip, b: d.type + (d.note ? " · " + d.note : "") }))
+    .concat(W.PEOPLE.filter((p) => p.kind !== "DISP").map((p) => ({ kind: p.kind, name: p.name, site: p.site, st: p.st, a: p.owner, b: p.src + " · visto " + p.seen })))
+    .concat([{ kind: "PC", name: "PC-RH-02", site: "ITA", st: "ok", a: "Joana Reis", b: "Datto · visto agora" }, { kind: "CEL", name: "iPhone 13", site: "BOT", st: "warn", a: "Paulo Dias", b: "Miradore · fora de conformidade" }]);
+
+  function renderHosts() {
+    const kinds = [["ALL", "todos"], ["DISP", "dispositivos"], ["PC", "PCs"], ["CEL", "celulares"]];
+    document.getElementById("host-kinds").innerHTML = kinds.map((k) => '<button type="button" class="chip" data-kind="' + k[0] + '" aria-pressed="' + (hostKind === k[0]) + '">' + k[1] + "</button>").join("");
+    const q = document.getElementById("hq").value.trim().toLowerCase();
+    const list = HOSTS.filter((h) => (hostKind === "ALL" || h.kind === hostKind) && (!q || (h.name + " " + h.a + " " + h.b + " " + h.site).toLowerCase().includes(q)));
+    document.getElementById("hosts").innerHTML = list.length ? list.map((h) => {
+      const st = h.st === "sup" ? "unk" : h.st;
+      return '<div class="row host"><span class="' + (st === "ack" ? "dim" : st) + '">' + W.GLYPH[st] + '</span><span class="dim">' + h.kind + "</span><span>" + h.site + "</span><span>" + W.esc(h.name) + "</span><span>" + W.esc(h.a) + '</span><span class="dim">' + W.esc(h.b) + "</span></div>";
+    }).join("") : '<div class="dim">Nada encontrado para "' + W.esc(q) + '".</div>';
+  }
+
+  function renderLog() {
+    const log = [["14:19", "crit", "incidente", "ITA VIVO-500 DOWN · failover ok · aberto há " + W.age(862 + W.elapsed())], ["14:18", "info", "rota", "ITA rota padrão VIVO → TIM"],
+      ["13:50", "warn", "incidente", "BOT EAP225-Sala2 offline"], ["13:41", "info", "auditoria", "matheus silenciou EAP225-Recep até 15:00"],
+      ["13:02", "warn", "incidente", "BAR CLARO >90% por 5 min (resolvido 13:09)"], ["09:14", "info", "auditoria", "matheus editou intervalo de RB5009"],
+      ["05:00", "ok", "teste", "Teste diário de failover: BAR ✔ BOT ✔ ITA ✔"], ["02/11 22:40", "warn", "incidente", "ITA VIVO-500 DOWN 40 min"]];
+    document.getElementById("log").innerHTML = log.map((e) => '<div class="row evrow" style="grid-template-columns:11ch 2ch 10ch minmax(0,1fr)"><span class="dim">' + e[0] + '</span><span class="' + e[1] + '">' + (W.GLYPH[e[1]] || "·") + '</span><span class="dim">' + e[2] + "</span><span>" + W.esc(e[3]) + "</span></div>").join("");
+  }
+
+  function renderAlerts() {
+    const n = (failFail ? 1 : 0);
+    document.getElementById("alerts").innerHTML = (n ? '<span class="crit">✖ 1 crítico</span> · ' : "") + '<span class="warn">▲ 3 alertas</span>';
+    document.getElementById("failbanner").hidden = !failFail;
+  }
+
+  function render() {
+    renderTabs(); renderAlerts();
+    if (tab === "rede") { renderWan(); renderUnits(); renderTraffic(); renderAps(); renderEvents(); renderSla(); }
+    if (tab === "wifi") renderWifi();
+    if (tab === "hosts") renderHosts();
+    if (tab === "log") { renderLog(); renderSla(); }
+  }
+
+  // ── detalhe (⏎ ou clique) ──
+  function openDetail(html, title) {
+    closeDetail();
+    const ov = document.createElement("div");
+    ov.id = "nt-detail"; ov.className = "overlay";
+    ov.innerHTML = '<section class="box" role="dialog" aria-label="' + W.esc(title) + '" style="--box:var(--accent)"><h2 class="box-t">' + W.esc(title) + '</h2><span class="box-r"><kbd>esc</kbd> fecha</span>' + html +
+      '<div class="btns" style="margin-top:12px"><button class="btn" data-act="a"><kbd>a</kbd>ack</button><button class="btn" data-act="r"><kbd>r</kbd>rechecar</button><button class="btn" data-act="s"><kbd>s</kbd>silenciar</button><button class="btn" data-act="y"><kbd>y</kbd>copiar cmd</button></div></section>';
+    ov.addEventListener("click", (e) => { if (e.target === ov) closeDetail(); });
+    document.body.appendChild(ov);
+  }
+  function closeDetail() { const d = document.getElementById("nt-detail"); if (d) { d.remove(); return true; } return false; }
+
+  function linkDetail() {
+    const l = LINKS[linkSel];
+    const role = l.state === "down" ? '<span class="crit">caído</span>' : isActive(l) ? '<span class="info">◉ rota ativa</span>' : '<span class="dim">○ standby</span>';
+    openDetail('<dl class="kv"><dt>estado</dt><dd>' + (l.state === "down" ? '<span class="crit">DOWN desde 14:17:45</span> (webhook netwatch)' : '<span class="ok">UP</span> · ' + l.lat + "ms · perda " + l.loss + "%") + "</dd>" +
+      "<dt>papel</dt><dd>" + role + " · " + W.SITES.find((s) => s.id === l.site).gw + " " + l.iface + "</dd>" +
+      "<dt>7 dias</dt><dd>" + (l.drops7d || 0) + " quedas · " + (l.lastDown ? "anterior " + l.lastDown : "sem quedas") + "</dd>" +
+      "<dt>failover</dt><dd>" + (l.site === "ITA" ? (failFail ? '<span class="crit">FALHOU · rota não mudou</span>' : '<span class="warn">ok em 41s</span>') : "não acionado") + " · teste 05:00 ✔</dd>" +
+      "<dt>operadora</dt><dd>" + l.name + " empresarial · circuito " + l.circuit + " · ☎ " + l.phone + "</dd>" +
+      "<dt>SLA nov</dt><dd>" + slaPct(l, "nov").pct.toFixed(2) + "% · out " + l.sla.toFixed(2) + "%</dd></dl>", l.site + " " + l.name.toUpperCase() + "-" + l.cap);
+  }
+  function apDetail(i) {
+    const a = APS[i];
+    openDetail('<dl class="kv"><dt>estado</dt><dd>' + (a.st === "crit" ? '<span class="crit">offline há ' + a.off + "</span>" : '<span class="ok">online</span> · uptime ' + a.up) + "</dd>" +
+      "<dt>controle</dt><dd>" + a.ctrl + " · " + a.site + "</dd><dt>clientes</dt><dd>" + (a.cli == null ? "—" : a.cli) + "</dd>" +
+      "<dt>canal</dt><dd>" + a.ch + (a.util != null ? ' · util <span class="' + W.level(a.util) + '">' + a.util + "%</span>" : "") + "</dd>" +
+      "<dt>sinal</dt><dd>" + (a.sig == null ? "—" : a.sig + " dBm médio dos clientes") + "</dd><dt>uplink</dt><dd>" + (a.site === "BOT" ? "SW-2 porta 7" : "SW-" + a.site + "-CORE") + "</dd></dl>", a.name);
+  }
+
+  function act(k) {
+    const l = LINKS[linkSel], name = l.site + " " + l.name.toUpperCase();
+    if (k === "a") W.toast("Ack registrado em " + name + " (simulação)");
+    else if (k === "r") W.toast("Rechecando " + name + " pelo " + W.SITES.find((s) => s.id === l.site).gw + "…");
+    else if (k === "s") W.toast(name + " silenciado até 15:32 · prazo obrigatório (simulação)");
+    else if (k === "y") {
+      const cmd = l.state === "down" ? "/interface ethernet monitor " + l.iface + " once; /tool netwatch print where host~\"" + l.name + "\"" : "/tool ping 8.8.8.8 interface=" + l.iface + " count=5";
+      try { navigator.clipboard.writeText(cmd).then(() => W.toast("Copiado: " + cmd), () => W.toast(cmd)); } catch (e) { W.toast(cmd); }
+    }
+  }
+
+  function moveLink(d) { linkSel = (linkSel + d + LINKS.length) % LINKS.length; render(); }
+  function toggleFail() { failFail = !failFail; render(); }
+
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-tab]");
+    if (t) { tab = t.dataset.tab; render(); return; }
+    const a = e.target.closest("[data-act]");
+    if (a) { act(a.dataset.act); return; }
+    const lr = e.target.closest("[data-link]");
+    if (lr) { const i = +lr.dataset.link; if (i === linkSel) linkDetail(); else { linkSel = i; render(); } return; }
+    const ap = e.target.closest("[data-ap]");
+    if (ap) { apDetail(+ap.dataset.ap); return; }
+    if (e.target.closest("#ap-more")) { showAllAps = !showAllAps; renderAps(); return; }
+    const k = e.target.closest("[data-kind]");
+    if (k) { hostKind = k.dataset.kind; renderHosts(); return; }
+    if (e.target.id === "sla-month") { slaMonth = slaMonth === "nov" ? "out" : "nov"; renderSla(); return; }
+    if (e.target.id === "unfail") toggleFail();
+  });
+  document.getElementById("hq").addEventListener("input", renderHosts);
+
+  const HELP = [["1 2 3 4", "abas Rede / Wi-Fi / Hosts / Log"], ["j k ← →", "trocar link selecionado (painel ³)"], ["⏎", "detalhe do link"], ["esc", "fechar"],
+    ["a", "ack"], ["r", "rechecar pelo Mikrotik"], ["s", "silenciar com prazo"], ["y", "copiar comando RouterOS de diagnóstico (só leitura)"],
+    ["t", "trocar APs ⇄ topologia"], ["/", "buscar host"], ["x", "simular FAILOVER FALHOU (CRIT)"],
+    ["WARN", "link caiu e o failover funcionou"], ["CRIT", "FAILOVER FALHOU: rota padrão não mudou em 60s"]];
+
+  W.keys({
+    "1": () => { tab = "rede"; render(); }, "2": () => { tab = "wifi"; render(); },
+    "3": () => { tab = "hosts"; render(); }, "4": () => { tab = "log"; render(); },
+    j: () => moveLink(1), k: () => moveLink(-1), ArrowRight: () => moveLink(1), ArrowLeft: () => moveLink(-1),
+    ArrowDown: () => moveLink(1), ArrowUp: () => moveLink(-1),
+    Enter: () => linkDetail(),
+    Escape: (e) => { if (!W.closeHelp() && !closeDetail() && e.target.id === "hq") e.target.blur(); },
+    a: () => act("a"), r: () => act("r"), s: () => act("s"), y: () => act("y"),
+    t: () => { topo = !topo; if (tab === "rede") renderAps(); },
+    x: toggleFail,
+    "/": () => { tab = "hosts"; render(); const q = document.getElementById("hq"); q.focus(); q.select(); },
+    "?": () => W.help(HELP),
+  });
+
+  function tick() {
+    document.getElementById("clock").textContent = W.clock();
+    document.getElementById("hb").textContent = (12 + (W.elapsed() % 50)) + "s";
+    if (W.elapsed() % 5 === 0 && W.elapsed() > 0) {
+      W.jitter();
+      LINKS.forEach((l) => { if (l.state !== "down") { const t = T60[l.id]; t.down.push(l.down); t.down.shift(); t.up.push(Math.round(l.up * (0.9 + (W.elapsed() % 7) * 0.03))); t.up.shift(); } });
+      if (tab === "rede") { renderWan(); renderTraffic(); }
+    } else if (tab === "rede") {
+      renderWan();
+    }
+    if (W.elapsed() % 30 === 0 && (tab === "rede" || tab === "log")) renderSla();
+  }
+
+  render(); tick();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

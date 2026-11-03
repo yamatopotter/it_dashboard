@@ -1,0 +1,282 @@
+<title>WatchIT Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tui.css">
+<style>
+  /* TOWER/1: fila de exceções no topo; links + unidades no meio; detalhe e eventos embaixo. */
+  .g-tower { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+  .g-tower .full { grid-column: 1 / -1; }
+  .prob { grid-template-columns: 2ch 5ch 5ch 4ch minmax(12ch, 1.1fr) 9ch 8ch minmax(0, 2fr) auto; }
+  .prob .acts { display: flex; gap: 4px; overflow: visible; }
+  .prob .acts button { border: 1px solid var(--line); background: none; border-radius: 3px; padding: 0 5px; cursor: pointer; color: var(--accent-2); font-size: 11px; }
+  .prob.ackd { color: var(--dim); }
+  .allok { color: var(--dim); padding: 4px 6px; }
+  .allok b { color: var(--ok); font-weight: 600; }
+  .lnk { grid-template-columns: 4ch 7ch 5ch minmax(8ch, 1fr) 5ch 6ch; }
+  .unit { grid-template-columns: 9ch minmax(0, 1fr) 6ch; align-items: center; }
+  .unit .dots { white-space: normal; overflow: visible; }
+  .inv { color: var(--dim); padding: 6px 6px 0; border-top: 1px dashed var(--line); margin-top: 6px; }
+  .detail-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 24px; }
+  .ev { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+  .ev span { white-space: nowrap; }
+  .only-problems .hide-f { display: none; }
+  @media (max-width: 900px) {
+    .prob { grid-template-columns: 2ch 4ch minmax(0, 1fr) 8ch; }
+    .prob .c-sev, .prob .c-kind, .prob .c-what, .prob .c-why { display: none; }
+    .prob .acts { grid-column: 1 / -1; padding-left: 3ch; }
+    .detail-body { grid-template-columns: 1fr; }
+  }
+</style>
+
+<nav id="proto-nav" class="proto-nav" aria-label="Propostas"></nav>
+
+<header class="topbar">
+  <span class="brand">WatchIT</span>
+  <span class="clock" id="clock"></span>
+  <span>worker <span class="ok">●</span> <span id="hb">12s</span></span>
+  <span>dados <span id="data-dot" class="ok">●</span> <span id="data-age">3s</span></span>
+  <span class="chips" id="site-chips"></span>
+  <span class="spacer"></span>
+  <span class="alertcount" id="alertcount"></span>
+</header>
+
+<div id="frozen" class="frozen" hidden>
+  <span>DADOS CONGELADOS · última atualização há <span id="frozen-age">64s</span> · worker sem heartbeat</span>
+  <button type="button" id="unfreeze">voltar ao normal</button>
+</div>
+
+<main class="grid g-tower" id="main">
+  <section class="box full" id="box-prob" style="--box: var(--crit)">
+    <h2 class="box-t"><span>PROBLEMAS</span><span class="sub">gravidade › idade</span></h2>
+    <span class="box-r"><kbd>f</kbd> só problemas</span>
+    <div class="rows" id="problems"></div>
+  </section>
+
+  <section class="box hide-f" style="--box: var(--info)">
+    <h2 class="box-t"><span>LINKS</span><span class="sub">↓ atual / contratado</span></h2>
+    <div class="rows" id="links"></div>
+  </section>
+
+  <section class="box hide-f" style="--box: var(--accent-2)">
+    <h2 class="box-t"><span>UNIDADES</span><span class="sub">1 ponto = 1 dispositivo</span></h2>
+    <div class="rows" id="units"></div>
+    <div class="inv">PCs <span class="warn">4 offline &gt;24h</span> · celulares <span class="dim">2 fora de conformidade</span> · <a href="#" id="inv-link">inventário →</a></div>
+  </section>
+
+  <section class="box full" id="box-detail" style="--box: var(--accent)">
+    <h2 class="box-t"><span>DETALHE</span><span class="sub" id="detail-name"></span></h2>
+    <span class="box-r"><kbd>esc</kbd> fecha</span>
+    <div id="detail"></div>
+  </section>
+
+  <section class="box full hide-f" style="--box: var(--dim)">
+    <h2 class="box-t"><span>EVENTOS</span><span class="sub">últimas horas</span></h2>
+    <div class="ev" id="events"></div>
+  </section>
+</main>
+
+<footer class="keys">
+  <span><kbd>j</kbd><kbd>k</kbd> mover</span><span><kbd>⏎</kbd> detalhe</span><span><kbd>esc</kbd> fechar</span>
+  <span><kbd>0</kbd>–<kbd>3</kbd> unidade</span><span><kbd>a</kbd> ack</span><span><kbd>s</kbd> silenciar</span>
+  <span><kbd>r</kbd> rechecar</span><span><kbd>c</kbd> copiar resumo</span><span><kbd>w</kbd> web</span>
+  <span class="hide-sm"><kbd>z</kbd> simular "tudo ok"</span><span class="hide-sm"><kbd>x</kbd> simular dados congelados</span><span><kbd>?</kbd> ajuda</span>
+</footer>
+
+<script src="tui.js"></script>
+<script>
+(function () {
+  const W = WT;
+  W.nav(1);
+  let site = "ALL", sel = 0, detailOpen = true, expanded = false, allOk = false, frozen = false, onlyProblems = false;
+  let dataAge = 3;
+  const problems = W.PROBLEMS.map((p) => Object.assign({}, p));
+  const SEV_ORDER = { crit: 0, warn: 1, ack: 2 };
+
+  function visible() {
+    if (allOk) return [];
+    return problems.filter((p) => site === "ALL" || p.site === site)
+      .sort((a, b) => SEV_ORDER[a.sev] - SEV_ORDER[b.sev] || b.age - a.age);
+  }
+
+  function renderChips() {
+    const opts = [["0", "ALL", "todas"], ["1", "BAR", "BAR"], ["2", "BOT", "BOT"], ["3", "ITA", "ITA"]];
+    document.getElementById("site-chips").innerHTML = opts.map((o) =>
+      '<button type="button" class="chip" data-site="' + o[1] + '" aria-pressed="' + (site === o[1]) + '"><kbd>' + o[0] + "</kbd> " + o[2] + "</button>").join("");
+  }
+
+  function renderProblems() {
+    const list = visible();
+    const el = document.getElementById("problems");
+    document.getElementById("box-prob").classList.toggle("hot", list.some((p) => p.sev === "crit"));
+    const open = list.filter((p) => p.sev !== "ack").length;
+    document.getElementById("alertcount").textContent = open ? "⚠ " + open + " abertos" : "";
+    if (!list.length) {
+      el.innerHTML = '<div class="allok"><b>✔ tudo ok</b> há 3d 4h · 114/114 monitorados · última: ITA cam 7 (resolvida 31/10)</div>';
+      return;
+    }
+    if (sel >= list.length) sel = list.length - 1;
+    el.innerHTML = list.map((p, i) => {
+      const g = p.sev === "ack" ? "░" : W.GLYPH[p.sev];
+      const sevTxt = p.sev === "ack" ? "ack" : p.sev.toUpperCase();
+      let html = '<div class="row prob' + (i === sel ? " sel" : "") + (p.sev === "ack" ? " ackd" : "") + '" data-i="' + i + '">' +
+        '<span class="' + (p.sev === "ack" ? "dim" : p.sev) + '">' + g + "</span>" +
+        '<span class="sev c-sev ' + (p.sev === "ack" ? "dim" : p.sev) + '">' + sevTxt + "</span>" +
+        '<span class="c-kind dim">' + p.kind + "</span>" +
+        "<span>" + p.site + "</span>" +
+        "<span>" + W.esc(p.name) + "</span>" +
+        '<span class="c-what">' + W.esc(p.what) + "</span>" +
+        '<span class="age" data-age="' + p.id + '">' + W.age(p.age) + "</span>" +
+        '<span class="c-why dim">' + W.esc(p.why) + "</span>" +
+        '<span class="acts">' + (p.sev === "ack" ? "" : '<button type="button" data-act="a">a ack</button>') +
+        '<button type="button" data-act="s">s silenciar</button><button type="button" data-act="c">c copiar</button></span></div>';
+      if (p.children) {
+        html += '<div class="row child" data-expand="1"><span>└ +' + p.children + " dependentes de " + p.site +
+          " agrupados sob o link · " + (expanded ? "clique para recolher" : "clique para expandir (nunca somem)") + "</span></div>";
+        if (expanded) html += W.DEPENDENTS.map((d) => '<div class="row child muted"><span>   ◌ ' + d + " · sem resposta desde 14:18 (suprimido)</span></div>").join("");
+      }
+      return html;
+    }).join("");
+    el.querySelectorAll(".row.child span").forEach((s) => (s.style.whiteSpace = "pre"));
+  }
+
+  function renderLinks() {
+    const ls = W.LINKS.filter((l) => site === "ALL" || l.site === site);
+    document.getElementById("links").innerHTML = ls.map((l) => {
+      const p = W.pct(l);
+      if (l.state === "down") {
+        return '<div class="row lnk" data-link="' + l.id + '"><span>' + l.site + "</span><span>" + l.name + '</span><span class="dim">' + l.cap + 'M</span>' +
+          '<span class="crit">✖ DOWN ' + W.age(l.downFor + W.elapsed()) + '</span><span></span><span></span></div>';
+      }
+      return '<div class="row lnk" data-link="' + l.id + '"><span>' + l.site + "</span><span>" + l.name + '</span><span class="dim">' + l.cap + "M</span>" +
+        "<span>" + W.bar(p) + '</span><span class="' + W.level(p) + '">' + p + "%" + (p >= 90 ? "!" : "") + "</span><span>" + l.down + "M</span></div>";
+    }).join("");
+  }
+
+  function renderUnits() {
+    const ss = W.SITES.filter((s) => site === "ALL" || s.id === site);
+    let html = ss.map((s) => {
+      const c = W.COUNTS[s.id].dev, on = c[0] - c[1] - c[2];
+      const cls = c[1] + c[2] ? (c[2] ? "crit" : "warn") : "ok";
+      return '<div class="row unit" data-site-row="' + s.id + '"><span>' + s.name.toUpperCase() + "</span>" + W.dots(s.id) +
+        '<span class="' + cls + '">' + on + "/" + c[0] + "</span></div>";
+    }).join("");
+    if (site === "ALL") html += '<div class="row unit muted"><span>?</span><span class="dots"><i class="unk"></i><i class="unk"></i></span><span>2 sem unidade</span></div>';
+    document.getElementById("units").innerHTML = html;
+  }
+
+  function renderDetail() {
+    const box = document.getElementById("box-detail");
+    const list = visible();
+    const p = list[sel];
+    box.hidden = !detailOpen || !p || onlyProblems;
+    if (box.hidden) return;
+    document.getElementById("detail-name").textContent = "· " + p.site + " " + p.name;
+    const link = W.LINKS.find((l) => l.id === p.ref);
+    const dev = W.DEVICES.find((d) => d.id === p.ref);
+    let left, right;
+    if (link) {
+      left = '<dl class="kv">' +
+        "<dt>estado</dt><dd>" + (link.state === "down" ? '<span class="crit">DOWN desde 14:17:45</span> (webhook)' : '<span class="' + W.level(W.pct(link)) + '">' + W.pct(link) + "% do contratado</span>") + "</dd>" +
+        "<dt>anterior</dt><dd>" + (link.lastDown || "sem quedas em 7 dias") + "</dd>" +
+        "<dt>7 dias</dt><dd>" + (link.drops7d || 0) + " quedas · disponibilidade " + link.sla.toFixed(2) + "%</dd>" +
+        "<dt>notas</dt><dd>" + link.name + " empresarial · circuito " + link.circuit + " · ☎ " + link.phone + " · " + W.SITES.find((s) => s.id === link.site).gw + " " + link.iface + "</dd>" +
+        (p.children ? '<dt>correl.</dt><dd class="warn">' + p.children + " dispositivos de " + p.site + " caíram em ±30s → causa provável: este link</dd>" : "") +
+        "</dl>";
+      right = '<div class="dim">↓ tráfego 6h</div>' + W.spark(link.hist, link.state === "down" ? "var(--crit)" : "var(--info)", 54);
+    } else if (dev) {
+      left = '<dl class="kv"><dt>ip</dt><dd>' + dev.ip + " · " + dev.type + " · " + dev.site + "</dd>" +
+        "<dt>último ok</dt><dd>14:28:52 · 3 falhas seguidas</dd>" +
+        "<dt>caminho</dt><dd>" + W.SITES.find((s) => s.id === dev.site).gw + " → SW-2 porta 12</dd>" +
+        "<dt>notas</dt><dd>" + (p.sev === "ack" ? W.esc(p.why) : "sem notas · <kbd>n</kbd> adicionar") + "</dd></dl>";
+      right = '<div class="dim">ping 1h (ms)</div>' + W.spark(W.series(4, 30, 3, 2).concat([0, 0, 0, 0]), "var(--crit)", 54);
+    }
+    document.getElementById("detail").innerHTML = '<div class="detail-body"><div>' + left + "</div><div>" + right +
+      '<div class="btns" style="margin-top:10px"><button class="btn" data-act="a"><kbd>a</kbd>ack</button><button class="btn" data-act="s"><kbd>s</kbd>silenciar</button>' +
+      '<button class="btn" data-act="r"><kbd>r</kbd>rechecar</button><button class="btn" data-act="c"><kbd>c</kbd>copiar resumo</button><button class="btn" data-act="w"><kbd>w</kbd>abrir web</button></div></div></div>';
+  }
+
+  function renderEvents() {
+    document.getElementById("events").innerHTML = W.EVENTS.filter((e) => site === "ALL" || e.text.startsWith(site)).map((e) =>
+      '<span><span class="dim">' + e.t + '</span> <span class="' + e.sev + '">' + (W.GLYPH[e.sev] || "·") + "</span> " + W.esc(e.text) + "</span>").join("");
+  }
+
+  function render() {
+    renderChips(); renderProblems(); renderLinks(); renderUnits(); renderDetail(); renderEvents();
+    document.getElementById("main").classList.toggle("only-problems", onlyProblems);
+  }
+
+  function act(k) {
+    const p = visible()[sel];
+    if (!p) { W.toast("Nenhum problema selecionado"); return; }
+    if (k === "a") {
+      if (p.sev === "ack") { W.toast(p.name + " já está com ack"); return; }
+      p.sev = "ack"; p.why = 'você: "verificando" · ack registrado na auditoria';
+      W.toast("Ack registrado em " + p.name + " (simulação)"); render();
+    } else if (k === "s") W.toast(p.name + " silenciado até 15:32 · prazo obrigatório (simulação)");
+    else if (k === "r") W.toast("Rechecando " + p.name + "…");
+    else if (k === "w") W.toast("Abriria a interface web/Winbox de " + p.name);
+    else if (k === "c") {
+      const txt = "[" + p.sev.toUpperCase() + "] " + p.site + " " + p.name + " " + p.what + " há " + W.age(p.age) + " · " + p.why;
+      try { navigator.clipboard.writeText(txt).then(() => W.toast("Resumo copiado para o chamado"), () => W.toast(txt)); }
+      catch (e) { W.toast(txt); }
+    }
+  }
+
+  document.addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-site]");
+    if (chip) { site = chip.dataset.site; sel = 0; render(); return; }
+    const a = e.target.closest("[data-act]");
+    if (a) { const row = a.closest("[data-i]"); if (row) sel = +row.dataset.i; act(a.dataset.act); return; }
+    if (e.target.closest("[data-expand]")) { expanded = !expanded; render(); return; }
+    const row = e.target.closest(".prob[data-i]");
+    if (row) { sel = +row.dataset.i; detailOpen = true; render(); return; }
+    const lr = e.target.closest("[data-link]");
+    if (lr) {
+      const i = visible().findIndex((p) => p.ref === lr.dataset.link);
+      if (i >= 0) { sel = i; detailOpen = true; render(); } else W.toast("Link sem problemas abertos");
+    }
+    const sr = e.target.closest("[data-site-row]");
+    if (sr) { site = sr.dataset.siteRow; sel = 0; render(); }
+    if (e.target.id === "inv-link") { e.preventDefault(); W.toast("Abriria /inventario (PCs e celulares, somente leitura)"); }
+    if (e.target.id === "unfreeze") toggleFreeze();
+  });
+
+  function toggleFreeze() { frozen = !frozen; dataAge = frozen ? 61 : 0; tick(); }
+
+  const HELP = [["j / k", "mover seleção"], ["⏎", "abrir detalhe"], ["esc", "fechar detalhe"], ["0 1 2 3", "todas / Barra / Botafogo / Itaguaí"],
+    ["f", "modo só problemas (celular, TV)"], ["a", "ack com nota"], ["s", "silenciar com prazo"], ["r", "rechecar agora"], ["c", "copiar resumo para o chamado"],
+    ["w", "abrir web/Winbox"], ["z", "simular tela sem problemas"], ["x", "simular dados congelados"]];
+
+  W.keys({
+    j: () => { sel = Math.min(sel + 1, Math.max(0, visible().length - 1)); render(); },
+    k: () => { sel = Math.max(sel - 1, 0); render(); },
+    ArrowDown: () => { sel = Math.min(sel + 1, Math.max(0, visible().length - 1)); render(); },
+    ArrowUp: () => { sel = Math.max(sel - 1, 0); render(); },
+    Enter: () => { detailOpen = true; render(); },
+    Escape: () => { if (!W.closeHelp()) { detailOpen = false; render(); } },
+    "0": () => { site = "ALL"; sel = 0; render(); }, "1": () => { site = "BAR"; sel = 0; render(); },
+    "2": () => { site = "BOT"; sel = 0; render(); }, "3": () => { site = "ITA"; sel = 0; render(); },
+    f: () => { onlyProblems = !onlyProblems; render(); },
+    a: () => act("a"), s: () => act("s"), r: () => act("r"), c: () => act("c"), w: () => act("w"),
+    z: () => { allOk = !allOk; render(); }, x: toggleFreeze,
+    "?": () => W.help(HELP),
+  });
+
+  function tick() {
+    document.getElementById("clock").textContent = W.clock();
+    problems.forEach((p) => { const el = document.querySelector('[data-age="' + p.id + '"]'); if (el) el.textContent = W.age(p.age + W.elapsed()); });
+    dataAge = frozen ? dataAge + 1 : (dataAge + 1) % 5;
+    document.getElementById("data-age").textContent = dataAge + "s";
+    const dot = document.getElementById("data-dot");
+    dot.className = frozen ? "crit blink" : "ok";
+    document.getElementById("hb").textContent = frozen ? "3m40s" : (12 + (W.elapsed() % 50)) + "s";
+    document.getElementById("frozen").hidden = !frozen;
+    document.getElementById("frozen-age").textContent = dataAge + "s";
+    if (!frozen && dataAge === 0) { W.jitter(); renderLinks(); }
+  }
+
+  render(); tick();
+  setInterval(tick, 1000);
+})();
+</script>

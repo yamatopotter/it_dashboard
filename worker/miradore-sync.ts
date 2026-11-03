@@ -7,6 +7,11 @@ export async function syncMiradorePhones(): Promise<void> {
   try {
     const config = await db.systemConfig.findUnique({ where: { id: 1 } });
 
+    if (!config?.moduleTelephony) {
+      log("info", "Módulo Telefonia desligado: Miradore sync ignorado");
+      return;
+    }
+
     if (!config?.miradoreSyncEnabled) {
       log("info", "Miradore sync desabilitado");
       return;

@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WatchIT Plantão</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tui.css">
+<style>
+  /* Plantão: busca universal no topo; uma coluna por unidade; fila única por causa provável; detalhe e eventos embaixo. */
+  .g-plantao { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .g-plantao .full { grid-column: 1 / -1; }
+  .search { display: flex; align-items: center; gap: 8px; }
+  .search label { color: var(--accent-2); font-weight: 700; }
+  .search input {
+    flex: 1; min-width: 0; background: transparent; border: 0; border-bottom: 1px solid var(--line);
+    color: var(--fg); font: inherit; padding: 2px 0;
+  }
+  .search input:focus { outline: none; border-bottom-color: var(--accent-2); }
+  .res { grid-template-columns: 5ch minmax(0, 1fr); }
+  .res .main b { font-weight: 600; }
+  .unit-box.focus { border-color: var(--accent-2); }
+  .unit-box .box-r b { font-weight: 700; }
+  .u-sec { display: flex; flex-direction: column; gap: 2px; }
+  .u-sec + .u-sec { border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 6px; }
+  .u-link { grid-template-columns: 6ch minmax(6ch, 1fr) 5ch; }
+  .u-link.down { grid-template-columns: 6ch minmax(0, 1fr); }
+  .u-gw { grid-template-columns: auto minmax(40px, 1fr) 5ch; cursor: default; }
+  .u-gw:hover { background: none; }
+  .u-gw .spark-wrap { min-width: 0; }
+  .cnt { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; padding: 0 6px; }
+  .cnt span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tier { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 6px 6px 2px; cursor: default; }
+  .tier:first-child { padding-top: 0; }
+  .prob2 { grid-template-columns: 2ch 4ch minmax(14ch, 1.2fr) minmax(10ch, 1fr) 7ch minmax(0, 1.5fr) minmax(0, 1.3fr); }
+  .prob2.ackd { color: var(--dim); }
+  .detail-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 24px; }
+  .avail { display: flex; gap: 1px; height: 12px; margin-block: 4px 2px; }
+  .avail i { flex: 1; background: var(--ok); border-radius: 1px; }
+  .avail i.w { background: var(--warn); }
+  .avail i.c { background: var(--crit); }
+  .avail-scale { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; }
+  .ev { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+  .ev span { white-space: nowrap; }
+  .unit-tabs { display: none; gap: 4px; padding-top: 4px; }
+  @media (max-width: 900px) {
+    .unit-tabs { display: flex; }
+    .m-hide { display: none; }
+    .prob2 { grid-template-columns: 2ch 4ch minmax(0, 1fr) 7ch; }
+    .prob2 .c-what, .prob2 .c-note, .prob2 .c-imp { display: none; }
+    .detail-body { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav id="proto-nav" class="proto-nav" aria-label="Propostas"></nav>
+
+<header class="topbar">
+  <span class="brand">WatchIT · PLANTÃO</span>
+  <span class="clock" id="clock"></span>
+  <span>worker <span class="ok">●</span> <span id="hb">12s</span></span>
+  <span>dados <span class="ok">●</span> <span id="data-age">3s</span></span>
+  <span class="spacer"></span>
+  <span class="alertcount" id="alertcount"></span>
+</header>
+
+<main class="grid g-plantao" id="main">
+  <section class="box full" style="--box: var(--accent-2)">
+    <h2 class="box-t"><span>BUSCA</span><span class="sub">pessoa, PC, celular, dispositivo, IP, link</span></h2>
+    <div class="search">
+      <label for="q">/</label>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="digite um nome, usuário ou IP" value="ana">
+    </div>
+    <div class="rows" id="results"></div>
+  </section>
+
+  <div class="full unit-tabs" id="unit-tabs" role="tablist" aria-label="Unidade"></div>
+
+  <section class="box unit-box" id="u-BAR"></section>
+  <section class="box unit-box" id="u-BOT"></section>
+  <section class="box unit-box" id="u-ITA"></section>
+
+  <section class="box full" id="box-prob" style="--box: var(--crit)">
+    <h2 class="box-t"><span>PROBLEMAS AGORA</span><span class="sub" id="prob-sub">por causa provável: link › gateway › sw/AP › ponta</span></h2>
+    <div class="rows" id="problems"></div>
+  </section>
+
+  <section class="box full" id="box-detail" style="--box: var(--accent)">
+    <h2 class="box-t"><span>DETALHE</span><span class="sub" id="detail-name"></span></h2>
+    <span class="box-r"><kbd>esc</kbd> fecha</span>
+    <div id="detail"></div>
+  </section>
+
+  <section class="box full" style="--box: var(--dim)">
+    <h2 class="box-t"><span>EVENTOS</span><span class="sub">últimas 2h</span></h2>
+    <div class="ev" id="events"></div>
+  </section>
+</main>
+
+<footer class="keys">
+  <span><kbd>/</kbd> buscar</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> unidade</span><span><kbd>0</kbd> todas</span>
+  <span><kbd>j</kbd><kbd>k</kbd> mover</span><span><kbd>⏎</kbd> detalhe</span><span><kbd>esc</kbd> fechar</span>
+  <span><kbd>a</kbd> ack</span><span><kbd>m</kbd> manutenção 1h</span><span><kbd>r</kbd> rechecar</span>
+  <span><kbd>c</kbd> copiar</span><span><kbd>w</kbd> winbox</span><span><kbd>?</kbd> ajuda</span>
+</footer>
+
+<script src="tui.js"></script>
+<script>
+(function () {
+  const W = WT;
+  W.nav(2);
+
+  // Dados locais desta proposta (fictícios, coerentes com WT.*).
+  const GW = {
+    BAR: { name: "MK", cpu: 9, lat: 9, hist: W.series(3, 24, 8, 4) },
+    BOT: { name: "MK", cpu: 31, lat: 4, hist: W.series(6, 24, 30, 10) },
+    ITA: { name: "RB5009", cpu: 22, lat: 9, hist: W.series(8, 24, 18, 8).concat([30, 34, 38]) },
+  };
+  const TIERS = ["link", "gateway", "sw/AP", "ponta"];
+  const problems = [
+    { id: "p1", tier: "link", sev: "crit", site: "ITA", name: "Link Vivo", what: "DOWN", age: 862, note: "failover p/ Tim ativo", impact: "afeta 12 disp. (recuados)", ref: "ita-vivo" },
+    { id: "p2", tier: "sw/AP", sev: "warn", site: "BOT", name: "EAP225-Recepção", what: "off", age: 1380, note: "via SW-2 porta 7", impact: "12 clientes perdidos", ref: "ap-recepcao" },
+    { id: "p3", tier: "ponta", sev: "warn", site: "BOT", name: "NVR-02", what: "canais 30/32", age: 19320, note: "CAM-14, CAM-22 sem gravação desde 09:10", impact: "2 câmeras sem gravar", ref: "nvr-02" },
+    { id: "p4", tier: "ponta", sev: "ack", site: "BAR", name: "PC-FIN-03", what: "off 2d (Datto)", age: 180000, note: 'ack matheus: "férias" · expira 10/11', impact: "1 usuário", ref: "pc-fin-03" },
+  ];
+  const EVENTS2H = [
+    { t: "14:31", sev: "warn", site: "BOT", text: "BOT NVR-02 canais 30/32" },
+    { t: "14:18", sev: "info", site: "ITA", text: "ITA rota padrão → Tim (failover em 41s)" },
+    { t: "14:17", sev: "crit", site: "ITA", text: "ITA Link Vivo DOWN (webhook)" },
+    { t: "14:09", sev: "warn", site: "BOT", text: "BOT EAP225-Recepção off" },
+    { t: "13:50", sev: "ok", site: "BAR", text: "BAR PC-FIN-01 agente Datto voltou" },
+    { t: "13:02", sev: "ok", site: "BOT", text: "BOT CRS voltou após 4 min" },
+  ];
+
+  let site = "ALL", mobileSite = "ITA", sel = 0, detailOpen = true, dataAge = 3;
+
+  function flat() {
+    const list = problems.filter((p) => site === "ALL" || p.site === site);
+    return TIERS.flatMap((t) => list.filter((p) => p.tier === t));
+  }
+  function siteStatus(id) {
+    const open = problems.filter((p) => p.site === id && p.sev !== "ack");
+    if (open.some((p) => p.sev === "crit")) return ["crit", "✖ " + open.length];
+    if (open.length) return ["warn", "▲ " + open.length];
+    return ["ok", "● OK"];
+  }
+
+  function renderResults() {
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const el = document.getElementById("results");
+    if (!q) { el.innerHTML = '<div class="row muted"><span>busca em dispositivos, PCs (Datto), celulares (Miradore) e links</span></div>'; return; }
+    const out = [];
+    W.PEOPLE.forEach((p) => {
+      if ((p.q + " " + p.name + " " + p.owner).toLowerCase().includes(q))
+        out.push({ kind: p.kind, st: p.st, ref: p.name === "NVR-02" ? "nvr-02" : null,
+          html: "<b>" + W.esc(p.name) + "</b>" + (p.owner ? " (" + W.esc(p.owner) + " · " + p.src + ")" : "") + " " + p.site + " · " + stTxt(p.st, p.seen) + " · via " + W.esc(p.via) });
+    });
+    W.DEVICES.forEach((d) => {
+      if ((d.name + " " + d.ip + " " + d.type).toLowerCase().includes(q) && !out.some((o) => o.ref === d.id))
+        out.push({ kind: "DISP", st: d.st, ref: d.id, html: "<b>" + W.esc(d.name) + "</b> " + d.ip + " · " + d.type + " · " + d.site + " · " + stTxt(d.st) });
+    });
+    W.LINKS.forEach((l) => {
+      if (("link " + l.name + " " + l.site + " " + l.circuit).toLowerCase().includes(q))
+        out.push({ kind: "LINK", st: l.state === "down" ? "crit" : "ok", ref: l.id,
+          html: "<b>Link " + l.name + "</b> " + l.site + " · " + (l.state === "down" ? '<span class="crit">✖ DOWN</span>' : '<span class="ok">● ' + W.pct(l) + "% de " + l.cap + "M</span>") + " · circuito " + l.circuit });
+    });
+    el.innerHTML = out.length ? out.slice(0, 6).map((r) =>
+      '<div class="row res"' + (r.ref ? ' data-ref="' + r.ref + '"' : ' data-name="1"') + '><span class="tag">' + r.kind + '</span><span class="main">' + r.html + "</span></div>").join("")
+      : '<div class="row muted"><span>nada encontrado para "' + W.esc(q) + '"</span></div>';
+  }
+  function stTxt(st, seen) {
+    if (st === "ok") return '<span class="ok">● online</span>' + (seen ? ' <span class="dim">' + seen + "</span>" : "");
+    if (st === "crit") return '<span class="crit">✖ offline</span>';
+    if (st === "ack") return '<span class="dim">░ offline com ack</span>' + (seen ? ' <span class="dim">' + seen + "</span>" : "");
+    return '<span class="dim">◌ sem dado</span>';
+  }
+
+  function renderTabs() {
+    document.getElementById("unit-tabs").innerHTML = W.SITES.map((s, i) => {
+      const st = siteStatus(s.id);
+      return '<button type="button" class="chip" role="tab" data-tab="' + s.id + '" aria-pressed="' + (mobileSite === s.id) + '"><kbd>' + (i + 1) + "</kbd> " + s.name + ' <span class="' + st[0] + '">' + st[1] + "</span></button>";
+    }).join("");
+  }
+
+  function renderUnit(s, i) {
+    const box = document.getElementById("u-" + s.id);
+    const st = siteStatus(s.id), c = W.COUNTS[s.id], gw = GW[s.id];
+    box.style.setProperty("--box", "var(--" + (st[0] === "ok" ? "accent-2" : st[0]) + ")");
+    box.classList.toggle("focus", site === s.id);
+    box.classList.toggle("hot", st[0] === "crit");
+    box.classList.toggle("m-hide", mobileSite !== s.id);
+    const links = W.LINKS.filter((l) => l.site === s.id).map((l) => {
+      if (l.state === "down")
+        return '<div class="row u-link down" data-ref="' + l.id + '"><span>' + l.name + '</span><span class="crit">✖ DOWN ' + W.age(l.downFor + W.elapsed()) + ' · <span class="ok">failover ok</span></span></div>';
+      const p = W.pct(l);
+      return '<div class="row u-link" data-ref="' + l.id + '"><span>' + l.name + "</span><span>" + W.bar(p) + '</span><span class="' + W.level(p) + '">' + p + "%" + (p >= 90 ? "!" : "") + "</span></div>";
+    }).join("");
+    const on = c.dev[0] - c.dev[1] - c.dev[2];
+    box.innerHTML =
+      '<h2 class="box-t"><span class="k">[' + (i + 1) + "]</span><span>" + s.name.toUpperCase() + "</span></h2>" +
+      '<span class="box-r"><b class="' + st[0] + '">' + st[1] + "</b></span>" +
+      '<div class="u-sec">' + links + "</div>" +
+      '<div class="u-sec"><div class="row u-gw"><span>' + gw.name + ' <span class="ok">●</span> cpu ' + gw.cpu + '%</span><span class="spark-wrap">' + W.spark(gw.hist, "var(--info)", 18) + '</span><span class="dim">' + gw.lat + "ms</span></div></div>" +
+      '<div class="u-sec cnt">' +
+        '<span>disp <span class="' + (c.dev[1] + c.dev[2] ? (c.dev[2] ? "crit" : "warn") : "ok") + '">' + on + "/" + c.dev[0] + "</span>" + (c.dev[2] ? ' <span class="dim">(+' + c.dev[2] + " sob o link)</span>" : "") + "</span>" +
+        '<span>AP <span class="' + (c.ap[0] < c.ap[1] ? "warn" : "ok") + '">' + c.ap[0] + "/" + c.ap[1] + "</span></span>" +
+        '<span>cam <span class="' + (c.cam[0] < c.cam[1] ? "warn" : "ok") + '">' + c.cam[0] + "/" + c.cam[1] + "</span></span>" +
+        '<span>PCs <span class="' + (c.pc[1] - c.pc[0] > 3 ? "warn" : "dim") + '">' + c.pc[0] + "/" + c.pc[1] + "</span></span>" +
+      "</div>";
+  }
+
+  function renderProblems() {
+    const list = flat();
+    if (sel >= list.length) sel = Math.max(0, list.length - 1);
+    const open = problems.filter((p) => p.sev !== "ack").length;
+    document.getElementById("alertcount").textContent = open ? "⚠ " + open + " abertos" : "";
+    document.getElementById("box-prob").classList.toggle("hot", list.some((p) => p.sev === "crit"));
+    document.getElementById("prob-sub").textContent = "(" + list.length + ") por causa provável: link › gateway › sw/AP › ponta" + (site !== "ALL" ? " · só " + site : "");
+    let idx = 0, html = "";
+    TIERS.forEach((t) => {
+      const group = list.filter((p) => p.tier === t);
+      if (!group.length) return;
+      html += '<div class="tier">' + t + "</div>";
+      group.forEach((p) => {
+        const i = idx++;
+        const cls = p.sev === "ack" ? "dim" : p.sev;
+        html += '<div class="row prob2' + (i === sel ? " sel" : "") + (p.sev === "ack" ? " ackd" : "") + '" data-i="' + i + '">' +
+          '<span class="' + cls + '">' + (p.sev === "ack" ? "·" : W.GLYPH[p.sev]) + "</span>" +
+          "<span>" + p.site + "</span><span>" + W.esc(p.name) + '</span><span class="c-what">' + W.esc(p.what) + "</span>" +
+          '<span data-age="' + p.id + '">' + W.age(p.age + W.elapsed()) + "</span>" +
+          '<span class="c-note dim">' + W.esc(p.note) + '</span><span class="c-imp ' + (p.sev === "crit" ? "warn" : "dim") + '">' + W.esc(p.impact) + "</span></div>";
+      });
+    });
+    document.getElementById("problems").innerHTML = html || '<div class="row muted"><span class="ok">✔ nenhum problema em ' + site + "</span></div>";
+  }
+
+  function availBar(failTail, warnAt) {
+    let s = "";
+    for (let i = 0; i < 48; i++) s += "<i" + (i >= 48 - failTail ? ' class="c"' : i === warnAt ? ' class="w"' : "") + "></i>";
+    return '<div class="avail" aria-hidden="true">' + s + '</div><div class="avail-scale"><span>-24h</span><span>-12h</span><span>agora</span></div>';
+  }
+
+  function renderDetail() {
+    const box = document.getElementById("box-detail");
+    const p = flat()[sel];
+    box.hidden = !detailOpen || !p;
+    if (box.hidden) return;
+    document.getElementById("detail-name").textContent = "· " + p.name + " (" + W.SITES.find((s) => s.id === p.site).name + ")";
+    const link = W.LINKS.find((l) => l.id === p.ref);
+    const dev = W.DEVICES.find((d) => d.id === p.ref);
+    let left = "", right = "";
+    if (link) {
+      left = '<dl class="kv"><dt>estado</dt><dd><span class="crit">✖ DOWN desde 14:17:45</span> (webhook)</dd>' +
+        "<dt>última</dt><dd>queda anterior " + (link.lastDown || "—") + "</dd>" +
+        "<dt>operad.</dt><dd>" + link.name + " empresarial · circuito " + link.circuit + "</dd>" +
+        "<dt>contato</dt><dd>☎ " + link.phone + " · " + W.SITES.find((s) => s.id === link.site).gw + " " + link.iface + "</dd>" +
+        '<dt>impacto</dt><dd class="warn">' + W.esc(p.impact) + " · " + W.esc(p.note) + "</dd></dl>";
+      right = '<div class="dim">disponibilidade 24h · <span class="warn">99,0%</span></div>' + availBar(2, -1);
+    } else if (p.id === "p3") {
+      left = '<dl class="kv"><dt>ip</dt><dd>' + dev.ip + " · nvr · BOT</dd><dt>canais</dt><dd><span class=\"warn\">30/32 gravando</span></dd>" +
+        '<dt>sem grav.</dt><dd class="crit">CAM-14 (estacionamento) · CAM-22 (doca)</dd><dt>desde</dt><dd>09:10 · disco 71% · retenção 18 dias</dd></dl>';
+      right = '<div class="dim">gravação 24h · <span class="warn">canais completos 78%</span></div>' + availBar(11, 20);
+    } else {
+      left = '<dl class="kv"><dt>item</dt><dd>' + W.esc(p.name) + " · " + p.site + "</dd><dt>estado</dt><dd>" + W.esc(p.what) + "</dd>" +
+        "<dt>caminho</dt><dd>" + W.esc(p.note) + "</dd><dt>impacto</dt><dd>" + W.esc(p.impact) + "</dd></dl>";
+      right = '<div class="dim">disponibilidade 24h</div>' + availBar(p.sev === "ack" ? 48 : 1, -1);
+    }
+    document.getElementById("detail").innerHTML = '<div class="detail-body"><div>' + left + "</div><div>" + right +
+      '<div class="btns" style="margin-top:10px"><button class="btn" data-act="a"><kbd>a</kbd>ack</button><button class="btn" data-act="m"><kbd>m</kbd>manutenção 1h</button>' +
+      '<button class="btn" data-act="r"><kbd>r</kbd>rechecar</button><button class="btn" data-act="c"><kbd>c</kbd>copiar resumo p/ chamado</button><button class="btn" data-act="w"><kbd>w</kbd>winbox</button></div></div></div>';
+  }
+
+  function renderEvents() {
+    document.getElementById("events").innerHTML = EVENTS2H.filter((e) => site === "ALL" || e.site === site).map((e) =>
+      '<span><span class="dim">' + e.t + '</span> <span class="' + e.sev + '">' + (W.GLYPH[e.sev] || "·") + "</span> " + W.esc(e.text) + "</span>").join("");
+  }
+
+  function renderUnits() { W.SITES.forEach(renderUnit); renderTabs(); }
+  function render() { renderResults(); renderUnits(); renderProblems(); renderDetail(); renderEvents(); }
+
+  function setSite(id) {
+    site = site === id ? "ALL" : id;
+    if (id !== "ALL") mobileSite = id;
+    sel = 0; detailOpen = true; render();
+  }
+
+  function act(k) {
+    const p = flat()[sel];
+    if (!p) { W.toast("Nenhum problema selecionado"); return; }
+    if (k === "a") {
+      if (p.sev === "ack") { W.toast(p.name + " já está com ack"); return; }
+      p.sev = "ack"; p.note = 'ack você: "verificando"'; W.toast("Ack registrado em " + p.name + " (simulação)"); render();
+    } else if (k === "m") W.toast(p.name + " em manutenção até 15:32 (simulação)");
+    else if (k === "r") W.toast("Rechecando " + p.name + "…");
+    else if (k === "w") W.toast("Abriria o Winbox em " + W.SITES.find((s) => s.id === p.site).gw);
+    else if (k === "c") {
+      const txt = "[" + p.site + "] " + p.name + " " + p.what + " há " + W.age(p.age + W.elapsed()) + " · " + p.note + " · " + p.impact;
+      try { navigator.clipboard.writeText(txt).then(() => W.toast("Resumo copiado para o chamado"), () => W.toast(txt)); }
+      catch (e) { W.toast(txt); }
+    }
+  }
+
+  function selectRef(ref) {
+    const i = flat().findIndex((p) => p.ref === ref);
+    if (i >= 0) { sel = i; detailOpen = true; render(); document.getElementById("box-prob").scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    else W.toast("Sem problemas abertos para este item");
+  }
+
+  document.getElementById("q").addEventListener("input", renderResults);
+  document.addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-tab]");
+    if (tab) { mobileSite = tab.dataset.tab; site = tab.dataset.tab; sel = 0; render(); return; }
+    const a = e.target.closest("[data-act]");
+    if (a) { act(a.dataset.act); return; }
+    const row = e.target.closest(".prob2[data-i]");
+    if (row) { sel = +row.dataset.i; detailOpen = true; render(); return; }
+    const r = e.target.closest("[data-ref]");
+    if (r) { selectRef(r.dataset.ref); return; }
+    if (e.target.closest("[data-name]")) W.toast("Abriria a ficha do item (inventário, somente leitura)");
+    const ub = e.target.closest(".unit-box .box-t");
+    if (ub) setSite(ub.closest(".unit-box").id.slice(2));
+  });
+
+  const HELP = [["/", "buscar pessoa, PC, celular, IP"], ["1 2 3", "destacar Barra / Botafogo / Itaguaí"], ["0", "todas as unidades"],
+    ["j / k", "mover seleção"], ["⏎", "abrir detalhe"], ["esc", "fechar detalhe / sair da busca"], ["a", "ack com nota"],
+    ["m", "manutenção 1h"], ["r", "rechecar agora"], ["c", "copiar resumo para o chamado"], ["w", "abrir Winbox"]];
+
+  const down = () => { sel = Math.min(sel + 1, Math.max(0, flat().length - 1)); render(); };
+  const up = () => { sel = Math.max(sel - 1, 0); render(); };
+  W.keys({
+    "/": () => { const q = document.getElementById("q"); q.focus(); q.select(); },
+    j: down, k: up, ArrowDown: down, ArrowUp: up,
+    Enter: () => { detailOpen = true; render(); },
+    Escape: (e) => {
+      if (e.target.id === "q") { e.target.blur(); return; }
+      if (!W.closeHelp()) { detailOpen = false; render(); }
+    },
+    "0": () => { site = "ALL"; sel = 0; render(); },
+    "1": () => setSite("BAR"), "2": () => setSite("BOT"), "3": () => setSite("ITA"),
+    a: () => act("a"), m: () => act("m"), r: () => act("r"), c: () => act("c"), w: () => act("w"),
+    "?": () => W.help(HELP),
+  });
+
+  function tick() {
+    document.getElementById("clock").textContent = W.clock();
+    problems.forEach((p) => { const el = document.querySelector('[data-age="' + p.id + '"]'); if (el) el.textContent = W.age(p.age + W.elapsed()); });
+    dataAge = (dataAge + 1) % 5;
+    document.getElementById("data-age").textContent = dataAge + "s";
+    document.getElementById("hb").textContent = (12 + (W.elapsed() % 50)) + "s";
+    if (dataAge === 0) { W.jitter(); renderUnits(); }
+  }
+
+  render(); tick();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
