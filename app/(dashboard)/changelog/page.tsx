@@ -24,6 +24,7 @@ const RELEASES: Release[] = [
     label: "Redesign: tela de operação, avisos no Zoho Cliq e relatório mensal",
     latest: true,
     changes: [
+      { type: "perf", text: "Monitoramento mais leve e rápido: Mikrotik, Omada e UniFi reaproveitam a conexão em vez de reconectar a cada checagem, e os APs do mesmo controlador compartilham uma única consulta; o tráfego dos links deixou de esperar 1 s por leitura" },
       { type: "refactor", text: "Interface inteira padronizada no estilo TOWER: menu lateral, cabeçalhos, painéis, tabelas densas, formulários, botões e cores de estado iguais em todas as telas, em tema claro e escuro, com menu recolhível no celular" },
       { type: "feat", text: "Nova tela TOWER/1 em /tower — fila de problemas no topo (gravidade e idade), links com tráfego, unidades com o estado de cada equipamento e eventos recentes, tudo com atalhos de teclado e aviso quando os dados congelam" },
       { type: "feat", text: "Reconhecer (ack) e silenciar agora valem também para links e dispositivos — OPERADOR ou ADMIN reconhece com uma nota, ou silencia por 1 h, 4 h ou 12 h (até 24 h) para manutenção programada; o ack some sozinho quando o link volta" },
