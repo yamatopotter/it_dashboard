@@ -1,35 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
-import { Topbar } from "@/components/topbar";
-import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, CheckCircle2, Clock, Wifi, WifiOff } from "lucide-react";
-import { EmptyState } from "@/components/empty-state";
-import { DEVICE_TYPE_ICON } from "@/lib/device-constants";
-import { formatDuration, timeAgo, fmtTime, fmtDate } from "@/lib/format";
-import { FilterChip } from "@/components/filter-chip";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { DeviceType } from "@prisma/client";
+import { DeviceDetailDrawer } from "@/components/device-detail-drawer";
+import { Panel } from "@/components/tui/panel";
+import { StateGlyph } from "@/components/tui/state-glyph";
+import { LnkShell } from "@/components/tui/lnk-shell";
+import { LnkChips, LnkEmpty, LnkError, LnkLoading } from "@/components/tui/lnk-parts";
+import type { HelpRow } from "@/components/tui/help-overlay";
+import type { KeyHint } from "@/components/tui/key-hints";
+import { useHotkeys, type HotkeyMap } from "@/hooks/use-hotkeys";
+import { useListNav } from "@/hooks/use-list-nav";
+import { DEVICE_TYPE_LABEL } from "@/lib/device-constants";
+import { formatDuration, timeAgo, fmtTime, fmtDate } from "@/lib/format";
 import type { Incident, PaginatedIncidentsResponse } from "@/app/api/incidents/route";
 
 type Window = 24 | 168 | 720;
+type StatusFilter = "ALL" | "OPEN" | "RESOLVED";
+
 const WINDOWS: { label: string; value: Window }[] = [
   { label: "24h", value: 24 },
   { label: "7d", value: 168 },
   { label: "30d", value: 720 },
 ];
 
+const PAGE_LIMIT = 25;
 
-function severityColor(durationMs: number | null, resolved: boolean) {
-  if (!resolved) return "text-destructive border-destructive/30 bg-destructive/5";
-  if (durationMs == null) return "text-muted-foreground border-border bg-muted/30";
+const HELP: HelpRow[] = [
+  ["j k", "selecionar incidente (↓ ↑ também)"],
+  ["⏎", "abrir o dispositivo do incidente"],
+  ["1 2 3", "filtro: todos / em aberto / resolvidos"],
+  ["4 5 6", "período: 24h / 7d / 30d"],
+  ["m", "carregar mais incidentes"],
+  ["/", "buscar dispositivo ou IP"],
+  ["esc", "fechar painel, busca ou ajuda"],
+];
+
+/** Duração do incidente resolvido: longa = crítico, média = aviso, curta = neutro. */
+function durationClass(durationMs: number | null) {
+  if (durationMs == null) return "dim";
   const min = durationMs / 60_000;
-  if (min < 5) return "text-warning border-warning/30 bg-warning/5";
-  if (min < 60) return "text-orange-500 border-orange-500/30 bg-orange-500/5";
-  return "text-destructive border-destructive/30 bg-destructive/5";
+  return min >= 60 ? "crit" : min >= 5 ? "warn" : "dim";
 }
-
 
 function groupByDay(incidents: Incident[]) {
   const groups: Map<string, Incident[]> = new Map();
@@ -41,18 +53,20 @@ function groupByDay(incidents: Incident[]) {
   return groups;
 }
 
-const PAGE_LIMIT = 25;
-
 export default function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [window, setWindow] = useState<Window>(168);
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "RESOLVED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [q, setQ] = useState("");
   const [drawerDeviceId, setDrawerDeviceId] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const fetchPage = async (hours: number, p: number, replace: boolean) => {
     if (replace) setLoading(true);
@@ -66,8 +80,11 @@ export default function IncidentsPage() {
       setTotal(data.total ?? 0);
       setHasMore(data.hasMore ?? false);
       setPage(p);
+      setError(null);
+      setUpdatedAt(new Date());
     } catch (err) {
       console.error("[incidents] falha ao carregar página:", err);
+      if (replace) setError("Não foi possível carregar os incidentes.");
       toast.error("Erro ao carregar incidentes");
     } finally {
       setLoading(false);
@@ -76,210 +93,163 @@ export default function IncidentsPage() {
   };
 
   useEffect(() => {
+    // Recarrega ao trocar filtros: sincroniza com a API (sistema externo); o setState ocorre após o await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPage(window, 1, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [window]);
 
-  const filtered = incidents.filter((inc) => {
-    if (statusFilter === "OPEN") return !inc.resolved;
-    if (statusFilter === "RESOLVED") return inc.resolved;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return incidents.filter((inc) => {
+      if (statusFilter === "OPEN" && inc.resolved) return false;
+      if (statusFilter === "RESOLVED" && !inc.resolved) return false;
+      if (!needle) return true;
+      return inc.deviceName.toLowerCase().includes(needle) || inc.deviceIp.toLowerCase().includes(needle);
+    });
+  }, [incidents, statusFilter, q]);
 
   const openCount = incidents.filter((i) => !i.resolved).length;
   const resolvedCount = incidents.filter((i) => i.resolved).length;
 
   const grouped = groupByDay(filtered);
+  // Índice global (na ordem exibida) para seleção por teclado entre grupos
+  const flat = Array.from(grouped.values()).flat();
+  const nav = useListNav(flat.length);
+  const selectedInc = flat[nav.sel];
+
+  const keys: HotkeyMap = {
+    "?": () => setHelp((h) => !h),
+    Escape: (e) => {
+      if (help) return setHelp(false);
+      const t = e.target as HTMLElement | null;
+      if (t?.id === "lnk-q") { setQ(""); t.blur(); }
+    },
+  };
+  if (!help && !drawerDeviceId) {
+    Object.assign(keys, nav.keys, {
+      "/": () => document.getElementById("lnk-q")?.focus(),
+      Enter: () => selectedInc && setDrawerDeviceId(selectedInc.deviceId),
+      "1": () => setStatusFilter("ALL"),
+      "2": () => setStatusFilter("OPEN"),
+      "3": () => setStatusFilter("RESOLVED"),
+      "4": () => setWindow(24),
+      "5": () => setWindow(168),
+      "6": () => setWindow(720),
+      m: () => { if (hasMore && !loadingMore) void fetchPage(window, page + 1, false); },
+    });
+  }
+  useHotkeys(keys);
+
+  const hints: KeyHint[] = [
+    { keys: ["j", "k"], label: "selecionar" },
+    { keys: ["⏎"], label: "abrir dispositivo" },
+    { keys: ["1", "–", "3"], label: "estado" },
+    { keys: ["4", "–", "6"], label: "período", hideSm: true },
+    ...(hasMore ? [{ keys: ["m"], label: "carregar mais" }] : []),
+    { keys: ["/"], label: "buscar", hideSm: true },
+    { keys: ["?"], label: "ajuda" },
+  ];
+
+  const windowLabel = WINDOWS.find((w) => w.value === window)?.label;
+  const indexOf = new Map(flat.map((inc, i) => [inc.id, i] as const));
 
   return (
-    <>
-      <Topbar
-        title="Incidentes"
-        icon={AlertCircle}
-        subtitle={
-          !loading
-            ? `${openCount} em aberto · ${resolvedCount} resolvidos${total > incidents.length ? ` · ${total} no total` : ""}`
-            : undefined
-        }
-        live={!loading && openCount > 0}
-      />
-
-      <div className="p-7 space-y-4">
-        {/* Filters */}
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex flex-wrap gap-2">
-            <FilterChip
-              active={statusFilter === "ALL"}
-              onClick={() => setStatusFilter("ALL")}
-            >
-              Todos ({incidents.length})
-            </FilterChip>
-            <FilterChip
-              active={statusFilter === "OPEN"}
-              onClick={() => setStatusFilter("OPEN")}
-              color="destructive"
-            >
-              <WifiOff className="h-3 w-3" />
-              Em aberto ({openCount})
-            </FilterChip>
-            <FilterChip
-              active={statusFilter === "RESOLVED"}
-              onClick={() => setStatusFilter("RESOLVED")}
-              color="success"
-            >
-              <Wifi className="h-3 w-3" />
-              Resolvidos ({resolvedCount})
-            </FilterChip>
-          </div>
-
-          {/* Time window */}
-          <div className="flex items-center gap-1">
-            {WINDOWS.map((w) => (
-              <button
-                key={w.value}
-                onClick={() => setWindow(w.value)}
-                aria-pressed={window === w.value}
-                className={`px-3 h-7 rounded-full text-xs font-medium border transition-all ${
-                  window === w.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background text-muted-foreground border-border hover:bg-muted"
-                }`}
-              >
-                {w.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Timeline */}
-        {loading ? (
-          <div className="space-y-6">
-            {[1, 2].map((g) => (
-              <div key={g} className="space-y-2">
-                <Skeleton className="h-4 w-32" />
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-16 rounded-xl" />
-                ))}
-              </div>
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={CheckCircle2}
-            iconClassName="text-success opacity-60"
-            title="Nenhum incidente"
-            description={
-              statusFilter !== "ALL"
-                ? "Sem incidentes para o filtro selecionado."
-                : `Todos os dispositivos estiveram online nas últimas ${WINDOWS.find((w) => w.value === window)?.label}.`
-            }
-            className="py-20"
-          />
-        ) : (
-          <div className="space-y-6">
-            {Array.from(grouped.entries()).map(([day, items]) => (
-              <div key={day} className="space-y-2">
-                {/* Day label */}
-                <p className="text-xs font-semibold text-muted-foreground tracking-wide px-0.5 first-letter:uppercase">
-                  {day}
-                </p>
-
-                {/* Incidents for this day */}
-                <div className="rounded-xl border bg-card overflow-hidden divide-y">
-                  {items.map((inc) => {
-                    const TypeIcon = DEVICE_TYPE_ICON[inc.deviceType];
-                    const duration = formatDuration(inc.durationMs);
-                    const color = severityColor(inc.durationMs, inc.resolved);
-
-                    return (
-                      <div
-                        key={inc.id}
-                        onClick={() => setDrawerDeviceId(inc.deviceId)}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Incidente de ${inc.deviceName}`}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDrawerDeviceId(inc.deviceId); } }}
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {/* Status indicator */}
-                        <div
-                          className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${color}`}
-                        >
-                          {inc.resolved ? (
-                            <CheckCircle2 className="h-4 w-4" />
-                          ) : (
-                            <AlertCircle className="h-4 w-4" />
-                          )}
-                        </div>
-
-                        {/* Device icon */}
-                        <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-primary shrink-0">
-                          <TypeIcon className="h-3.5 w-3.5" />
-                        </div>
-
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
-                            {inc.deviceName}
-                          </p>
-                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              {inc.deviceIp}
-                            </span>
-                            <span className="text-muted-foreground/40 text-[10px]">·</span>
-                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <Clock className="h-2.5 w-2.5" />
-                              {fmtTime(inc.startAt, { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                            <span className="text-muted-foreground/40 text-[10px]">·</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {timeAgo(inc.startAt)}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Right: duration + status */}
-                        <div className="flex items-center gap-2 shrink-0">
-                          {inc.durationMs != null && (
-                            <span
-                              className={`text-xs font-mono font-semibold px-2 py-0.5 rounded-full border ${color}`}
-                            >
-                              {duration}
-                            </span>
-                          )}
-                          <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                              inc.resolved
-                                ? "bg-success/10 text-success border-success/20"
-                                : "bg-destructive/10 text-destructive border-destructive/20"
-                            }`}
-                          >
-                            {inc.resolved ? "Resolvido" : "Em aberto"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+    <LnkShell
+      title="INCIDENTES"
+      sub={
+        loading ? undefined : (
+          <>
+            <span className={openCount > 0 ? "crit" : "ok"}>{openCount > 0 ? `✖ ${openCount} em aberto` : "● nenhum em aberto"}</span>
+            {` · ${resolvedCount} resolvidos${total > incidents.length ? ` · ${total} no total` : ""}`}
+          </>
+        )
+      }
+      updatedAt={updatedAt}
+      hints={hints}
+      help={HELP}
+      helpOpen={help}
+      onHelpClose={() => setHelp(false)}
+    >
+      <div className="toolbar">
+        <LnkChips<StatusFilter>
+          label="Filtro de estado"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          chips={[
+            { value: "ALL", label: "todos", key: "1", count: incidents.length },
+            { value: "OPEN", label: "em aberto", key: "2", count: openCount },
+            { value: "RESOLVED", label: "resolvidos", key: "3", count: resolvedCount },
+          ]}
+        />
+        <LnkChips<string>
+          label="Período"
+          value={String(window)}
+          onChange={(v) => setWindow(Number(v) as Window)}
+          chips={WINDOWS.map((w, i) => ({ value: String(w.value), label: w.label, key: String(i + 4) }))}
+        />
+        <span className="spacer" />
+        <input id="lnk-q" className="search" type="search" placeholder="/ buscar dispositivo ou IP" aria-label="Buscar incidente" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
 
+      {loading ? (
+        <Panel title="linha do tempo" color="info"><LnkLoading what="incidentes" /></Panel>
+      ) : error && incidents.length === 0 ? (
+        <Panel title="linha do tempo" color="crit" hot><LnkError message={error} onRetry={() => fetchPage(window, 1, true)} /></Panel>
+      ) : filtered.length === 0 ? (
+        <Panel title="linha do tempo" sub={windowLabel} color="ok">
+          <LnkEmpty
+            ok
+            title="Nenhum incidente"
+            hint={statusFilter !== "ALL" || q ? "Sem incidentes para o filtro ou busca." : `Todos os dispositivos estiveram online nas últimas ${windowLabel}.`}
+          />
+        </Panel>
+      ) : (
+        Array.from(grouped.entries()).map(([day, items]) => (
+          <Panel key={day} title={day} sub={`${items.length} ${items.length === 1 ? "incidente" : "incidentes"}`} color={items.some((i) => !i.resolved) ? "crit" : "info"} hot={items.some((i) => !i.resolved)}>
+            <div className="tlist">
+              {items.map((inc) => {
+                const idx = indexOf.get(inc.id) ?? -1;
+                const selected = idx === nav.sel;
+                return (
+                  <div
+                    key={inc.id}
+                    className={`tl${selected ? " sel" : ""}`}
+                    data-sel={selected ? "true" : undefined}
+                    aria-current={selected ? "true" : undefined}
+                    onClick={() => { nav.setSel(idx); setDrawerDeviceId(inc.deviceId); }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Incidente de ${inc.deviceName}, ${inc.resolved ? "resolvido" : "em aberto"}`}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDrawerDeviceId(inc.deviceId); } }}
+                  >
+                    <span className="dim">{fmtTime(inc.startAt, { hour: "2-digit", minute: "2-digit" })}</span>
+                    <StateGlyph state={inc.resolved ? "ok" : "crit"} label={inc.resolved ? "resolvido" : "em aberto"} />
+                    <span>
+                      <b>{inc.deviceName}</b>
+                      <span className="dim"> {inc.deviceIp} · {DEVICE_TYPE_LABEL[inc.deviceType]} · {timeAgo(inc.startAt)}</span>
+                    </span>
+                    <span className="tl-end">
+                      {inc.durationMs != null && <span className={durationClass(inc.durationMs)}>{formatDuration(inc.durationMs)} </span>}
+                      <span className={inc.resolved ? "ok" : "crit"}>{inc.resolved ? "resolvido" : "EM ABERTO"}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </Panel>
+        ))
+      )}
+
       {hasMore && (
-        <div className="flex justify-center pb-8">
-          <button
-            onClick={() => fetchPage(window, page + 1, false)}
-            disabled={loadingMore}
-            className="px-5 h-9 rounded-full text-sm font-medium border border-border bg-background hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            {loadingMore ? "Carregando..." : `Carregar mais (${total - incidents.length} restantes)`}
+        <div className="btns">
+          <button type="button" className="btn" onClick={() => fetchPage(window, page + 1, false)} disabled={loadingMore}>
+            <kbd>m</kbd>
+            {loadingMore ? "carregando…" : `carregar mais (${total - incidents.length} restantes)`}
           </button>
         </div>
       )}
 
       <DeviceDetailDrawer deviceId={drawerDeviceId} onClose={() => setDrawerDeviceId(null)} />
-    </>
+    </LnkShell>
   );
 }

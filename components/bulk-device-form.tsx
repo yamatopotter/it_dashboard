@@ -8,7 +8,7 @@ import { z } from "zod";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Panel } from "@/components/tui/panel";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { AlertCircle, CheckCircle, CheckCircle2, Layers, Loader2, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { PasswordInput } from "@/components/ui/password-input";
 import { testUnifiConnection, testOmadaConnection } from "@/lib/device-tests";
 
@@ -269,13 +269,10 @@ export function BulkDeviceForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-3xl">
       {/* Basic info */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Range de IPs</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <Panel title="range de ips" color="info">
+        <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Nome *</Label>
             <Input id="name" {...register("name")} placeholder="Câmera IP" />
@@ -375,15 +372,12 @@ export function BulkDeviceForm() {
               {...register("checkInterval", { valueAsNumber: true })}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {/* Protocols */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Protocolos de Monitoramento</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <Panel title="protocolos de monitoramento" color="accent2">
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium text-sm">Ping (ICMP)</p>
@@ -801,22 +795,21 @@ export function BulkDeviceForm() {
               </div>
             )}
           </div>}
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
-      <div className="flex gap-3">
+      <div className="btns">
         <button
           type="submit"
           disabled={loading || !ips || ips.length === 0 || (deviceType === "OMADA_AP" && omadaEnabled && !omadaSiteId)}
-          className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+          className="btn pri"
         >
-          <Layers className="h-4 w-4" />
           {loading ? "Criando..." : `Criar ${ips?.length ?? 0} dispositivo${(ips?.length ?? 0) !== 1 ? "s" : ""}`}
         </button>
         <button
           type="button"
           onClick={() => router.push("/devices")}
-          className="inline-flex items-center h-10 px-5 rounded-xl border border-border bg-background text-sm font-semibold hover:bg-muted transition-colors"
+          className="btn"
         >
           Cancelar
         </button>

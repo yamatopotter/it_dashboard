@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, useCallback, useMemo, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/status-badge";
 import { MetricsChart } from "@/components/metrics-chart";
 import { PingChart } from "@/components/ping-chart";
+import { Panel } from "@/components/tui/panel";
+import { DevEmpty, DevLoading, DevPage } from "@/components/tui/dev-shell";
+import { useHotkeys } from "@/hooks/use-hotkeys";
 import { formatUptime, formatResponseTime, formatPercent, fmtDateTime, formatBps, formatBytes } from "@/lib/format";
+import { pctLevel } from "@/lib/tui-format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,17 +22,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Topbar } from "@/components/topbar";
-import {
-  Pencil, Trash2, Cpu, MemoryStick, Clock, Wifi, Globe, Activity,
-  Users, Radio, AlertTriangle, ArrowDownToLine, ArrowUpFromLine,
-  ChevronDown, ChevronUp, ArrowUpDown, FileText, RefreshCw,
-} from "lucide-react";
-
 import { toast } from "sonner";
 import type { Device, DeviceStatus, StatusHistory, NvrChannelIssue } from "@prisma/client";
-import { HardDrive, Video } from "lucide-react";
+import type { HelpRow } from "@/components/tui/help-overlay";
+import type { KeyHint } from "@/components/tui/key-hints";
 
 interface UnifiSSID {
   ssid: string;
@@ -122,18 +115,67 @@ type HourOption = typeof HOUR_OPTIONS[number]["value"];
 
 type ClientSortKey = "name" | "ip" | "connectedAt" | "signal" | "band" | "uptime";
 
-// Module scope (not redefined on every render — avoids remount of the header buttons)
+const HELP: HelpRow[] = [
+  ["r", "verificar agora"],
+  ["e", "editar o dispositivo"],
+  ["h", "alternar o período do gráfico (1h → 6h → 24h → 7d)"],
+  ["esc / b", "voltar para a lista"],
+  ["?", "esta ajuda"],
+];
+
+const HINTS: KeyHint[] = [
+  { keys: ["r"], label: "verificar" },
+  { keys: ["e"], label: "editar" },
+  { keys: ["h"], label: "período", hideSm: true },
+  { keys: ["b"], label: "voltar" },
+  { keys: ["?"], label: "ajuda" },
+];
+
+// Escopo de módulo (não é redefinido a cada render — evita remontar os botões do cabeçalho)
 function SortButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-1 hover:text-foreground transition-colors ${
-        active ? "text-foreground font-semibold" : "text-muted-foreground"
-      }`}
-    >
-      {label}
-      <ArrowUpDown className="h-3 w-3" aria-hidden="true" />
+    <button type="button" onClick={onClick} aria-pressed={active}>
+      {label}{active ? " ↓" : ""}
     </button>
+  );
+}
+
+function Tile({ label, value, cls }: { label: string; value: string; cls?: string }) {
+  return (
+    <div className="d-tile">
+      <div className="k">{label}</div>
+      <div className={`v ${cls ?? ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function Usage({ pct }: { pct: number | null | undefined }) {
+  if (pct == null) return <span className="faint">—</span>;
+  const lvl = pctLevel(pct);
+  return (
+    <span className="barwrap">
+      <span
+        className={`bar${lvl === "crit" ? " c" : lvl === "warn" ? " w" : ""}`}
+        style={{ "--p": Math.round(pct), width: "8ch" } as React.CSSProperties}
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(pct)}
+        aria-label="Uso"
+      >
+        <i />
+      </span>
+      <span className={lvl}>{formatPercent(pct)}</span>
+    </span>
+  );
+}
+
+function Alert({ tone, title, children }: { tone: "crit" | "warn"; title: string; children?: React.ReactNode }) {
+  return (
+    <div className={`d-note ${tone === "crit" ? "crit" : ""}`} role={tone === "crit" ? "alert" : "status"}>
+      <div className={tone}>{tone === "crit" ? "✖" : "▲"} {title}</div>
+      {children ? <div className="dim" style={{ overflowWrap: "anywhere" }}>{children}</div> : null}
+    </div>
   );
 }
 
@@ -156,6 +198,8 @@ export default function DeviceDetailPage({
   const [nvrIssues, setNvrIssues] = useState<NvrChannelIssue[]>([]);
   const [linkedCameras, setLinkedCameras] = useState<Device[]>([]);
   const [parentNvr, setParentNvr] = useState<Device | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [help, setHelp] = useState(false);
 
   const load = useCallback(async (h: number, signal?: AbortSignal) => {
     try {
@@ -165,6 +209,7 @@ export default function DeviceDetailPage({
       ]);
       if (devRes.ok) setDevice(await devRes.json());
       if (histRes.ok) setHistory(await histRes.json());
+      if (devRes.ok) setLastUpdated(new Date());
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       console.error("[device-detail] falha ao carregar dados:", err);
@@ -215,12 +260,12 @@ export default function DeviceDetailPage({
       .catch(() => setParentNvr(null));
   }, [device]);
 
-  async function handleCheck() {
+  const handleCheck = useCallback(async () => {
     setIsChecking(true);
     await fetch(`/api/devices/${id}/check`, { method: "POST" }).catch(() => {});
     await load(hours);
     setIsChecking(false);
-  }
+  }, [id, hours, load]);
 
   async function handleDelete() {
     const res = await fetch(`/api/devices/${id}`, { method: "DELETE" });
@@ -232,24 +277,34 @@ export default function DeviceDetailPage({
     }
   }
 
+  const hotkeys = useMemo(() => ({
+    r: () => { void handleCheck(); },
+    e: () => router.push(`/devices/${id}/edit`),
+    h: () => setHours((cur) => {
+      const i = HOUR_OPTIONS.findIndex((o) => o.value === cur);
+      return HOUR_OPTIONS[(i + 1) % HOUR_OPTIONS.length].value;
+    }),
+    b: () => router.push("/devices"),
+    "?": () => setHelp((v) => !v),
+    Escape: () => { if (help) setHelp(false); else router.push("/devices"); },
+  }), [handleCheck, router, id, help]);
+  useHotkeys(hotkeys);
+
   if (loading && !device) {
     return (
-      <>
-        <Topbar title="Carregando..." back="/devices" backLabel="Dispositivos" />
-        <div className="p-7 space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-          </div>
-        </div>
-      </>
+      <DevPage title="Carregando…" back="/devices" backLabel="dispositivos">
+        <Panel title="dispositivo" color="info"><DevLoading rows={6} /></Panel>
+      </DevPage>
     );
   }
 
-  if (!device) return <div className="p-7"><p className="text-muted-foreground">Dispositivo não encontrado.</p></div>;
+  if (!device) {
+    return (
+      <DevPage title="Dispositivo" back="/devices" backLabel="dispositivos">
+        <Panel title="erro" color="crit" hot><DevEmpty title="Dispositivo não encontrado." /></Panel>
+      </DevPage>
+    );
+  }
 
   const status = device.currentStatus;
   const hasSystemMetrics = device.snmpEnabled || device.routerosEnabled || device.unifiEnabled || (device as Device & { omadaEnabled?: boolean }).omadaEnabled;
@@ -262,7 +317,7 @@ export default function DeviceDetailPage({
     ? (((status as (typeof status & { routerosData?: unknown }))?.routerosData ?? null) as RouterOSData | null)
     : null;
 
-  // Build sorted client list (UniFi or Omada)
+  // Lista de clientes ordenada (UniFi ou Omada)
   const activeClients = unifiData?.clients ?? omadaData?.clients ?? [];
   const sortedClients = [...activeClients].sort((a, b) => {
     if (clientSort === "name") return a.name.localeCompare(b.name);
@@ -270,560 +325,298 @@ export default function DeviceDetailPage({
     if (clientSort === "band") return ((a as OmadaClient).band ?? "").localeCompare((b as OmadaClient).band ?? "");
     if (clientSort === "uptime") return ((b as OmadaClient).uptime ?? 0) - ((a as OmadaClient).uptime ?? 0);
     if (clientSort === "connectedAt") return new Date((b as UnifiClient).connectedAt ?? 0).getTime() - new Date((a as UnifiClient).connectedAt ?? 0).getTime();
-    return (b.signal ?? -200) - (a.signal ?? -200); // strongest first (default)
+    return (b.signal ?? -200) - (a.signal ?? -200); // sinal mais forte primeiro (padrão)
   });
 
   const reversedHistory = [...history].reverse();
   const historyVisible = historyExpanded ? reversedHistory : reversedHistory.slice(0, 20);
+  const apData = unifiData ?? omadaData;
+  const weakClients = [...(unifiData?.clients ?? []), ...(omadaData?.clients ?? [])].filter((c) => c.signal != null && c.signal < -80);
+  const cpu = status?.cpuLoad ?? unifiData?.cpuLoad ?? null;
+  const mem = status?.memoryUsed ?? unifiData?.memoryUsed ?? null;
+  const protocols = [
+    device.pingEnabled && "Ping",
+    device.httpEnabled && `HTTP :${device.httpPort ?? 80}`,
+    device.snmpEnabled && "SNMP",
+    device.routerosEnabled && "RouterOS API",
+    device.unifiEnabled && (unifiError ? "UniFi API ✖" : "UniFi API"),
+    (device as Device & { omadaEnabled?: boolean }).omadaEnabled && (omadaError ? "Omada API ✖" : "Omada API"),
+    device.nvrEnabled && "Monitor NVR",
+  ].filter(Boolean) as string[];
 
+  const actions = (
+    <>
+      <Link href={`/reports?device=${id}`} className="btn">relatório</Link>
+      <button type="button" className="btn" onClick={handleCheck} disabled={isChecking}>
+        <kbd>r</kbd> {isChecking ? "verificando…" : "verificar agora"}
+      </button>
+      <Link href={`/devices/${id}/edit`} className="btn"><kbd>e</kbd> editar</Link>
+      <AlertDialog>
+        <AlertDialogTrigger render={<button type="button" className="btn danger">remover</button>} />
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover dispositivo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Todo o histórico de monitoramento será apagado. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Remover</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 
   return (
-    <>
-      <Topbar
-        title={device.name}
-        badge={<StatusBadge isOnline={status?.isOnline ?? false} />}
-        subtitle={`${device.ip}${device.location ? ` · ${device.location}` : ''}`}
-        back="/devices"
-        backLabel="Dispositivos"
-      >
-        <Link href={`/reports?device=${id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-          <FileText className="h-4 w-4 mr-1" />
-          Relatório
-        </Link>
-        <Button variant="outline" size="sm" onClick={handleCheck} disabled={isChecking}>
-          <RefreshCw className={`h-4 w-4 mr-1 ${isChecking ? "animate-spin" : ""}`} />
-          {isChecking ? "Verificando..." : "Verificar agora"}
-        </Button>
-        <Link href={`/devices/${id}/edit`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-          <Pencil className="h-4 w-4 mr-1" />
-          Editar
-        </Link>
-        <AlertDialog>
-          <AlertDialogTrigger
-            render={
-              <Button variant="destructive" size="sm">
-                <Trash2 className="h-4 w-4 mr-1" />
-                Remover
-              </Button>
-            }
-          />
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Remover dispositivo?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Todo o histórico de monitoramento será apagado. Esta ação não pode ser desfeita.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete}>Remover</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </Topbar>
-
-      <div className="p-7 space-y-6">
-        {/* Row 1: 4 metric cards always on same line */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <MetricCard
-            icon={Wifi}
-            label="Ping"
-            value={formatResponseTime(status?.pingMs)}
-            color="text-[var(--chart-1)]"
-          />
-          <MetricCard
-            icon={Clock}
-            label="Uptime"
-            value={status?.uptime != null ? formatUptime(status.uptime) : unifiData?.uptime != null ? formatUptime(unifiData.uptime) : "—"}
-            color="text-success"
-          />
-          <MetricCard
-            icon={Cpu}
-            label="CPU"
-            value={
-              status?.cpuLoad != null ? `${status.cpuLoad.toFixed(1)}%`
-              : unifiData?.cpuLoad != null ? `${unifiData.cpuLoad.toFixed(1)}%`
-              : "—"
-            }
-            color="text-warning"
-          />
-          <MetricCard
-            icon={MemoryStick}
-            label="Memória"
-            value={
-              status?.memoryUsed != null ? `${status.memoryUsed.toFixed(1)}%`
-              : unifiData?.memoryUsed != null ? `${unifiData.memoryUsed.toFixed(1)}%`
-              : "—"
-            }
-            color="text-[var(--chart-4)]"
-          />
-        </div>
-
-        {/* Row 2 (UniFi/Omada): bandwidth + clients + http */}
-        {(unifiData != null || omadaData != null || status?.httpOk != null) && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {(unifiData ?? omadaData) != null && (() => {
-              const apData = unifiData ?? omadaData!;
-              return (
-                <>
-                  <MetricCard
-                    icon={ArrowDownToLine}
-                    label="Downlink"
-                    value={formatBps(apData.uplinkRxBps)}
-                    color="text-[var(--chart-2)]"
-                  />
-                  <MetricCard
-                    icon={ArrowUpFromLine}
-                    label="Uplink"
-                    value={formatBps(apData.uplinkTxBps)}
-                    color="text-[var(--chart-3)]"
-                  />
-                  <MetricCard
-                    icon={Users}
-                    label="Clientes"
-                    value={String(apData.totalClients)}
-                    color="text-[var(--chart-5)]"
-                  />
-                </>
-              );
-            })()}
-            {status?.httpOk != null && (
-              <MetricCard
-                icon={Globe}
-                label="HTTP"
-                value={status.httpOk ? "OK" : "Falha"}
-                color={status.httpOk ? "text-success" : "text-destructive"}
-              />
-            )}
-          </div>
+    <DevPage
+      title={device.name}
+      sub={
+        <>
+          <StatusBadge isOnline={status?.isOnline ?? false} acknowledged={!status?.isOnline && !!device.offlineAcknowledgedAt} />{" "}
+          {device.ip}{device.location ? ` · ${device.location}` : ""}
+        </>
+      }
+      back="/devices"
+      backLabel="dispositivos"
+      live
+      lastUpdated={lastUpdated}
+      actions={actions}
+      hints={HINTS}
+      help={HELP}
+      helpOpen={help}
+      onHelpClose={() => setHelp(false)}
+    >
+      <div className="d-stack">
+        {/* Alertas: cada um com glifo + texto */}
+        {unifiError && <Alert tone="crit" title="Falha na conexão com o controlador UniFi">{unifiError}</Alert>}
+        {omadaError && <Alert tone="crit" title="Falha na conexão com o controlador Omada">{omadaError}</Alert>}
+        {weakClients.length > 0 && (
+          <Alert tone="warn" title={`${weakClients.length} cliente${weakClients.length !== 1 ? "s" : ""} com sinal fraco`}>
+            {weakClients.map((c) => `${c.name} (${c.signal} dBm)`).join(", ")}
+          </Alert>
         )}
 
-        {/* AP hardware badges (UniFi or Omada) */}
-        {(unifiData ?? omadaData) && (() => {
-          const apData = unifiData ?? omadaData!;
-          return (apData.model || apData.firmware) ? (
-            <div className="flex flex-wrap gap-2">
-              {apData.model && (
-                <Badge variant="outline" className="gap-1 text-xs">
-                  <Radio className="h-3 w-3" />
-                  {apData.model}
-                </Badge>
-              )}
-              {apData.firmware && (
-                <Badge variant="outline" className="text-xs text-muted-foreground">
-                  fw {apData.firmware}
-                </Badge>
+        <Panel title="estado" sub={protocols.join(" · ") || undefined} color={status?.isOnline ? "ok" : "crit"} hot={!status?.isOnline && !device.offlineAcknowledgedAt}>
+          <div className="d-tiles">
+            <Tile label="ping" value={formatResponseTime(status?.pingMs)} />
+            <Tile label="uptime" value={status?.uptime != null ? formatUptime(status.uptime) : unifiData?.uptime != null ? formatUptime(unifiData.uptime) : "—"} />
+            <div className="d-tile"><div className="k">cpu</div><div className="v" style={{ fontSize: 13 }}><Usage pct={cpu} /></div></div>
+            <div className="d-tile"><div className="k">memória</div><div className="v" style={{ fontSize: 13 }}><Usage pct={mem} /></div></div>
+            {apData && <Tile label="downlink" value={formatBps(apData.uplinkRxBps)} />}
+            {apData && <Tile label="uplink" value={formatBps(apData.uplinkTxBps)} />}
+            {apData && <Tile label="clientes" value={String(apData.totalClients)} />}
+            {status?.httpOk != null && <Tile label="http" value={status.httpOk ? "● OK" : "✖ Falha"} cls={status.httpOk ? "ok" : "crit"} />}
+          </div>
+          {(apData?.model || apData?.firmware || (device.type === "CAMERA" && parentNvr)) && (
+            <div className="dim" style={{ marginTop: 8 }}>
+              {apData?.model && <span>modelo {apData.model} </span>}
+              {apData?.firmware && <span>· fw {apData.firmware} </span>}
+              {device.type === "CAMERA" && parentNvr && (
+                <span>
+                  Vinculada ao canal {(device as Device & { parentNvrChannel?: number | null }).parentNvrChannel} de{" "}
+                  <Link href={`/devices/${parentNvr.id}`} style={{ color: "var(--info)" }}>{parentNvr.name}</Link>
+                </span>
               )}
             </div>
-          ) : null;
-        })()}
-
-        {/* Protocol badges */}
-        <div className="flex flex-wrap gap-2">
-          {device.pingEnabled && <Badge variant="outline">Ping</Badge>}
-          {device.httpEnabled && <Badge variant="outline">HTTP :{device.httpPort ?? 80}</Badge>}
-          {device.snmpEnabled && <Badge variant="outline">SNMP</Badge>}
-          {device.routerosEnabled && <Badge variant="outline">RouterOS API</Badge>}
-          {device.unifiEnabled && (
-            <Badge variant="outline" className={unifiError ? "border-destructive text-destructive" : ""}>
-              UniFi API
-            </Badge>
           )}
-          {(device as Device & { omadaEnabled?: boolean }).omadaEnabled && (
-            <Badge variant="outline" className={omadaError ? "border-destructive text-destructive" : ""}>
-              Omada API
-            </Badge>
-          )}
-          {device.nvrEnabled && <Badge variant="outline">Monitor NVR</Badge>}
-        </div>
-
-        {/* Vínculo câmera → NVR */}
-        {device.type === "CAMERA" && parentNvr && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Video className="h-3.5 w-3.5" />
-            Vinculada ao canal {(device as Device & { parentNvrChannel?: number | null }).parentNvrChannel} de{" "}
-            <Link href={`/devices/${parentNvr.id}`} className="text-primary hover:underline">{parentNvr.name}</Link>
-          </div>
-        )}
-
-        {/* UniFi connection error alert */}
-        {unifiError && (
-          <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-destructive">Falha na conexão com o controlador UniFi</p>
-              <p className="text-xs text-muted-foreground mt-0.5 wrap-break-word">{unifiError}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Omada connection error alert */}
-        {omadaError && (
-          <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-destructive">Falha na conexão com o controlador Omada</p>
-              <p className="text-xs text-muted-foreground mt-0.5 wrap-break-word">{omadaError}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Weak signal alert */}
-        {(() => {
-          const weakClients = [...(unifiData?.clients ?? []), ...(omadaData?.clients ?? [])].filter((c) => c.signal != null && c.signal < -80);
-          if (weakClients.length === 0) return null;
-          return (
-            <div className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3">
-              <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-warning">
-                  {weakClients.length} cliente{weakClients.length !== 1 ? "s" : ""} com sinal fraco
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {weakClients.map((c) => `${c.name} (${c.signal} dBm)`).join(", ")}
-                </p>
-              </div>
-            </div>
-          );
-        })()}
+        </Panel>
 
         {/* Monitor NVR: canais de gravação + saúde de disco */}
         {device.type === "DVR" && device.nvrEnabled && (
-          <div className="space-y-3">
-            <h2 className="font-semibold flex items-center gap-2">
-              <Video className="h-4 w-4" />
-              Canais de gravação
-              {status?.nvrChannelsTotal != null && (
-                <Badge variant="secondary" className="text-xs">
-                  {status.nvrChannelsOk ?? 0}/{status.nvrChannelsTotal} OK
-                </Badge>
+          <Panel
+            title="canais de gravação"
+            sub={status?.nvrChannelsTotal != null ? `${status.nvrChannelsOk ?? 0}/${status.nvrChannelsTotal} ok` : undefined}
+            color={nvrIssues.length > 0 ? "warn" : "ok"}
+          >
+            <div className="d-stack" style={{ gap: 10, paddingBottom: 0 }}>
+              {status?.nvrDiskError && <Alert tone="crit" title="Saúde de disco indisponível">{status.nvrDiskError}</Alert>}
+
+              {!!status?.nvrDiskData && typeof status.nvrDiskData === "object" && (
+                <div>
+                  <div className="dim" style={{ marginBottom: 4 }}>armazenamento (dados brutos do NVR)</div>
+                  <dl className="kv" style={{ gridTemplateColumns: "minmax(10ch, 24ch) 1fr" }}>
+                    {Object.entries(status.nvrDiskData as Record<string, string>).slice(0, 12).map(([k, v]) => (
+                      <div key={k} style={{ display: "contents" }}>
+                        <dt>{k}</dt>
+                        <dd>{String(v)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
               )}
-            </h2>
 
-            {status?.nvrDiskError && (
-              <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-destructive">Saúde de disco indisponível</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 wrap-break-word">{status.nvrDiskError}</p>
+              {nvrIssues.length === 0 ? (
+                <div className="dim"><span className="ok">●</span> nenhum problema em aberto nos canais.</div>
+              ) : (
+                <div className="d-wrap">
+                  <table className="d-tbl static" aria-label="Canais com problema de gravação">
+                    <thead>
+                      <tr><th>Canal</th><th>Problema</th><th>Detalhe</th><th>Detectado em</th><th>Câmera vinculada</th></tr>
+                    </thead>
+                    <tbody>
+                      {nvrIssues.map((issue) => {
+                        const camera = linkedCameras.find(
+                          (c) => (c as Device & { parentNvrChannel?: number | null }).parentNvrChannel === issue.channel
+                        );
+                        const severe = issue.issueType === "not_recording_now" || issue.issueType === "no_recordings" || issue.issueType === "unreachable";
+                        return (
+                          <tr key={issue.id}>
+                            <td className="name">{issue.channel} · {issue.channelName}</td>
+                            <td className={severe ? "crit" : "warn"}>{severe ? "✖" : "▲"} {issue.issueType}</td>
+                            <td className="dim" title={issue.detail}>{issue.detail}</td>
+                            <td className="dim">{fmtDateTime(issue.detectedAt)}</td>
+                            <td>
+                              {camera ? <Link href={`/devices/${camera.id}`} style={{ color: "var(--info)" }}>{camera.name}</Link> : <span className="faint">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            )}
-
-            {!!status?.nvrDiskData && typeof status.nvrDiskData === "object" && (
-              <div className="rounded-lg border bg-card px-4 py-3 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-1.5">
-                  <HardDrive className="h-3.5 w-3.5" />
-                  Armazenamento (dados brutos do NVD)
-                </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] font-mono">
-                  {Object.entries(status.nvrDiskData as Record<string, string>).slice(0, 12).map(([k, v]) => (
-                    <div key={k} className="flex justify-between gap-2 truncate">
-                      <span className="text-muted-foreground truncate">{k}</span>
-                      <span className="truncate">{String(v)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {nvrIssues.length === 0 ? (
-              <div className="rounded-lg border bg-card px-4 py-3 text-xs text-muted-foreground">
-                Nenhum problema em aberto nos canais.
-              </div>
-            ) : (
-              <div className="rounded-lg border bg-card overflow-x-auto">
-                <table className="w-full text-xs" aria-label="Canais com problema de gravação">
-                  <thead className="bg-muted/40 border-b">
-                    <tr>
-                      <th className="text-left px-4 py-2.5 font-medium">Canal</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Problema</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Detalhe</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Detectado em</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Câmera vinculada</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {nvrIssues.map((issue) => {
-                      const camera = linkedCameras.find(
-                        (c) => (c as Device & { parentNvrChannel?: number | null }).parentNvrChannel === issue.channel
-                      );
-                      const severe = issue.issueType === "not_recording_now" || issue.issueType === "no_recordings" || issue.issueType === "unreachable";
-                      return (
-                        <tr key={issue.id} className="hover:bg-muted/10">
-                          <td className="px-4 py-2 font-medium">{issue.channel} · {issue.channelName}</td>
-                          <td className="px-4 py-2">
-                            <Badge variant="outline" className={severe ? "border-destructive text-destructive" : "border-warning text-warning"}>
-                              {issue.issueType}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-2 text-muted-foreground max-w-80 truncate" title={issue.detail}>{issue.detail}</td>
-                          <td className="px-4 py-2 font-mono text-muted-foreground">{fmtDateTime(issue.detectedAt)}</td>
-                          <td className="px-4 py-2">
-                            {camera ? (
-                              <Link href={`/devices/${camera.id}`} className="text-primary hover:underline">
-                                {camera.name}
-                              </Link>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </Panel>
         )}
 
-        <Separator />
-
-        {/* Charts */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="font-semibold flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              Métricas
-            </h2>
-            <div className="flex items-center gap-0.5">
+        {/* Gráficos */}
+        <Panel
+          title="métricas"
+          sub={hours === 168 ? "7d" : `${hours}h`}
+          color="info"
+          right={
+            <span className="d-seg" role="group" aria-label="Período">
               {HOUR_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setHours(opt.value)}
-                  className={`px-2.5 h-6 rounded text-[11px] font-semibold transition-colors ${
-                    hours === opt.value
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  }`}
-                >
+                <button key={opt.value} type="button" aria-pressed={hours === opt.value} onClick={() => setHours(opt.value)}>
                   {opt.label}
                 </button>
               ))}
-            </div>
-          </div>
-
-          <Card>
-            <CardContent className="pt-4">
+            </span>
+          }
+        >
+          <div className="d-stack" style={{ paddingBottom: 0 }}>
+            <div>
+              <div className="dim" style={{ marginBottom: 4 }}>latência (ms)</div>
               {loading ? (
-                <Skeleton className="h-44 w-full" />
+                <DevLoading rows={4} />
               ) : history.length >= 2 ? (
                 <PingChart history={history} />
               ) : (
-                <div className="h-44 flex items-center justify-center">
-                  <p className="text-xs text-muted-foreground">Sem dados para o período</p>
-                </div>
+                <DevEmpty title="Sem dados para o período" />
               )}
-            </CardContent>
-          </Card>
-
-          {hasSystemMetrics && history.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardContent className="pt-4">
-                  {loading ? <Skeleton className="h-44 w-full" /> : (
-                    <MetricsChart history={history} metric="cpuLoad" label="CPU (%)" color="var(--warning)" unit="%" />
-                  )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4">
-                  {loading ? <Skeleton className="h-44 w-full" /> : (
-                    <MetricsChart history={history} metric="memoryUsed" label="Memória (%)" color="var(--chart-4)" unit="%" />
-                  )}
-                </CardContent>
-              </Card>
             </div>
-          )}
-        </div>
+            {hasSystemMetrics && history.length > 0 && (
+              <div className="d-cols">
+                <MetricsChart history={history} metric="cpuLoad" label="CPU (%)" color="var(--warning)" unit="%" />
+                <MetricsChart history={history} metric="memoryUsed" label="Memória (%)" color="var(--chart-4)" unit="%" />
+              </div>
+            )}
+          </div>
+        </Panel>
 
-        {/* SSIDs (UniFi or Omada) */}
-        {(unifiData ?? omadaData) && (() => {
-          const apData = unifiData ?? omadaData!;
-          const ssids = apData.ssids;
-          if (ssids.length === 0) return null;
+        {/* SSIDs (UniFi ou Omada) */}
+        {apData && apData.ssids.length > 0 && (() => {
           const showExtended = isInformApi && unifiData != null;
           return (
-            <div className="space-y-3">
-              <h2 className="font-semibold flex items-center gap-2">
-                <Wifi className="h-4 w-4" />
-                Redes Wi-Fi
-              </h2>
-              <div className="rounded-lg border bg-card overflow-x-auto">
-                <table className="w-full text-xs" aria-label="Redes Wi-Fi">
-                  <thead className="bg-muted/40 border-b">
+            <Panel title="redes wi-fi" sub={`${apData.ssids.length}`} color="accent2">
+              <div className="d-wrap">
+                <table className="d-tbl static" aria-label="Redes Wi-Fi">
+                  <thead>
                     <tr>
-                      <th className="text-left px-4 py-2.5 font-medium">SSID</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Banda</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Canal</th>
-                      <th className="text-right px-4 py-2.5 font-medium">Clientes</th>
-                      {showExtended && <th className="text-right px-4 py-2.5 font-medium">RX Total</th>}
-                      {showExtended && <th className="text-right px-4 py-2.5 font-medium">TX Total</th>}
+                      <th>SSID</th><th>Banda</th><th>Canal</th><th className="r">Clientes</th>
+                      {showExtended && <th className="r">RX total</th>}
+                      {showExtended && <th className="r">TX total</th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
-                    {ssids.map((s, i) => (
-                      <tr key={i} className="hover:bg-muted/10">
-                        <td className="px-4 py-2 font-medium">{s.ssid}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant="secondary" className="text-[10px] font-mono">{s.band}</Badge>
-                        </td>
-                        <td className="px-4 py-2 font-mono text-muted-foreground">
+                  <tbody>
+                    {apData.ssids.map((s, i) => (
+                      <tr key={i}>
+                        <td className="name">{s.ssid}</td>
+                        <td><span className="d-tag">{s.band}</span></td>
+                        <td className="dim">
                           {omadaData
                             ? ((s as OmadaSSID).channel ?? "—")
                             : ((s as UnifiSSID).channel > 0 ? `ch ${(s as UnifiSSID).channel}` : "—")}
                         </td>
-                        <td className="px-4 py-2 text-right font-mono">{s.clients}</td>
-                        {showExtended && <td className="px-4 py-2 text-right font-mono text-muted-foreground">{formatBytes((s as UnifiSSID).rxBytes)}</td>}
-                        {showExtended && <td className="px-4 py-2 text-right font-mono text-muted-foreground">{formatBytes((s as UnifiSSID).txBytes)}</td>}
+                        <td className="r">{s.clients}</td>
+                        {showExtended && <td className="r dim">{formatBytes((s as UnifiSSID).rxBytes)}</td>}
+                        {showExtended && <td className="r dim">{formatBytes((s as UnifiSSID).txBytes)}</td>}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </Panel>
           );
         })()}
 
-        {/* Collapsible client table (UniFi or Omada) */}
+        {/* Clientes Wi-Fi (recolhível) */}
         {activeClients.length > 0 && (
-          <div className="space-y-3">
-            <button
-              onClick={() => setClientsExpanded((v) => !v)}
-              aria-expanded={clientsExpanded}
-              className="w-full flex items-center justify-between font-semibold hover:text-foreground/80 transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <Users className="h-4 w-4" aria-hidden="true" />
-                Clientes conectados
-                <Badge variant="secondary" className="text-xs">{activeClients.length}</Badge>
-              </span>
-              {clientsExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+          <Panel title="clientes conectados" sub={`${activeClients.length}`} color="accent2">
+            <button type="button" className="d-toggle" onClick={() => setClientsExpanded((v) => !v)} aria-expanded={clientsExpanded}>
+              {clientsExpanded ? "▾ ocultar clientes" : "▸ mostrar clientes"}
             </button>
             {clientsExpanded && (
-              <div className="rounded-lg border bg-card overflow-x-auto">
-                <table className="w-full text-xs" aria-label="Clientes Wi-Fi conectados">
-                  <thead className="bg-muted/40 border-b">
+              <div className="d-wrap" style={{ marginTop: 8 }}>
+                <table className="d-tbl static" aria-label="Clientes Wi-Fi conectados">
+                  <thead>
                     <tr>
-                      <th className="px-4 py-2.5 text-left">
-                        <SortButton label="Nome / MAC" active={clientSort === "name"} onClick={() => setClientSort("name")} />
-                      </th>
-                      <th className="px-4 py-2.5 text-left">
-                        <SortButton label="IP" active={clientSort === "ip"} onClick={() => setClientSort("ip")} />
-                      </th>
-                      {(isInformApi || omadaData) && (
-                        <th className="px-4 py-2.5 text-left">
-                          <SortButton label="Sinal" active={clientSort === "signal"} onClick={() => setClientSort("signal")} />
-                        </th>
-                      )}
-                      {(isInformApi || omadaData) && (
-                        <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">SSID</th>
-                      )}
-                      {omadaData && (
-                        <th className="px-4 py-2.5 text-left">
-                          <SortButton label="Banda" active={clientSort === "band"} onClick={() => setClientSort("band")} />
-                        </th>
-                      )}
-                      {omadaData && (
-                        <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Wi-Fi</th>
-                      )}
-                      {omadaData && (
-                        <th className="px-4 py-2.5 text-left">
-                          <SortButton label="Conectado há" active={clientSort === "uptime"} onClick={() => setClientSort("uptime")} />
-                        </th>
-                      )}
-                      {isInformApi && (
-                        <th className="px-4 py-2.5 text-left">
-                          <SortButton label="Conectado em" active={clientSort === "connectedAt"} onClick={() => setClientSort("connectedAt")} />
-                        </th>
-                      )}
+                      <th><SortButton label="Nome / MAC" active={clientSort === "name"} onClick={() => setClientSort("name")} /></th>
+                      <th><SortButton label="IP" active={clientSort === "ip"} onClick={() => setClientSort("ip")} /></th>
+                      {(isInformApi || omadaData) && <th><SortButton label="Sinal" active={clientSort === "signal"} onClick={() => setClientSort("signal")} /></th>}
+                      {(isInformApi || omadaData) && <th>SSID</th>}
+                      {omadaData && <th><SortButton label="Banda" active={clientSort === "band"} onClick={() => setClientSort("band")} /></th>}
+                      {omadaData && <th>Wi-Fi</th>}
+                      {omadaData && <th><SortButton label="Conectado há" active={clientSort === "uptime"} onClick={() => setClientSort("uptime")} /></th>}
+                      {isInformApi && <th><SortButton label="Conectado em" active={clientSort === "connectedAt"} onClick={() => setClientSort("connectedAt")} /></th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
+                  <tbody>
                     {sortedClients.map((c) => (
-                      <tr key={c.id} className="hover:bg-muted/10">
-                        <td className="px-4 py-2 font-medium max-w-50 truncate" title={c.name}>{c.name}</td>
-                        <td className="px-4 py-2 font-mono text-muted-foreground">{c.ip ?? "—"}</td>
+                      <tr key={c.id}>
+                        <td className="name" title={c.name}>{c.name}</td>
+                        <td className="dim">{c.ip ?? "—"}</td>
                         {(isInformApi || omadaData) && (
-                          <td className="px-4 py-2">
-                            {c.signal != null
-                              ? <SignalBadge dbm={c.signal} snr={omadaData ? (c as OmadaClient).snr : null} />
-                              : "—"}
-                          </td>
+                          <td>{c.signal != null ? <SignalCell dbm={c.signal} snr={omadaData ? (c as OmadaClient).snr : null} /> : "—"}</td>
                         )}
-                        {(isInformApi || omadaData) && (
-                          <td className="px-4 py-2 text-muted-foreground">{c.ssid ?? "—"}</td>
-                        )}
-                        {omadaData && (
-                          <td className="px-4 py-2 text-muted-foreground">{(c as OmadaClient).band ?? "—"}</td>
-                        )}
-                        {omadaData && (
-                          <td className="px-4 py-2 text-muted-foreground font-mono">
-                            {wifiGenLabel((c as OmadaClient).wifiMode)}
-                          </td>
-                        )}
-                        {omadaData && (
-                          <td className="px-4 py-2 font-mono text-muted-foreground">
-                            {formatUptime((c as OmadaClient).uptime)}
-                          </td>
-                        )}
-                        {isInformApi && (
-                          <td className="px-4 py-2 font-mono text-muted-foreground">
-                            {(c as UnifiClient).connectedAt ? fmtDateTime((c as UnifiClient).connectedAt!) : "—"}
-                          </td>
-                        )}
+                        {(isInformApi || omadaData) && <td className="dim">{c.ssid ?? "—"}</td>}
+                        {omadaData && <td className="dim">{(c as OmadaClient).band ?? "—"}</td>}
+                        {omadaData && <td className="dim">{wifiGenLabel((c as OmadaClient).wifiMode)}</td>}
+                        {omadaData && <td className="dim">{formatUptime((c as OmadaClient).uptime)}</td>}
+                        {isInformApi && <td className="dim">{(c as UnifiClient).connectedAt ? fmtDateTime((c as UnifiClient).connectedAt!) : "—"}</td>}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-          </div>
+          </Panel>
         )}
 
-        {/* DHCP clients (RouterOS) */}
+        {/* Clientes DHCP (RouterOS) */}
         {device.routerosEnabled && (
-          <div className="space-y-3">
-            <button
-              onClick={() => setDhcpExpanded((v) => !v)}
-              aria-expanded={dhcpExpanded}
-              className="w-full flex items-center justify-between font-semibold hover:text-foreground/80 transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <Users className="h-4 w-4" aria-hidden="true" />
-                Clientes DHCP
-                {routerosData !== null && (
-                  <Badge variant="secondary" className="text-xs">{routerosData.clients.length}</Badge>
-                )}
-              </span>
-              {dhcpExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+          <Panel title="clientes dhcp" sub={routerosData !== null ? `${routerosData.clients.length}` : undefined} color="accent2">
+            <button type="button" className="d-toggle" onClick={() => setDhcpExpanded((v) => !v)} aria-expanded={dhcpExpanded}>
+              {dhcpExpanded ? "▾ ocultar clientes" : "▸ mostrar clientes"}
             </button>
             {dhcpExpanded && (
-              <div className="rounded-lg border bg-card overflow-x-auto">
+              <div className="d-wrap" style={{ marginTop: 8 }}>
                 {routerosData === null ? (
-                  <p className="px-4 py-3 text-xs text-muted-foreground">Aguardando primeira coleta...</p>
+                  <div className="dim">◌ aguardando primeira coleta…</div>
                 ) : routerosData.clients.length === 0 ? (
-                  <p className="px-4 py-3 text-xs text-muted-foreground">Nenhum cliente DHCP ativo.</p>
+                  <div className="dim">░ nenhum cliente DHCP ativo.</div>
                 ) : (
-                  <table className="w-full text-xs" aria-label="Clientes DHCP ativos">
-                    <thead className="bg-muted/40 border-b">
-                      <tr>
-                        <th className="text-left px-4 py-2.5 font-medium">Hostname</th>
-                        <th className="text-left px-4 py-2.5 font-medium">IP</th>
-                        <th className="text-left px-4 py-2.5 font-medium">MAC</th>
-                        <th className="text-left px-4 py-2.5 font-medium">Servidor</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
+                  <table className="d-tbl static" aria-label="Clientes DHCP ativos">
+                    <thead><tr><th>Hostname</th><th>IP</th><th>MAC</th><th>Servidor</th></tr></thead>
+                    <tbody>
                       {routerosData.clients.map((c) => (
-                        <tr key={c.mac} className="hover:bg-muted/10">
-                          <td className="px-4 py-2 font-medium">
-                            {c.hostname ?? <span className="text-muted-foreground italic">sem nome</span>}
-                          </td>
-                          <td className="px-4 py-2 font-mono text-muted-foreground">{c.ip || "—"}</td>
-                          <td className="px-4 py-2 font-mono text-[10px] text-muted-foreground">{c.mac}</td>
-                          <td className="px-4 py-2 text-muted-foreground">{c.server ?? "—"}</td>
+                        <tr key={c.mac}>
+                          <td className="name">{c.hostname ?? <span className="dim">sem nome</span>}</td>
+                          <td className="dim">{c.ip || "—"}</td>
+                          <td className="dim">{c.mac}</td>
+                          <td className="dim">{c.server ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -831,88 +624,59 @@ export default function DeviceDetailPage({
                 )}
               </div>
             )}
-          </div>
+          </Panel>
         )}
 
-        {/* History table — 20 items default, collapsible */}
+        {/* Histórico recente — 20 itens, expansível */}
         {history.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="font-semibold">Histórico recente</h2>
-            <div className="rounded-lg border bg-card overflow-x-auto">
-              <table className="w-full text-xs" aria-label="Histórico de status do dispositivo">
-                <thead className="bg-muted/40 border-b">
+          <Panel title="histórico recente" sub={`${historyVisible.length}/${reversedHistory.length}`} color="dim">
+            <div className="d-wrap">
+              <table className="d-tbl static" aria-label="Histórico de status do dispositivo">
+                <thead>
                   <tr>
-                    <th className="text-left px-4 py-2.5 font-medium">Data/Hora</th>
-                    <th className="text-left px-4 py-2.5 font-medium">Status</th>
-                    <th className="text-left px-4 py-2.5 font-medium">Ping</th>
-                    {hasSystemMetrics && (
-                      <>
-                        <th className="text-left px-4 py-2.5 font-medium">CPU</th>
-                        <th className="text-left px-4 py-2.5 font-medium">Memória</th>
-                      </>
-                    )}
+                    <th>Data/Hora</th><th>Status</th><th>Ping</th>
+                    {hasSystemMetrics && (<><th>CPU</th><th>Memória</th></>)}
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody>
                   {historyVisible.map((h) => (
-                    <tr key={h.id} className="hover:bg-muted/10">
-                      <td className="px-4 py-2 font-mono text-muted-foreground">
-                        {fmtDateTime(h.timestamp)}
-                      </td>
-                      <td className="px-4 py-2">
-                        <StatusBadge isOnline={h.isOnline} />
-                      </td>
-                      <td className="px-4 py-2 font-mono">{formatResponseTime(h.pingMs)}</td>
-                      {hasSystemMetrics && (
-                        <>
-                          <td className="px-4 py-2 font-mono">{formatPercent(h.cpuLoad)}</td>
-                          <td className="px-4 py-2 font-mono">{formatPercent(h.memoryUsed)}</td>
-                        </>
-                      )}
+                    <tr key={h.id}>
+                      <td className="dim">{fmtDateTime(h.timestamp)}</td>
+                      <td><StatusBadge isOnline={h.isOnline} /></td>
+                      <td>{formatResponseTime(h.pingMs)}</td>
+                      {hasSystemMetrics && (<><td>{formatPercent(h.cpuLoad)}</td><td>{formatPercent(h.memoryUsed)}</td></>)}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             {reversedHistory.length > 20 && (
-              <button
-                onClick={() => setHistoryExpanded((v) => !v)}
-                aria-expanded={historyExpanded}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto"
-              >
-                {historyExpanded ? (
-                  <><ChevronUp className="h-3.5 w-3.5" /> Mostrar menos</>
-                ) : (
-                  <><ChevronDown className="h-3.5 w-3.5" /> Ver todos os {reversedHistory.length} registros</>
-                )}
-              </button>
+              <div style={{ textAlign: "center", marginTop: 8 }}>
+                <button type="button" className="btn" onClick={() => setHistoryExpanded((v) => !v)} aria-expanded={historyExpanded}>
+                  {historyExpanded ? "mostrar menos" : `ver todos os ${reversedHistory.length} registros`}
+                </button>
+              </div>
             )}
-          </div>
+          </Panel>
         )}
 
         {device.notes && (
-          <>
-            <Separator />
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Observações</p>
-              <p className="text-sm whitespace-pre-wrap">{device.notes}</p>
-            </div>
-          </>
+          <Panel title="observações" color="dim">
+            <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{device.notes}</p>
+          </Panel>
         )}
       </div>
-    </>
+    </DevPage>
   );
 }
 
-function SignalBadge({ dbm, snr }: { dbm: number; snr?: number | null }) {
-  const color =
-    dbm >= -60 ? "text-success" :
-    dbm >= -75 ? "text-warning" :
-    "text-destructive";
+function SignalCell({ dbm, snr }: { dbm: number; snr?: number | null }) {
+  const cls = dbm >= -60 ? "ok" : dbm >= -75 ? "warn" : "crit";
+  const glyph = dbm >= -60 ? "●" : dbm >= -75 ? "▲" : "✖";
   return (
-    <span className="flex flex-col leading-tight">
-      <span className={`font-mono font-semibold ${color}`}>{dbm} dBm</span>
-      {snr != null && <span className="font-mono text-[10px] text-muted-foreground">SNR {snr} dB</span>}
+    <span>
+      <span className={cls}>{glyph} {dbm} dBm</span>
+      {snr != null && <span className="dim"> · SNR {snr} dB</span>}
     </span>
   );
 }
@@ -921,28 +685,4 @@ function wifiGenLabel(mode: number | null): string {
   if (mode == null) return "—";
   if (mode >= 4 && mode <= 7) return `Wi-Fi ${mode}`;
   return "—";
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="pt-3 pb-3 px-4">
-        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1.5">
-          <Icon className={`h-3 w-3 ${color}`} />
-          {label}
-        </p>
-        <p className="text-xl font-bold font-mono leading-tight truncate">{value}</p>
-      </CardContent>
-    </Card>
-  );
 }

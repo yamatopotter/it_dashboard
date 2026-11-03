@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Topbar } from "@/components/topbar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Panel } from "@/components/tui/panel";
+import { ErrorBox, SkeletonRows } from "@/components/tui/states";
 import { FileText, Printer, Loader2, Table2, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import { exportToPdf } from "@/lib/pdf-export";
 import { SITE_NAMES, isSiteKey } from "@/lib/modules";
@@ -104,26 +105,32 @@ export default function ReportsPage() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/reports?month=${month}&target=${target}`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "Erro ao carregar o relatório.");
-        setReport(null);
-        return;
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/reports?month=${month}&target=${target}`);
+        if (!alive) return;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setError(body.error ?? "Erro ao carregar o relatório.");
+          setReport(null);
+        } else {
+          setError(null);
+          setReport(await res.json());
+        }
+      } catch {
+        if (alive) setError("Erro de rede ao carregar o relatório.");
+      } finally {
+        if (alive) setLoading(false);
       }
-      setReport(await res.json());
-    } catch {
-      setError("Erro de rede ao carregar o relatório.");
-    } finally {
-      setLoading(false);
-    }
+    })();
+    return () => { alive = false; };
   }, [month, target]);
 
-  useEffect(() => { load(); }, [load]);
+  // Ao trocar mês/meta mostra o esqueleto até a resposta chegar.
+  function changeMonth(fn: (m: string) => string) { setLoading(true); setMonth(fn); }
+  function changeTarget(t: number) { setLoading(true); setTarget(t); }
 
   async function handleExportPdf() {
     if (!reportRef.current) return;
@@ -156,69 +163,60 @@ export default function ReportsPage() {
     <>
       <Topbar title="Disponibilidade mensal" icon={FileText} subtitle="Links de internet, rede e Wi-Fi — SLA do mês" />
 
-      <div className="p-7 space-y-6">
-        <div className="no-print flex flex-wrap items-end gap-3 p-4 bg-card border border-border rounded-xl">
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mês</p>
-            <div className="flex items-center gap-1">
-              <button aria-label="Mês anterior" onClick={() => setMonth(m => shiftMonth(m, -1))}
-                className="h-9 w-9 rounded-lg border border-border hover:bg-muted flex items-center justify-center">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <input
-                type="month"
-                aria-label="Selecionar mês"
-                value={month}
-                max={currentMonthKey()}
-                onChange={e => e.target.value && setMonth(e.target.value)}
-                className="h-9 px-3 rounded-lg border border-border bg-background text-sm"
-              />
-              <button aria-label="Próximo mês" disabled={isCurrent} onClick={() => setMonth(m => shiftMonth(m, 1))}
-                className="h-9 w-9 rounded-lg border border-border hover:bg-muted disabled:opacity-40 flex items-center justify-center">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Meta de disponibilidade</p>
-            <div className="flex gap-1">
-              {TARGETS.map(t => (
-                <button key={t} onClick={() => setTarget(t)}
-                  className={`px-3 h-9 rounded-lg text-sm font-medium border transition-colors ${
-                    target === t ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:bg-muted"
-                  }`}>
-                  {String(t).replace(".", ",")}%
+      <div className="flex flex-col gap-5 p-5">
+        <Panel title="parâmetros" color="accent2" className="no-print">
+          <div className="tui-btns" style={{ gap: 16, alignItems: "flex-end" }}>
+            <div className="tui-field">
+              <span className="tui-label">Mês</span>
+              <div className="tui-btns" style={{ gap: 4 }}>
+                <button type="button" className="tui-btn" aria-label="Mês anterior" onClick={() => changeMonth(m => shiftMonth(m, -1))}>
+                  <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
-              ))}
+                <input
+                  type="month"
+                  aria-label="Selecionar mês"
+                  className="tui-input"
+                  style={{ width: "auto" }}
+                  value={month}
+                  max={currentMonthKey()}
+                  onChange={e => e.target.value && changeMonth(() => e.target.value)}
+                />
+                <button type="button" className="tui-btn" aria-label="Próximo mês" disabled={isCurrent} onClick={() => changeMonth(m => shiftMonth(m, 1))}>
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            <div className="tui-field">
+              <span className="tui-label">Meta de disponibilidade</span>
+              <div className="tui-btns" style={{ gap: 4 }} role="group" aria-label="Meta de disponibilidade">
+                {TARGETS.map(t => (
+                  <button key={t} type="button" className="tui-btn" aria-pressed={target === t} onClick={() => changeTarget(t)}>
+                    {String(t).replace(".", ",")}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="tui-btns" style={{ marginLeft: "auto" }}>
+              <button type="button" className="tui-btn" onClick={handleExportPdf} disabled={!report || exportingPdf}>
+                {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Printer className="h-3.5 w-3.5" aria-hidden="true" />}
+                {exportingPdf ? "Gerando PDF..." : "Exportar PDF"}
+              </button>
+              <button type="button" className="tui-btn" onClick={handleDownloadCsv} disabled={!report}>
+                <Table2 className="h-3.5 w-3.5" aria-hidden="true" /> Exportar CSV
+              </button>
             </div>
           </div>
-
-          <div className="flex gap-2 ml-auto">
-            <button onClick={handleExportPdf} disabled={!report || exportingPdf}
-              className="h-9 px-4 rounded-lg border border-border text-sm font-medium hover:bg-muted disabled:opacity-50 flex items-center gap-2">
-              {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-              {exportingPdf ? "Gerando PDF..." : "Exportar PDF"}
-            </button>
-            <button onClick={handleDownloadCsv} disabled={!report}
-              className="h-9 px-4 rounded-lg border border-border text-sm font-medium hover:bg-muted disabled:opacity-50 flex items-center gap-2">
-              <Table2 className="h-4 w-4" /> Exportar CSV
-            </button>
-          </div>
-        </div>
+        </Panel>
 
         {error && (
-          <div role="alert" className="no-print px-4 py-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive font-medium">
-            {error}
+          <div className="no-print">
+            <ErrorBox message={error} />
           </div>
         )}
 
-        {loading && (
-          <div className="space-y-4">
-            <Skeleton className="h-24 w-full rounded-xl" />
-            <Skeleton className="h-64 w-full rounded-xl" />
-          </div>
-        )}
+        {loading && <SkeletonRows rows={6} />}
 
         {!loading && report && (
           <div ref={reportRef} className="space-y-6">

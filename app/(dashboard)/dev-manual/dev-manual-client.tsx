@@ -1,12 +1,13 @@
 "use client";
+/* eslint-disable react/no-unescaped-entities -- conteúdo de documentação com literais entre aspas */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Topbar } from "@/components/topbar";
 import {
   Code2, Server, Database, Shield, Cpu, Network, Key,
-  Zap, TestTube2, GitBranch, Settings, FileCode2, Terminal,
-  AlertTriangle, CheckCircle, Package, Layers, Menu, X,
-  ChevronRight, Lock, RefreshCw, Webhook,
+  Zap, TestTube2, GitBranch, Settings, Terminal,
+  Package, Layers, Menu, X,
+  ChevronRight, Lock, Webhook,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -127,7 +128,7 @@ function Sec({ id, children }: { id: string; children: React.ReactNode }) {
 function H1({ icon: Icon, children }: { icon: React.ElementType; children: React.ReactNode }) {
   return (
     <h2 className="text-2xl font-bold text-foreground mb-5 flex items-center gap-3 border-b border-border pb-3">
-      <Icon className="h-6 w-6 text-primary shrink-0" aria-hidden="true" />
+      <Icon className="h-6 w-6 text-[var(--info)] shrink-0" aria-hidden="true" />
       {children}
     </h2>
   );
@@ -136,7 +137,7 @@ function H1({ icon: Icon, children }: { icon: React.ElementType; children: React
 function H2({ id, children }: { id: string; children: React.ReactNode }) {
   return (
     <h3 id={id} className="scroll-mt-6 text-base font-bold text-foreground mt-9 mb-3 flex items-center gap-2">
-      <ChevronRight className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+      <ChevronRight className="h-4 w-4 text-[var(--info)] shrink-0" aria-hidden="true" />
       {children}
     </h3>
   );
@@ -153,7 +154,7 @@ function UL({ children }: { children: React.ReactNode }) {
 function LI({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex gap-2 text-[14px] text-muted-foreground leading-relaxed">
-      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--accent-2)] shrink-0" />
       <span>{children}</span>
     </li>
   );
@@ -161,7 +162,7 @@ function LI({ children }: { children: React.ReactNode }) {
 
 function Code({ children }: { children: React.ReactNode }) {
   return (
-    <code className="font-mono text-[12.5px] bg-muted px-1.5 py-0.5 rounded text-accent-foreground">
+    <code className="font-mono text-[12.5px] bg-muted px-1.5 py-0.5 rounded text-[var(--accent-2)]">
       {children}
     </code>
   );
@@ -177,7 +178,7 @@ function Block({ children, lang = "" }: { children: string; lang?: string }) {
 
 function Callout({ variant = "info", children }: { variant?: "info" | "warning" | "tip"; children: React.ReactNode }) {
   const map = {
-    info:    { cls: "bg-primary/5 border-primary/30 text-primary",       label: "Nota" },
+    info:    { cls: "bg-[var(--info)]/5 border-[var(--info)]/30 text-[var(--info)]",       label: "Nota" },
     warning: { cls: "bg-warning/5 border-warning/30 text-warning",       label: "Atenção" },
     tip:     { cls: "bg-success/5 border-success/30 text-success",       label: "Dica" },
   };
@@ -237,7 +238,7 @@ export default function DevManualClient() {
         <button
           onClick={() => setSidebarOpen((v) => !v)}
           aria-label={sidebarOpen ? "Fechar índice" : "Abrir índice"}
-          className="fixed bottom-6 right-6 z-50 lg:hidden h-10 w-10 rounded-full bg-primary text-white shadow-lg flex items-center justify-center"
+          className="fixed bottom-6 right-6 z-50 lg:hidden h-10 w-10 rounded-full bg-[var(--accent-2)] text-white shadow-lg flex items-center justify-center"
         >
           {sidebarOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
         </button>
@@ -264,10 +265,10 @@ export default function DevManualClient() {
                     onClick={() => scrollTo(s.id)}
                     className={cn(
                       "w-full flex items-center gap-2 px-2 py-1.5 rounded-[8px] text-[13px] font-semibold text-left transition-colors",
-                      isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     )}
                   >
-                    <Icon className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-accent-foreground" : "")} aria-hidden="true" />
+                    <Icon className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-[var(--accent-2)]" : "")} aria-hidden="true" />
                     {s.title}
                   </button>
                   {s.subsections && isActive && (
@@ -279,7 +280,7 @@ export default function DevManualClient() {
                           className={cn(
                             "w-full text-left px-2 py-1 rounded-[6px] text-[12px] transition-colors",
                             activeId === sub.id
-                              ? "text-accent-foreground font-semibold"
+                              ? "text-[var(--accent-2)] font-semibold"
                               : "text-muted-foreground hover:text-foreground hover:bg-muted"
                           )}
                         >
@@ -444,7 +445,7 @@ export default async function UsersPage() {
                   ["SystemConfig", "Configurações de retenção de dados e outras configs globais", "key"],
                 ].map(([model, desc, key]) => (
                   <tr key={model}>
-                    <td className="px-4 py-3 font-mono text-[12.5px] font-semibold text-accent-foreground border-b border-border/50 whitespace-nowrap">{model}</td>
+                    <td className="px-4 py-3 font-mono text-[12.5px] font-semibold text-[var(--accent-2)] border-b border-border/50 whitespace-nowrap">{model}</td>
                     <Td>{desc}</Td>
                     <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground border-b border-border/50 whitespace-nowrap">{key}</td>
                   </tr>
@@ -792,7 +793,7 @@ export default function PageClient({ initialData }) { ... }
                   ["WEBHOOK_SECRET", "HMAC-SHA256 para autenticar webhooks de link", "openssl rand -hex 32"],
                 ].map(([k, v, g]) => (
                   <tr key={k}>
-                    <td className="px-4 py-3 font-mono text-[12px] text-accent-foreground border-b border-border/50">{k}</td>
+                    <td className="px-4 py-3 font-mono text-[12px] text-[var(--accent-2)] border-b border-border/50">{k}</td>
                     <Td>{v}</Td>
                     <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground border-b border-border/50">{g}</td>
                   </tr>
@@ -949,7 +950,7 @@ npm run test:coverage
                   ["NODE_ENV", "Não", "development | production. Afeta logging e otimizações"],
                 ].map(([k, req, desc]) => (
                   <tr key={k}>
-                    <td className="px-4 py-3 font-mono text-[12px] text-accent-foreground border-b border-border/50 whitespace-nowrap">{k}</td>
+                    <td className="px-4 py-3 font-mono text-[12px] text-[var(--accent-2)] border-b border-border/50 whitespace-nowrap">{k}</td>
                     <td className={cn("px-4 py-3 text-[13px] border-b border-border/50 whitespace-nowrap font-semibold",
                       req === "Sim" ? "text-destructive" : req === "Não" ? "text-muted-foreground" : "text-warning"
                     )}>{req}</td>

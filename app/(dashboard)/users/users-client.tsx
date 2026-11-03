@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Topbar } from "@/components/topbar";
-import { Card, CardContent } from "@/components/ui/card";
+import { Panel } from "@/components/tui/panel";
+import { TuiPage } from "@/components/tui/page";
+import { EmptyBox, SkeletonRows, StatusBadge } from "@/components/tui/states";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -98,7 +99,16 @@ export default function UsersClient() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/users", { cache: "no-store" }).then(async (res) => {
+      if (!alive) return;
+      if (res.ok) setUsers(await res.json());
+      else if (res.status === 403) toast.error("Acesso negado — somente admins podem gerenciar usuários");
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, []);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -268,78 +278,69 @@ export default function UsersClient() {
   return (
     <>
       <Topbar title="Usuários" subtitle="Gerenciamento de acesso" icon={Users}>
-        <Button size="sm" onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4 mr-1.5" />Novo usuário
-        </Button>
+        <button type="button" className="tui-btn tui-btn-primary" onClick={() => setShowCreate(true)}>
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />Novo usuário
+        </button>
       </Topbar>
 
-      <div className="p-7 max-w-3xl mx-auto space-y-4">
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
-          </div>
-        ) : users.length === 0 ? (
-          <Card><CardContent className="py-12 text-center text-muted-foreground">Nenhum usuário encontrado.</CardContent></Card>
-        ) : (
-          <Card>
-            <CardContent className="p-0">
-              <table className="w-full text-sm" aria-label="Lista de usuários">
+      <TuiPage narrow>
+        <Panel title="usuários" sub={loading ? undefined : `${users.length}`} color="accent2">
+          {loading ? (
+            <SkeletonRows rows={3} />
+          ) : users.length === 0 ? (
+            <EmptyBox title="Nenhum usuário encontrado." />
+          ) : (
+            <div className="tui-table-wrap">
+              <table className="tui-table" aria-label="Lista de usuários">
                 <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="px-4 py-3 text-left font-medium">Usuário</th>
-                    <th className="px-4 py-3 text-left font-medium">Função</th>
-                    <th className="px-4 py-3 text-left font-medium">2FA</th>
-                    <th className="px-4 py-3 text-left font-medium">Criado em</th>
-                    <th className="px-4 py-3" />
+                  <tr>
+                    <th>Usuário</th>
+                    <th>Função</th>
+                    <th>2FA</th>
+                    <th>Criado em</th>
+                    <th><span className="sr-only">Ações</span></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody>
                   {users.map((u) => {
                     const Icon = ROLE_ICON[u.role];
                     return (
-                      <tr key={u.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 font-mono font-semibold">{u.username}</td>
-                        <td className="px-4 py-3 flex items-center gap-2">
-                          <Badge variant={ROLE_VARIANT[u.role]} className="gap-1.5">
-                            <Icon className="h-3 w-3" />
-                            {ROLE_LABEL[u.role]}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {u.authProvider === "LOCAL" ? "Local" : "Zoho"}
-                          </Badge>
+                      <tr key={u.id}>
+                        <td style={{ fontWeight: 600 }}>{u.username}</td>
+                        <td>
+                          <span className="inline-flex items-center gap-2">
+                            <Badge variant={ROLE_VARIANT[u.role]} className="gap-1.5">
+                              <Icon className="h-3 w-3" aria-hidden="true" />
+                              {ROLE_LABEL[u.role]}
+                            </Badge>
+                            <Badge variant="outline">{u.authProvider === "LOCAL" ? "Local" : "Zoho"}</Badge>
+                          </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td>
                           {u.authProvider === "ZOHO" ? (
-                            <span className="text-xs text-muted-foreground">—</span>
+                            <span className="tui-dim">—</span>
                           ) : u.totpEnabled ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-success bg-success/10 px-2 py-0.5 rounded-full">
-                              <ShieldCheck className="h-3 w-3" aria-hidden="true" />Ativo
-                            </span>
+                            <StatusBadge level="ok">2FA ativo</StatusBadge>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                              <ShieldOff className="h-3 w-3" aria-hidden="true" />Inativo
-                            </span>
+                            <StatusBadge level="dim">2FA inativo</StatusBadge>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                        <td className="tui-dim">
                           {fmtDate(u.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => openEdit(u)}>
-                              <Key className="h-3.5 w-3.5 mr-1" aria-hidden="true" />Editar
-                            </Button>
+                        <td>
+                          <div className="tui-btns" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                            <button type="button" className="tui-btn tui-btn-sm" onClick={() => openEdit(u)}>
+                              <Key className="h-3 w-3" aria-hidden="true" />Editar
+                            </button>
                             {u.authProvider === "LOCAL" && (
-                              <Button size="sm" variant="outline" aria-label={`Gerenciar 2FA de ${u.username}`}
-                                onClick={() => open2FA(u)}>
-                                <KeyRound className="h-3.5 w-3.5 mr-1" aria-hidden="true" />2FA
-                              </Button>
+                              <button type="button" className="tui-btn tui-btn-sm" aria-label={`Gerenciar 2FA de ${u.username}`} onClick={() => open2FA(u)}>
+                                <KeyRound className="h-3 w-3" aria-hidden="true" />2FA
+                              </button>
                             )}
-                            <Button size="sm" variant="ghost" aria-label={`Remover usuário ${u.username}`}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteUser(u)}>
-                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                            </Button>
+                            <button type="button" className="tui-btn tui-btn-sm tui-btn-danger" aria-label={`Remover usuário ${u.username}`} onClick={() => setDeleteUser(u)}>
+                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -347,10 +348,10 @@ export default function UsersClient() {
                   })}
                 </tbody>
               </table>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+            </div>
+          )}
+        </Panel>
+      </TuiPage>
 
       {/* Create dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
@@ -367,7 +368,7 @@ export default function UsersClient() {
                     onClick={() => setCreateAuthProvider(auth)}
                     className={`flex-1 rounded-lg border p-2.5 text-xs font-semibold transition-colors ${
                       createAuthProvider === auth
-                        ? "border-primary bg-primary/5 text-primary"
+                        ? "border-primary bg-[var(--accent-2)]/5 text-primary"
                         : "border-border text-muted-foreground hover:border-muted-foreground"
                     }`}>
                     {auth === "LOCAL" ? "Local" : "Zoho (SSO)"}
@@ -407,7 +408,7 @@ export default function UsersClient() {
                       onClick={() => setCreateRole(r)}
                       className={`flex-1 flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs font-semibold transition-colors ${
                         createRole === r
-                          ? "border-primary bg-primary/5 text-primary"
+                          ? "border-primary bg-[var(--accent-2)]/5 text-primary"
                           : "border-border text-muted-foreground hover:border-muted-foreground"
                       }`}>
                       <Icon className="h-4 w-4" />
@@ -464,7 +465,7 @@ export default function UsersClient() {
                       onClick={() => setEditRole(r)}
                       className={`flex-1 flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs font-semibold transition-colors ${
                         editRole === r
-                          ? "border-primary bg-primary/5 text-primary"
+                          ? "border-primary bg-[var(--accent-2)]/5 text-primary"
                           : "border-border text-muted-foreground hover:border-muted-foreground"
                       }`}>
                       <Icon className="h-4 w-4" />
@@ -534,7 +535,7 @@ export default function UsersClient() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-[12px] bg-muted px-3 py-2 rounded-lg border border-border text-accent-foreground truncate">
+                    <code className="flex-1 font-mono text-[12px] bg-muted px-3 py-2 rounded-lg border border-border text-[var(--accent-2)] truncate">
                       {totpSetupData.secret}
                     </code>
                     <button onClick={copyTotpSecret} aria-label="Copiar chave secreta"

@@ -22,8 +22,8 @@ export interface UseTower {
 export function useTower(mock?: TowerSnapshot | null): UseTower {
   const [data, setData] = useState<TowerSnapshot | null>(mock ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [fetchedAt, setFetchedAt] = useState<number | null>(mock ? Date.now() : null);
-  const [okAt, setOkAt] = useState<number | null>(mock ? Date.now() : null);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const [okAt, setOkAt] = useState<number | null>(null);
   const etag = useRef<string | null>(null);
   const load = useRef<() => void>(() => {});
   const now = useNow();

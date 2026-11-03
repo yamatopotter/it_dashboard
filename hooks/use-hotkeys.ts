@@ -14,7 +14,9 @@ export function isTypingTarget(t: EventTarget | null): boolean {
 /** Mapa de teclas global. Ignora campos de texto (exceto Escape) e combinações com Alt/Meta. Chaves: "j", "Enter", "Ctrl+k". */
 export function useHotkeys(map: HotkeyMap, enabled = true) {
   const ref = useRef(map);
-  ref.current = map;
+  useEffect(() => {
+    ref.current = map;
+  });
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {

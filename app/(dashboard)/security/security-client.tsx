@@ -1,25 +1,30 @@
 "use client";
 
-import { ShieldCheck, CheckCircle2, AlertCircle, MinusCircle } from "lucide-react";
+import { useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import { Topbar } from "@/components/topbar";
-import { Card, CardContent } from "@/components/ui/card";
+import { Panel } from "@/components/tui/panel";
+import { TuiPage } from "@/components/tui/page";
+import { EmptyBox, StatusBadge, type BadgeLevel } from "@/components/tui/states";
 import type { Finding, Status, SeverityLevel } from "./page";
 
-const SEVERITY_BADGE: Record<SeverityLevel, string> = {
-  CRÍTICO: "bg-destructive/10 text-destructive border-destructive/20",
-  ALTO:    "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20",
-  MÉDIO:   "bg-warning/10 text-warning border-warning/20",
-  BAIXO:   "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-  INFO:    "bg-muted text-muted-foreground border-border",
+const SEVERITY_LEVEL: Record<SeverityLevel, BadgeLevel> = {
+  CRÍTICO: "crit",
+  ALTO: "crit",
+  MÉDIO: "warn",
+  BAIXO: "info",
+  INFO: "dim",
 };
 
 const SEVERITY_ORDER: SeverityLevel[] = ["CRÍTICO", "ALTO", "MÉDIO", "BAIXO", "INFO"];
 
-const STATUS_CONFIG: Record<Status, { label: string; color: string; Icon: React.ElementType }> = {
-  ABERTO:    { label: "Aberto",    color: "text-destructive", Icon: AlertCircle  },
-  ACEITO:    { label: "Aceito",    color: "text-warning",     Icon: MinusCircle  },
-  RESOLVIDO: { label: "Resolvido", color: "text-success",     Icon: CheckCircle2 },
+const STATUS_CONFIG: Record<Status, { label: string; cls: string; glyph: string }> = {
+  ABERTO: { label: "Aberto", cls: "tui-crit", glyph: "✖" },
+  ACEITO: { label: "Aceito", cls: "tui-warn", glyph: "▲" },
+  RESOLVIDO: { label: "Resolvido", cls: "tui-ok", glyph: "●" },
 };
+
+type Filter = "TODOS" | Status;
 
 interface Props {
   findings: Finding[];
@@ -27,128 +32,97 @@ interface Props {
 }
 
 export function SecurityClient({ findings, lastUpdated }: Props) {
+  const [filter, setFilter] = useState<Filter>("TODOS");
   const resolved = findings.filter((f) => f.status === "RESOLVIDO").length;
-  const open     = findings.filter((f) => f.status === "ABERTO").length;
+  const open = findings.filter((f) => f.status === "ABERTO").length;
   const accepted = findings.filter((f) => f.status === "ACEITO").length;
-  const total    = findings.length;
+  const total = findings.length;
+  const pct = total ? Math.round((resolved / total) * 100) : 0;
+  const bySev = (a: Finding, b: Finding) => SEVERITY_ORDER.indexOf(a.severityLevel) - SEVERITY_ORDER.indexOf(b.severityLevel);
 
-  const sorted = [
-    ...findings.filter((f) => f.status === "ABERTO").sort((a, b) => SEVERITY_ORDER.indexOf(a.severityLevel) - SEVERITY_ORDER.indexOf(b.severityLevel)),
-    ...findings.filter((f) => f.status === "ACEITO").sort((a, b) => SEVERITY_ORDER.indexOf(a.severityLevel) - SEVERITY_ORDER.indexOf(b.severityLevel)),
-    ...findings.filter((f) => f.status === "RESOLVIDO").sort((a, b) => SEVERITY_ORDER.indexOf(a.severityLevel) - SEVERITY_ORDER.indexOf(b.severityLevel)),
+  const sorted = (["ABERTO", "ACEITO", "RESOLVIDO"] as Status[]).flatMap((st) => findings.filter((f) => f.status === st).sort(bySev));
+  const shown = filter === "TODOS" ? sorted : sorted.filter((f) => f.status === filter);
+  const FILTERS: [Filter, string, number][] = [
+    ["TODOS", "todos", total],
+    ["ABERTO", "abertos", open],
+    ["ACEITO", "aceitos", accepted],
+    ["RESOLVIDO", "resolvidos", resolved],
   ];
 
   return (
     <>
-      <Topbar
-        title="Segurança"
-        icon={ShieldCheck}
-        subtitle={lastUpdated ? `Atualizado em ${lastUpdated}` : undefined}
-      />
+      <Topbar title="Segurança" icon={ShieldCheck} subtitle={lastUpdated ? `Atualizado em ${lastUpdated}` : undefined} />
 
-      <div className="p-7 space-y-6">
-        {/* KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="border shadow-none">
-            <CardContent className="p-4 space-y-1">
-              <p className="text-xs text-muted-foreground font-medium">Total de achados</p>
-              <p className="text-3xl font-extrabold tabular-nums">{total}</p>
-            </CardContent>
-          </Card>
-          <Card className="border shadow-none bg-destructive/5">
-            <CardContent className="p-4 space-y-1">
-              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                <AlertCircle className="h-3 w-3 text-destructive" /> Abertos
-              </p>
-              <p className="text-3xl font-extrabold tabular-nums text-destructive">{open}</p>
-            </CardContent>
-          </Card>
-          <Card className="border shadow-none bg-warning/5">
-            <CardContent className="p-4 space-y-1">
-              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                <MinusCircle className="h-3 w-3 text-warning" /> Aceitos
-              </p>
-              <p className="text-3xl font-extrabold tabular-nums text-warning">{accepted}</p>
-            </CardContent>
-          </Card>
-          <Card className="border shadow-none bg-success/5">
-            <CardContent className="p-4 space-y-1">
-              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                <CheckCircle2 className="h-3 w-3 text-success" /> Resolvidos
-              </p>
-              <p className="text-3xl font-extrabold tabular-nums text-success">{resolved}</p>
-            </CardContent>
-          </Card>
-        </div>
+      <TuiPage>
+        <div className="tui-stack">
+          <Panel title="situação" color={open > 0 ? "crit" : "ok"} hot={open > 0}>
+            <div className="tui-kpis">
+              <div className="tui-kpi"><span className="tui-kpi-l">total de achados</span><b className="tui-kpi-v">{total}</b></div>
+              <div className="tui-kpi"><span className="tui-kpi-l">✖ abertos</span><b className={`tui-kpi-v${open ? " tui-crit" : ""}`}>{open}</b></div>
+              <div className="tui-kpi"><span className="tui-kpi-l">▲ aceitos</span><b className={`tui-kpi-v${accepted ? " tui-warn" : ""}`}>{accepted}</b></div>
+              <div className="tui-kpi"><span className="tui-kpi-l">● resolvidos</span><b className="tui-kpi-v tui-ok">{resolved}</b></div>
+            </div>
+            <div className="barwrap" style={{ marginTop: 12, width: "100%" }}>
+              <span className="tui-dim" style={{ whiteSpace: "nowrap" }}>resolução</span>
+              <span className="bar" style={{ flex: 1, ["--p" as string]: pct }} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progresso de resolução">
+                <i />
+              </span>
+              <span className="pct">{pct}%</span>
+            </div>
+          </Panel>
 
-        {/* Progress bar */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Progresso de resolução</span>
-            <span className="font-semibold text-foreground">{Math.round((resolved / total) * 100)}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-muted overflow-hidden flex">
-            <div className="h-full bg-success transition-all" style={{ width: `${(resolved / total) * 100}%` }} />
-            <div className="h-full bg-warning/60 transition-all" style={{ width: `${(accepted / total) * 100}%` }} />
-          </div>
-          <p className="text-[10px] text-muted-foreground">
-            Verde = resolvidos · Amarelo = aceitos como risco residual · Cinza = abertos
+          <Panel title="achados" sub={`${shown.length}`} color="info">
+            <div className="tui-tabs" role="group" aria-label="Filtrar por status" style={{ marginBottom: 10 }}>
+              {FILTERS.map(([k, label, n]) => (
+                <button key={k} type="button" className="tui-tab" aria-pressed={filter === k} onClick={() => setFilter(k)}>
+                  {label} {n}
+                </button>
+              ))}
+            </div>
+            {shown.length === 0 ? (
+              <EmptyBox title="Nenhum achado nesse filtro." />
+            ) : (
+              <div className="tui-table-wrap">
+                <table className="tui-table" aria-label="Achados de segurança">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Achado</th>
+                      <th className="hidden sm:table-cell">Categoria</th>
+                      <th>Severidade</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((f) => {
+                      const st = STATUS_CONFIG[f.status];
+                      return (
+                        <tr key={f.id} style={f.status === "RESOLVIDO" ? { opacity: 0.7 } : undefined}>
+                          <td className="tui-dim" style={{ whiteSpace: "nowrap" }}>{f.id}</td>
+                          <td>
+                            {f.title}
+                            {f.resolvedIn && <div className="tui-dim" style={{ fontSize: 11 }}>resolvido em: {f.resolvedIn}</div>}
+                          </td>
+                          <td className="tui-dim hidden sm:table-cell">{f.category}</td>
+                          <td><StatusBadge level={SEVERITY_LEVEL[f.severityLevel]}>{f.severityLevel}</StatusBadge></td>
+                          <td className={st.cls} style={{ whiteSpace: "nowrap" }}>
+                            <span aria-hidden="true">{st.glyph} </span>
+                            {st.label}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <p className="tui-hint">
+            Fonte: SECURITY_REPORT.md · gerado diretamente do relatório de segurança, sem depender do banco de dados.
           </p>
         </div>
-
-        {/* Table */}
-        <div className="rounded-xl border bg-card overflow-x-auto">
-          <table className="w-full text-sm" aria-label="Achados de segurança">
-            <thead className="border-b bg-muted/40">
-              <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide w-24">ID</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Achado</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden sm:table-cell">Categoria</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide w-28">Severidade</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide w-28">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {sorted.map((f) => {
-                const { label, color, Icon } = STATUS_CONFIG[f.status];
-                return (
-                  <tr key={f.id} className={f.status === "RESOLVIDO" ? "opacity-60" : ""}>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs font-semibold text-muted-foreground">{f.id}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-sm leading-snug">{f.title}</p>
-                      {f.resolvedIn && (
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          Resolvido em: <span className="font-mono">{f.resolvedIn}</span>
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 hidden sm:table-cell">
-                      <span className="text-xs text-muted-foreground">{f.category}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${SEVERITY_BADGE[f.severityLevel]}`}>
-                        {f.severityEmoji} {f.severityLevel}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 text-xs font-semibold ${color}`}>
-                        <Icon className="h-3.5 w-3.5" />
-                        {label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <p className="text-xs text-muted-foreground">
-          Fonte: <span className="font-mono">SECURITY_REPORT.md</span> · Esta tela é gerada diretamente do relatório de segurança e não depende do banco de dados.
-        </p>
-      </div>
+      </TuiPage>
     </>
   );
 }

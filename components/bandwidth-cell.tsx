@@ -1,27 +1,30 @@
 "use client";
 
+import { Bar } from "@/components/tui/bar";
 import { formatBps } from "@/lib/format";
 
-export function BandwidthCell({ current, contracted, color }: {
+/**
+ * Tráfego atual vs banda contratada no padrão TUI: valor, barra com % ao lado (ok <70, aviso 70-90, crítico >=90)
+ * e o teto contratado. Deve ser renderizado dentro de um container `.tui.lnk`.
+ * `color` distingue download (success) de upload (primary) apenas no valor.
+ */
+export function BandwidthCell({ current, contracted, color, label }: {
   current: number | null;
   contracted: number | null;
   color: "success" | "primary";
+  label?: string;
 }) {
-  if (current == null) return <span className="text-muted-foreground/50 text-xs font-normal">sem dados</span>;
+  if (current == null) return <span className="dim">sem dados</span>;
   const pct = contracted && contracted > 0 ? Math.min((current / contracted) * 100, 100) : null;
-  const barColor = pct == null ? "" : pct >= 90 ? "bg-destructive" : pct >= 70 ? "bg-warning" : color === "success" ? "bg-success" : "bg-primary";
-  const textColor = color === "success" ? "text-success" : "text-primary";
   return (
-    <div className="inline-flex flex-col items-end gap-0.5 min-w-18">
-      <span className={`font-mono text-xs font-semibold ${textColor}`}>{formatBps(current)}</span>
+    <span className="bw">
+      <span className={`v ${color === "success" ? "ok" : "info"}`}>{formatBps(current)}</span>
       {contracted != null && (
         <>
-          <span className="text-[10px] text-muted-foreground font-mono">/ {formatBps(contracted)}</span>
-          <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
-            <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-          </div>
+          <Bar pct={pct} width="8ch" label={label ?? "uso da banda contratada"} />
+          <span className="of">/ {formatBps(contracted)}</span>
         </>
       )}
-    </div>
+    </span>
   );
 }

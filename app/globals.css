@@ -103,7 +103,7 @@
   --chart-5: #0ea5e9;
 
   /* Radius */
-  --radius: 0.75rem;
+  --radius: 0.25rem;
 
   /* Sidebar */
   --sidebar: #ffffff;
@@ -171,14 +171,15 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-sans), system-ui, sans-serif;
-    font-size: 14px;
-    line-height: 1.45;
+    font-family: var(--font-mono), ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
   html {
-    font-family: var(--font-sans), system-ui, sans-serif;
+    font-family: var(--font-mono), ui-monospace, "Cascadia Mono", Consolas, monospace;
   }
   .font-mono,
   code,
@@ -195,12 +196,12 @@
     height: 10px;
   }
   ::-webkit-scrollbar-thumb {
-    background: #d8dbe6;
-    border-radius: 20px;
-    border: 3px solid var(--background);
+    background: var(--line-hi, #c5c9d8);
+    border-radius: 2px;
+    border: 2px solid var(--background);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #c5c9d8;
+    background: var(--dim, #9094a6);
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -267,13 +268,13 @@
 .tui .chip[aria-pressed="true"] { border-color: var(--accent-2); color: var(--fg); background: var(--sel); }
 .tui .alertcount { color: var(--crit); font-weight: 700; }
 .tui .frozen { display: flex; gap: 12px; align-items: center; justify-content: space-between; background: var(--crit); color: var(--bg); font-weight: 700; padding: 6px 10px; border-radius: 3px; margin-bottom: 10px; }
-.tui .box { position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 16px 12px 10px; background: var(--panel); }
-.tui .box.hot { border-color: var(--crit); }
-.tui .box.focus { border-color: var(--box, var(--info)); }
-.tui .box-t { position: absolute; top: -0.75em; left: 10px; margin: 0; display: flex; gap: 8px; align-items: baseline; background: var(--bg); padding: 0 6px; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.4; color: var(--box, var(--info)); letter-spacing: .03em; max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; }
-.tui .box-t .sub { color: var(--dim); font-weight: 400; }
-.tui .box-r { position: absolute; top: -0.75em; right: 10px; background: var(--bg); padding: 0 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
-.tui .box-r button { background: none; border: 0; cursor: pointer; color: var(--dim); padding: 0; }
+.tui .box, .tui-panel { position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 16px 12px 10px; background: var(--panel); }
+.tui .box.hot, .tui-panel.hot { border-color: var(--crit); }
+.tui .box.focus, .tui-panel.focus { border-color: var(--box, var(--info)); }
+.tui .box-t, .tui-panel-t { position: absolute; top: -0.75em; left: 10px; margin: 0; display: flex; gap: 8px; align-items: baseline; background: var(--bg); padding: 0 6px; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.4; color: var(--box, var(--info)); letter-spacing: .03em; max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; }
+.tui .box-t .sub, .tui-panel-t .sub { color: var(--dim); font-weight: 400; }
+.tui .box-r, .tui-panel-r { position: absolute; top: -0.75em; right: 10px; background: var(--bg); padding: 0 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.tui .box-r button, .tui-panel-r button { background: none; border: 0; cursor: pointer; color: var(--dim); padding: 0; }
 .tui .grid { display: grid; gap: 18px 14px; padding-block: 14px; }
 .tui .grid > .full { grid-column: 1 / -1; }
 .tui .rows { display: flex; flex-direction: column; }
@@ -343,4 +344,208 @@
   .tui .prob .c-sev, .tui .prob .c-kind, .tui .prob .c-what, .tui .prob .c-why { display: none; }
   .tui .prob .acts { grid-column: 1 / -1; padding-left: 3ch; }
   .tui .detail-body { grid-template-columns: 1fr; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Sistema de design TUI (global): shell, página, painel, tabela, formulário,
+   botões, badges e estados. Funciona em QUALQUER página (não exige .tui).
+   Convenção: todo utilitário novo começa com `.tui-`.
+   ════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --bg: var(--background);
+  --panel: var(--card);
+  --line: var(--border);
+  --line-hi: color-mix(in srgb, var(--foreground) 28%, var(--border));
+  --fg: var(--foreground);
+  --dim: var(--muted-foreground);
+  --faint: color-mix(in srgb, var(--foreground) 22%, var(--background));
+  --sel: var(--muted);
+  --ok: var(--success);
+  --warn: var(--warning);
+  --crit: var(--destructive);
+  --info: #2867b8;
+  --accent-2: #12827e;
+}
+.dark { --info: #67b3ff; --accent-2: #5fd4d0; }
+:focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
+
+/* Cores de estado (sempre acompanhadas de glifo/texto no markup). */
+.tui-ok { color: var(--ok); } .tui-warn { color: var(--warn); } .tui-crit { color: var(--crit); }
+.tui-info { color: var(--info); } .tui-dim { color: var(--dim); } .tui-faint { color: var(--faint); }
+.tui-num { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* shadcn/ui (Card, Button, Badge, Input...) vira TUI em todo o app, inclusive portais. */
+[data-slot="card"] { border: 1px solid var(--line); border-radius: 6px; box-shadow: none; background: var(--panel); }
+[data-slot="card-title"] { font-family: inherit; font-size: 12px; font-weight: 600; letter-spacing: .03em; color: var(--info); }
+[data-slot="card-description"] { font-size: 12px; }
+[data-slot="card-footer"] { border-radius: 0 0 5px 5px; }
+[data-slot="badge"] { border-radius: 3px; font-family: inherit; font-weight: 600; font-size: 11px; letter-spacing: .02em; }
+[data-slot="button"] { border-radius: 3px; font-family: inherit; font-size: 12px; font-weight: 500; }
+[data-slot="button"][class*="bg-primary"] { background: var(--accent-2); color: var(--bg); }
+[data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"] { border-radius: 3px; font-family: inherit; font-size: 12.5px; background: var(--bg); border-color: var(--line-hi); }
+[data-slot="table-head"] { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
+[data-slot="table-row"]:hover { background: var(--sel); }
+[data-slot="dialog-content"], [data-slot="sheet-content"], [data-slot="alert-dialog-content"] { border-radius: 6px; }
+[data-slot="tabs-trigger"] { font-family: inherit; font-size: 12px; }
+
+/* Página: .tui.tui-page envolve o conteúdo (equivale a .tui + espaçamento). */
+.tui.tui-page { padding: 16px 20px 12px; min-height: 100%; }
+.tui-narrow { max-width: 920px; margin-inline: auto; }
+@media (max-width: 640px) { .tui.tui-page { padding: 12px 12px 8px; } }
+
+/* Cabeçalho de página (usado por <Topbar/>). */
+.tui-head { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 10px 20px; background: var(--bg); border-bottom: 1px solid var(--line); min-height: 48px; }
+.tui-head-l { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tui-head-r { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; color: var(--dim); font-size: 12px; }
+.tui-title { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .02em; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui-title::before { content: "▌"; color: var(--accent-2); margin-right: 6px; }
+.tui-subtitle { margin: 0; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui-back { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-hi); border-radius: 3px; padding: 0 7px; color: var(--dim); font-size: 12px; text-decoration: none; }
+.tui-back:hover { background: var(--sel); color: var(--fg); }
+@media (max-width: 767px) { .tui-head { padding-left: 52px; } }
+
+/* Painel com título sobreposto (equivale ao <Panel/>); .hot = borda crítica. */
+.tui-stack { display: flex; flex-direction: column; gap: 18px; }
+
+/* Grades responsivas: .tui-grid + .tui-cols-2 | -3 | -4. */
+.tui-grid { display: grid; gap: 18px 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) {
+  .tui-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tui-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tui-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.tui-grid > .tui-full { grid-column: 1 / -1; }
+
+/* KPIs: .tui-kpis > .tui-kpi > (.tui-kpi-l rótulo + .tui-kpi-v valor) */
+.tui-kpis { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.tui-kpi { display: flex; flex-direction: column; min-width: 8ch; }
+.tui-kpi-l { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.tui-kpi-v { font-size: 20px; font-weight: 700; line-height: 1.2; }
+
+/* Chave/valor: dl.tui-kv > dt + dd */
+.tui-kv { display: grid; grid-template-columns: minmax(9ch, max-content) 1fr; gap: 3px 14px; margin: 0; }
+.tui-kv dt { color: var(--dim); }
+.tui-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* Tabela densa: div.tui-table-wrap > table.tui-table. Linha selecionável: tr.sel ou aria-selected="true"; tr.clickable = cursor. */
+.tui-table-wrap { overflow-x: auto; }
+.tui-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tui-table th { position: sticky; top: 0; background: var(--panel); text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); padding: 4px 8px; border-bottom: 1px solid var(--line-hi); white-space: nowrap; }
+.tui-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tui-table tbody tr:hover { background: var(--sel); }
+.tui-table tbody tr.sel, .tui-table tbody tr[aria-selected="true"] { background: var(--sel); box-shadow: inset 2px 0 0 var(--accent-2); }
+.tui-table tr.clickable { cursor: pointer; }
+.tui-table th.tui-num { text-align: right; }
+.tui-table td.tui-trunc { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Botões: .tui-btn [+ -primary | -danger | -sm]. aria-pressed="true" = ativo. .tui-btns = grupo. */
+.tui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line-hi); background: transparent; border-radius: 3px; padding: 2px 10px; min-height: 26px; cursor: pointer; color: var(--fg); font: inherit; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.tui-btn:hover { background: var(--sel); }
+.tui-btn[aria-pressed="true"] { border-color: var(--accent-2); background: var(--sel); }
+.tui-btn:disabled, .tui-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.tui-btn-primary { border-color: var(--accent-2); color: var(--accent-2); font-weight: 600; }
+.tui-btn-danger { border-color: var(--crit); color: var(--crit); }
+.tui-btn-sm { min-height: 22px; padding: 0 7px; font-size: 11px; }
+.tui-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+kbd { font: inherit; font-size: 11px; color: var(--accent-2); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+
+/* Formulário: form.tui-form (+ .tui-form-2 = 2 colunas) > .tui-field > (label.tui-label, .tui-input, p.tui-hint | p.tui-err). .tui-full ocupa a linha toda. */
+.tui-form { display: grid; gap: 12px 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 760px) { .tui-form.tui-form-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tui-form > .tui-full { grid-column: 1 / -1; }
+.tui-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tui-label { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
+.tui-input { width: 100%; font: inherit; font-size: 12.5px; color: var(--fg); background: var(--bg); border: 1px solid var(--line-hi); border-radius: 3px; padding: 3px 8px; min-height: 28px; }
+.tui-input::placeholder { color: var(--faint); }
+.tui-input:focus { border-color: var(--info); outline: none; box-shadow: 0 0 0 1px var(--info); }
+.tui-input[aria-invalid="true"] { border-color: var(--crit); }
+.tui-input:disabled { opacity: .55; }
+.tui-hint { margin: 0; font-size: 11.5px; color: var(--dim); }
+.tui-err { margin: 0; font-size: 12px; color: var(--crit); }
+.tui-err::before { content: "✖ "; }
+.tui-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+
+/* Badge de estado: span.tui-badge.tui-badge-ok|warn|crit|info|dim. Inclua sempre o glifo no texto (● ▲ ✖ ◌). */
+.tui-badge { display: inline-flex; align-items: center; gap: 4px; border: 1px solid currentColor; border-radius: 3px; padding: 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .03em; line-height: 1.5; white-space: nowrap; color: var(--dim); }
+.tui-badge-ok { color: var(--ok); } .tui-badge-warn { color: var(--warn); } .tui-badge-crit { color: var(--crit); } .tui-badge-info { color: var(--info); } .tui-badge-dim { color: var(--dim); }
+
+/* Abas (chips): .tui-tabs[role=tablist] > button.tui-tab[aria-selected] */
+.tui-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tui-tab { border: 1px solid var(--line); background: transparent; border-radius: 3px; padding: 0 9px; min-height: 24px; cursor: pointer; color: var(--dim); font: inherit; font-size: 12px; }
+.tui-tab:hover { color: var(--fg); }
+.tui-tab[aria-selected="true"], .tui-tab[aria-pressed="true"] { border-color: var(--accent-2); color: var(--fg); background: var(--sel); }
+
+/* Estados: .tui-empty (vazio), .tui-error (erro), .tui-note[.warn|.crit|.ok] (aviso), .tui-skel (carregando). */
+.tui-empty { padding: 24px 12px; text-align: center; color: var(--dim); }
+.tui-empty b { display: block; color: var(--fg); font-weight: 600; margin-bottom: 2px; }
+.tui-error { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; border: 1px solid var(--crit); border-radius: 4px; padding: 8px 12px; color: var(--crit); }
+.tui-error::before { content: "✖"; font-weight: 700; }
+.tui-note { border: 1px solid var(--line-hi); border-left: 3px solid var(--info); border-radius: 3px; padding: 8px 12px; color: var(--fg); }
+.tui-note.warn { border-left-color: var(--warn); } .tui-note.crit { border-left-color: var(--crit); } .tui-note.ok { border-left-color: var(--ok); }
+.tui-skel { display: block; height: 1em; border-radius: 2px; background: linear-gradient(90deg, var(--sel) 25%, color-mix(in srgb, var(--sel) 55%, var(--bg)) 50%, var(--sel) 75%); background-size: 200% 100%; animation: tui-shimmer 1.4s linear infinite; }
+@keyframes tui-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .tui-skel { animation: none; } }
+
+/* Rodapé de atalhos reutilizável (mesmo visual de .keys). */
+.tui-keys { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 4px 14px; background: var(--bg); border-top: 1px solid var(--line); padding-block: 8px; color: var(--dim); font-size: 12px; }
+.tui-keys span { white-space: nowrap; }
+@media (max-width: 600px) { .tui-keys .hide-sm { display: none; } }
+
+/* Leitura longa (manuais, changelog, segurança): mesma paleta, entrelinha confortável. */
+.tui-prose { max-width: 84ch; line-height: 1.75; font-size: 13.5px; }
+.tui-prose h2 { margin: 28px 0 8px; font-size: 14px; font-weight: 700; color: var(--info); letter-spacing: .03em; }
+.tui-prose h3 { margin: 18px 0 6px; font-size: 13px; font-weight: 700; }
+.tui-prose p, .tui-prose ul, .tui-prose ol { margin: 0 0 10px; }
+.tui-prose ul { padding-left: 2ch; list-style: "· "; }
+.tui-prose code { background: var(--sel); border-radius: 3px; padding: 0 4px; font-size: 12.5px; }
+.tui-prose pre { background: var(--sel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; overflow-x: auto; }
+.tui-prose a { color: var(--info); text-decoration: underline; }
+
+/* Shell: menu lateral. */
+.tui-side { width: 224px; flex: none; display: flex; flex-direction: column; background: var(--bg); border-right: 1px solid var(--line); padding: 12px 10px 10px; font-size: 12.5px; overflow-y: auto; }
+.tui-side-brand { display: flex; align-items: center; gap: 8px; padding: 2px 6px 12px; color: var(--accent-2); }
+.tui-side-brand b { color: var(--fg); font-size: 13px; letter-spacing: .02em; }
+.tui-side-brand small { display: block; color: var(--dim); font-size: 11px; }
+.tui-side-sec { padding: 12px 6px 4px; color: var(--dim); font-size: 11px; letter-spacing: .06em; text-transform: lowercase; user-select: none; }
+.tui-side-sec::before { content: "── "; color: var(--faint); }
+.tui-side-link { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-left: 2px solid transparent; border-radius: 3px; color: var(--dim); text-decoration: none; }
+.tui-side-link:hover { background: var(--sel); color: var(--fg); }
+.tui-side-link[aria-current="page"] { background: var(--sel); border-left-color: var(--accent-2); color: var(--fg); font-weight: 600; }
+.tui-side-link svg { width: 14px; height: 14px; flex: none; }
+.tui-side-n { margin-left: auto; color: var(--dim); font-size: 11.5px; }
+.tui-side-n.crit { color: var(--crit); font-weight: 700; }
+.tui-side-user { display: flex; align-items: center; gap: 6px; padding: 8px 4px 0; margin-top: 8px; border-top: 1px solid var(--line); }
+.tui-side-user a { flex: 1; min-width: 0; color: inherit; text-decoration: none; }
+.tui-side-user a:hover { color: var(--accent-2); }
+.tui-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 1px solid transparent; border-radius: 3px; background: none; color: var(--dim); cursor: pointer; }
+.tui-icon-btn:hover { background: var(--sel); color: var(--fg); border-color: var(--line); }
+.tui-side-toggle { display: none; }
+.tui-scrim { display: none; }
+@media (max-width: 767px) {
+  .tui-side { position: fixed; inset: 0 auto 0 0; z-index: 60; transform: translateX(-100%); transition: transform .15s; }
+  .tui-side[data-open="true"] { transform: none; }
+  .tui-side-toggle { display: inline-flex; position: fixed; top: 10px; left: 10px; z-index: 55; background: var(--bg); border-color: var(--line-hi); }
+  .tui-scrim[data-open="true"] { display: block; position: fixed; inset: 0; z-index: 59; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .tui-side { transition: none; } }
+
+/* Login: caixa central em painel TUI. */
+.tui-auth { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--fg); }
+.tui-auth-box { width: min(420px, 100%); }
+
+/* Paleta Tailwind remapeada para as cores semânticas (ok/aviso/crítico/info): telas antigas ficam coerentes sem edição. */
+:root {
+  --color-emerald-50: color-mix(in srgb, var(--ok) 10%, var(--background)); --color-emerald-100: color-mix(in srgb, var(--ok) 10%, var(--background)); --color-emerald-200: color-mix(in srgb, var(--ok) 20%, var(--background)); --color-emerald-300: color-mix(in srgb, var(--ok) 65%, var(--background)); --color-emerald-400: color-mix(in srgb, var(--ok) 65%, var(--background)); --color-emerald-500: var(--ok); --color-emerald-600: var(--ok); --color-emerald-700: color-mix(in srgb, var(--ok) 75%, var(--foreground)); --color-emerald-800: color-mix(in srgb, var(--ok) 75%, var(--foreground)); --color-emerald-900: color-mix(in srgb, var(--ok) 75%, var(--foreground)); --color-emerald-950: color-mix(in srgb, var(--ok) 75%, var(--foreground));
+  --color-green-50: color-mix(in srgb, var(--ok) 10%, var(--background)); --color-green-100: color-mix(in srgb, var(--ok) 10%, var(--background)); --color-green-200: color-mix(in srgb, var(--ok) 20%, var(--background)); --color-green-300: color-mix(in srgb, var(--ok) 65%, var(--background)); --color-green-400: color-mix(in srgb, var(--ok) 65%, var(--background)); --color-green-500: var(--ok); --color-green-600: var(--ok); --color-green-700: color-mix(in srgb, var(--ok) 75%, var(--foreground)); --color-green-800: color-mix(in srgb, var(--ok) 75%, var(--foreground)); --color-green-900: color-mix(in srgb, var(--ok) 75%, var(--foreground)); --color-green-950: color-mix(in srgb, var(--ok) 75%, var(--foreground));
+  --color-teal-50: color-mix(in srgb, var(--accent-2) 10%, var(--background)); --color-teal-100: color-mix(in srgb, var(--accent-2) 10%, var(--background)); --color-teal-200: color-mix(in srgb, var(--accent-2) 20%, var(--background)); --color-teal-300: color-mix(in srgb, var(--accent-2) 65%, var(--background)); --color-teal-400: color-mix(in srgb, var(--accent-2) 65%, var(--background)); --color-teal-500: var(--accent-2); --color-teal-600: var(--accent-2); --color-teal-700: color-mix(in srgb, var(--accent-2) 75%, var(--foreground)); --color-teal-800: color-mix(in srgb, var(--accent-2) 75%, var(--foreground)); --color-teal-900: color-mix(in srgb, var(--accent-2) 75%, var(--foreground)); --color-teal-950: color-mix(in srgb, var(--accent-2) 75%, var(--foreground));
+  --color-amber-50: color-mix(in srgb, var(--warn) 10%, var(--background)); --color-amber-100: color-mix(in srgb, var(--warn) 10%, var(--background)); --color-amber-200: color-mix(in srgb, var(--warn) 20%, var(--background)); --color-amber-300: color-mix(in srgb, var(--warn) 65%, var(--background)); --color-amber-400: color-mix(in srgb, var(--warn) 65%, var(--background)); --color-amber-500: var(--warn); --color-amber-600: var(--warn); --color-amber-700: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-amber-800: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-amber-900: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-amber-950: color-mix(in srgb, var(--warn) 75%, var(--foreground));
+  --color-orange-50: color-mix(in srgb, var(--warn) 10%, var(--background)); --color-orange-100: color-mix(in srgb, var(--warn) 10%, var(--background)); --color-orange-200: color-mix(in srgb, var(--warn) 20%, var(--background)); --color-orange-300: color-mix(in srgb, var(--warn) 65%, var(--background)); --color-orange-400: color-mix(in srgb, var(--warn) 65%, var(--background)); --color-orange-500: var(--warn); --color-orange-600: var(--warn); --color-orange-700: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-orange-800: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-orange-900: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-orange-950: color-mix(in srgb, var(--warn) 75%, var(--foreground));
+  --color-yellow-50: color-mix(in srgb, var(--warn) 10%, var(--background)); --color-yellow-100: color-mix(in srgb, var(--warn) 10%, var(--background)); --color-yellow-200: color-mix(in srgb, var(--warn) 20%, var(--background)); --color-yellow-300: color-mix(in srgb, var(--warn) 65%, var(--background)); --color-yellow-400: color-mix(in srgb, var(--warn) 65%, var(--background)); --color-yellow-500: var(--warn); --color-yellow-600: var(--warn); --color-yellow-700: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-yellow-800: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-yellow-900: color-mix(in srgb, var(--warn) 75%, var(--foreground)); --color-yellow-950: color-mix(in srgb, var(--warn) 75%, var(--foreground));
+  --color-red-50: color-mix(in srgb, var(--crit) 10%, var(--background)); --color-red-100: color-mix(in srgb, var(--crit) 10%, var(--background)); --color-red-200: color-mix(in srgb, var(--crit) 20%, var(--background)); --color-red-300: color-mix(in srgb, var(--crit) 65%, var(--background)); --color-red-400: color-mix(in srgb, var(--crit) 65%, var(--background)); --color-red-500: var(--crit); --color-red-600: var(--crit); --color-red-700: color-mix(in srgb, var(--crit) 75%, var(--foreground)); --color-red-800: color-mix(in srgb, var(--crit) 75%, var(--foreground)); --color-red-900: color-mix(in srgb, var(--crit) 75%, var(--foreground)); --color-red-950: color-mix(in srgb, var(--crit) 75%, var(--foreground));
+  --color-rose-50: color-mix(in srgb, var(--crit) 10%, var(--background)); --color-rose-100: color-mix(in srgb, var(--crit) 10%, var(--background)); --color-rose-200: color-mix(in srgb, var(--crit) 20%, var(--background)); --color-rose-300: color-mix(in srgb, var(--crit) 65%, var(--background)); --color-rose-400: color-mix(in srgb, var(--crit) 65%, var(--background)); --color-rose-500: var(--crit); --color-rose-600: var(--crit); --color-rose-700: color-mix(in srgb, var(--crit) 75%, var(--foreground)); --color-rose-800: color-mix(in srgb, var(--crit) 75%, var(--foreground)); --color-rose-900: color-mix(in srgb, var(--crit) 75%, var(--foreground)); --color-rose-950: color-mix(in srgb, var(--crit) 75%, var(--foreground));
+  --color-blue-50: color-mix(in srgb, var(--info) 10%, var(--background)); --color-blue-100: color-mix(in srgb, var(--info) 10%, var(--background)); --color-blue-200: color-mix(in srgb, var(--info) 20%, var(--background)); --color-blue-300: color-mix(in srgb, var(--info) 65%, var(--background)); --color-blue-400: color-mix(in srgb, var(--info) 65%, var(--background)); --color-blue-500: var(--info); --color-blue-600: var(--info); --color-blue-700: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-blue-800: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-blue-900: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-blue-950: color-mix(in srgb, var(--info) 75%, var(--foreground));
+  --color-sky-50: color-mix(in srgb, var(--info) 10%, var(--background)); --color-sky-100: color-mix(in srgb, var(--info) 10%, var(--background)); --color-sky-200: color-mix(in srgb, var(--info) 20%, var(--background)); --color-sky-300: color-mix(in srgb, var(--info) 65%, var(--background)); --color-sky-400: color-mix(in srgb, var(--info) 65%, var(--background)); --color-sky-500: var(--info); --color-sky-600: var(--info); --color-sky-700: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-sky-800: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-sky-900: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-sky-950: color-mix(in srgb, var(--info) 75%, var(--foreground));
+  --color-indigo-50: color-mix(in srgb, var(--info) 10%, var(--background)); --color-indigo-100: color-mix(in srgb, var(--info) 10%, var(--background)); --color-indigo-200: color-mix(in srgb, var(--info) 20%, var(--background)); --color-indigo-300: color-mix(in srgb, var(--info) 65%, var(--background)); --color-indigo-400: color-mix(in srgb, var(--info) 65%, var(--background)); --color-indigo-500: var(--info); --color-indigo-600: var(--info); --color-indigo-700: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-indigo-800: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-indigo-900: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-indigo-950: color-mix(in srgb, var(--info) 75%, var(--foreground));
+  --color-violet-50: color-mix(in srgb, var(--info) 10%, var(--background)); --color-violet-100: color-mix(in srgb, var(--info) 10%, var(--background)); --color-violet-200: color-mix(in srgb, var(--info) 20%, var(--background)); --color-violet-300: color-mix(in srgb, var(--info) 65%, var(--background)); --color-violet-400: color-mix(in srgb, var(--info) 65%, var(--background)); --color-violet-500: var(--info); --color-violet-600: var(--info); --color-violet-700: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-violet-800: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-violet-900: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-violet-950: color-mix(in srgb, var(--info) 75%, var(--foreground));
+  --color-purple-50: color-mix(in srgb, var(--info) 10%, var(--background)); --color-purple-100: color-mix(in srgb, var(--info) 10%, var(--background)); --color-purple-200: color-mix(in srgb, var(--info) 20%, var(--background)); --color-purple-300: color-mix(in srgb, var(--info) 65%, var(--background)); --color-purple-400: color-mix(in srgb, var(--info) 65%, var(--background)); --color-purple-500: var(--info); --color-purple-600: var(--info); --color-purple-700: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-purple-800: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-purple-900: color-mix(in srgb, var(--info) 75%, var(--foreground)); --color-purple-950: color-mix(in srgb, var(--info) 75%, var(--foreground));
 }

@@ -1,53 +1,25 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { usePolling } from "@/hooks/use-polling";
-import { LinkDetailDrawer } from "@/components/link-detail-drawer";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import {
-  Plus,
-  Network,
-  Pencil,
-  Trash2,
-  ExternalLink,
-  Copy,
-  Check,
-  Wifi,
-  WifiOff,
-  Activity,
-  MapPin,
-  Router,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  ArrowDown,
-  ArrowUp,
-} from "lucide-react";
-import { Topbar } from "@/components/topbar";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { StatusBadge } from "@/components/status-badge";
-import { formatBps } from "@/lib/format";
+import { usePolling } from "@/hooks/use-polling";
+import { useHotkeys, type HotkeyMap } from "@/hooks/use-hotkeys";
+import { useListNav } from "@/hooks/use-list-nav";
+import { LinkDetailDrawer } from "@/components/link-detail-drawer";
 import { BandwidthCell } from "@/components/bandwidth-cell";
-import { FilterChip } from "@/components/filter-chip";
-import { SkeletonList } from "@/components/skeleton-list";
-import { EmptyState } from "@/components/empty-state";
-import { SITE_KEYS, SITE_NAMES } from "@/lib/modules";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Panel } from "@/components/tui/panel";
+import { StateGlyph } from "@/components/tui/state-glyph";
+import { LnkShell } from "@/components/tui/lnk-shell";
+import { LnkChips, LnkEmpty, LnkError, LnkField, LnkLoading } from "@/components/tui/lnk-parts";
+import type { HelpRow } from "@/components/tui/help-overlay";
+import type { KeyHint } from "@/components/tui/key-hints";
+import { formatBps, timeAgo } from "@/lib/format";
+import { SITE_KEYS, SITE_NAMES } from "@/lib/modules";
 
 interface LinkItem {
   id: string;
@@ -86,23 +58,49 @@ const formSchema = z.object({
 });
 type FormValues = z.infer<typeof formSchema>;
 
-function CopyIconButton({ text, label }: { text: string; label: string }) {
+type TrafficTest =
+  | { state: "idle" }
+  | { state: "testing" }
+  | { state: "ok"; downloadBps: number; uploadBps: number }
+  | { state: "error"; message: string };
+
+type StatusFilter = "ALL" | "ONLINE" | "OFFLINE";
+
+const EMPTY_FORM: FormValues = { name: "", description: "", location: "", site: "", mikrotikDeviceId: "", mikrotikInterface: "", contractedDownloadMbps: null, contractedUploadMbps: null };
+
+const HELP: HelpRow[] = [
+  ["j k", "selecionar link (↓ ↑ também)"],
+  ["⏎", "abrir painel do link"],
+  ["o", "abrir página de histórico do link"],
+  ["n", "novo link"],
+  ["e", "editar o link selecionado"],
+  ["d", "excluir o link selecionado"],
+  ["1 2 3", "filtro: todos / online / offline"],
+  ["/", "buscar"],
+  ["esc", "fechar formulário, busca ou ajuda"],
+];
+
+async function copyToClipboard(text: string) {
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+  } else {
+    // Fallback para HTTP/contextos sem Clipboard API
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
+  }
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   async function copy(e: React.MouseEvent) {
     e.stopPropagation();
     try {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        // Fallback for HTTP/insecure contexts where clipboard API is unavailable
-        const el = document.createElement("textarea");
-        el.value = text;
-        el.style.cssText = "position:fixed;opacity:0;pointer-events:none";
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand("copy");
-        document.body.removeChild(el);
-      }
+      await copyToClipboard(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success(`URL ${label} copiada`);
@@ -111,54 +109,42 @@ function CopyIconButton({ text, label }: { text: string; label: string }) {
     }
   }
   return (
-    <button
-      onClick={copy}
-      title={`Copiar URL ${label}`}
-      className="inline-flex items-center gap-1 px-2 h-6 rounded border border-border text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-    >
-      {copied ? (
-        <Check className="h-3 w-3 text-success" />
-      ) : (
-        <Copy className="h-3 w-3" />
-      )}
-      {label}
+    <button type="button" className="btn" onClick={copy} title={`Copiar URL do webhook ${label}`} aria-label={`Copiar URL do webhook ${label}`}>
+      {copied ? "✓" : "⧉"} {label}
     </button>
   );
 }
 
-
 export default function LinksPage() {
+  const router = useRouter();
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [mikrotiks, setMikrotiks] = useState<MikrotikDevice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "ONLINE" | "OFFLINE">("ALL");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [q, setQ] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<LinkItem | null>(null);
-  const [origin, setOrigin] = useState("");
   const [drawerLinkId, setDrawerLinkId] = useState<string | null>(null);
-
-  type TrafficTest =
-    | { state: "idle" }
-    | { state: "testing" }
-    | { state: "ok"; downloadBps: number; uploadBps: number }
-    | { state: "error"; message: string };
-
   const [trafficTest, setTrafficTest] = useState<TrafficTest>({ state: "idle" });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [help, setHelp] = useState(false);
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: { name: "", description: "", location: "", site: "", mikrotikDeviceId: "", mikrotikInterface: "", contractedDownloadMbps: null, contractedUploadMbps: null },
-  });
+  const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_FORM });
 
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
+  // Só usado em linhas renderizadas depois do fetch (cliente), sem divergência de hidratação.
+  const origin = globalThis.window?.location.origin ?? "";
 
   const fetchLinks = useCallback(async () => {
-    const res = await fetch("/api/links");
-    if (res.ok) setLinks(await res.json());
+    try {
+      const res = await fetch("/api/links");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setLinks(await res.json());
+      setError(null);
+    } catch {
+      setError("Não foi possível carregar os links.");
+    }
     setLastUpdated(new Date());
     setLoading(false);
   }, []);
@@ -175,12 +161,12 @@ export default function LinksPage() {
   function openCreate() {
     setEditing(null);
     setTrafficTest({ state: "idle" });
-    form.reset({ name: "", description: "", location: "", site: "", mikrotikDeviceId: "", mikrotikInterface: "", contractedDownloadMbps: null, contractedUploadMbps: null });
-    setDialogOpen(true);
+    form.reset(EMPTY_FORM);
+    setFormOpen(true);
+    setTimeout(() => document.getElementById("name")?.focus(), 0);
   }
 
-  function openEdit(e: React.MouseEvent, link: LinkItem) {
-    e.stopPropagation();
+  function openEdit(link: LinkItem) {
     setEditing(link);
     setTrafficTest({ state: "idle" });
     form.reset({
@@ -193,7 +179,8 @@ export default function LinksPage() {
       contractedDownloadMbps: link.contractedDownloadBps != null ? link.contractedDownloadBps / 1_000_000 : null,
       contractedUploadMbps: link.contractedUploadBps != null ? link.contractedUploadBps / 1_000_000 : null,
     });
-    setDialogOpen(true);
+    setFormOpen(true);
+    setTimeout(() => document.getElementById("name")?.focus(), 0);
   }
 
   async function testTraffic(deviceId?: string, iface?: string): Promise<TrafficTest> {
@@ -225,12 +212,11 @@ export default function LinksPage() {
   }
 
   async function onSubmit(values: FormValues) {
-    // If RouterOS config is set, require a passing test before saving
+    // Com RouterOS configurado, exige um teste bem-sucedido antes de salvar
     if (values.mikrotikDeviceId && values.mikrotikInterface) {
-      const current = trafficTest;
-      if (current.state !== "ok") {
+      if (trafficTest.state !== "ok") {
         const result = await testTraffic(values.mikrotikDeviceId, values.mikrotikInterface);
-        if (result.state !== "ok") return; // block save; error already shown in form
+        if (result.state !== "ok") return; // bloqueia o salvamento; o erro já aparece no formulário
       }
     }
 
@@ -238,30 +224,20 @@ export default function LinksPage() {
       const url = editing ? `/api/links/${editing.id}` : "/api/links";
       const method = editing ? "PUT" : "POST";
       const { contractedDownloadMbps, contractedUploadMbps, ...rest } = values;
-      const toValidBps = (v: number | null | undefined) =>
-        v != null && !isNaN(v) && v > 0 ? Math.round(v * 1_000_000) : null;
+      const toValidBps = (v: number | null | undefined) => (v != null && !isNaN(v) && v > 0 ? Math.round(v * 1_000_000) : null);
       const payload = {
         ...rest,
         contractedDownloadBps: toValidBps(contractedDownloadMbps),
         contractedUploadBps: toValidBps(contractedUploadMbps),
       };
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error();
       toast.success(editing ? "Link atualizado" : "Link criado");
-      setDialogOpen(false);
+      setFormOpen(false);
       fetchLinks();
     } catch {
       toast.error("Erro ao salvar link");
     }
-  }
-
-  function handleDelete(e: React.MouseEvent, id: string) {
-    e.stopPropagation();
-    setConfirmDeleteId(id);
   }
 
   async function confirmDelete() {
@@ -278,194 +254,289 @@ export default function LinksPage() {
     }
   }
 
-  const filtered = links.filter((l) => {
-    if (statusFilter === "ONLINE") return l.isOnline;
-    if (statusFilter === "OFFLINE") return !l.isOnline;
-    return true;
-  });
-
   const online = links.filter((l) => l.isOnline).length;
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return links.filter((l) => {
+      if (statusFilter === "ONLINE" && !l.isOnline) return false;
+      if (statusFilter === "OFFLINE" && l.isOnline) return false;
+      if (!needle) return true;
+      return [l.name, l.description, l.location, l.site].some((v) => v?.toLowerCase().includes(needle));
+    });
+  }, [links, statusFilter, q]);
+
+  const nav = useListNav(filtered.length);
+  const selected: LinkItem | undefined = filtered[nav.sel];
+  const busy = formOpen || confirmDeleteId !== null || drawerLinkId !== null;
+
+  const keys: HotkeyMap = {
+    "?": () => setHelp((h) => !h),
+    Escape: (e) => {
+      if (help) return setHelp(false);
+      const t = e.target as HTMLElement | null;
+      if (t?.id === "lnk-q") {
+        setQ("");
+        t.blur();
+        return;
+      }
+      if (formOpen && !drawerLinkId && confirmDeleteId === null) setFormOpen(false);
+    },
+  };
+  if (!help && !busy) {
+    Object.assign(keys, nav.keys, {
+      "/": () => document.getElementById("lnk-q")?.focus(),
+      n: openCreate,
+      e: () => selected && openEdit(selected),
+      d: () => selected && setConfirmDeleteId(selected.id),
+      o: () => selected && router.push(`/links/${selected.id}`),
+      Enter: () => selected && setDrawerLinkId(selected.id),
+      "1": () => setStatusFilter("ALL"),
+      "2": () => setStatusFilter("ONLINE"),
+      "3": () => setStatusFilter("OFFLINE"),
+    });
+  }
+  useHotkeys(keys);
+
+  const hints: KeyHint[] = [
+    { keys: ["j", "k"], label: "selecionar" },
+    { keys: ["⏎"], label: "painel" },
+    { keys: ["n"], label: "novo" },
+    { keys: ["e"], label: "editar" },
+    { keys: ["d"], label: "excluir", hideSm: true },
+    { keys: ["/"], label: "buscar", hideSm: true },
+    { keys: ["?"], label: "ajuda" },
+  ];
+
+  const errors = form.formState.errors;
+  const testing = trafficTest.state === "testing";
 
   return (
-    <>
-      <Topbar
-        title="Links de Internet"
-        icon={Network}
-        subtitle="Monitoramento via webhooks do Mikrotik"
-        live={!loading}
-        pollIntervalMs={30_000}
-        lastUpdated={lastUpdated}
-      >
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-1" />
-          Novo Link
-        </Button>
-      </Topbar>
+    <LnkShell
+      title="LINKS"
+      sub={loading ? undefined : `${online}/${links.length} online`}
+      updatedAt={lastUpdated}
+      pollMs={30_000}
+      actions={
+        <button type="button" className="btn primary" onClick={openCreate}>
+          <kbd>n</kbd>novo link
+        </button>
+      }
+      hints={hints}
+      help={HELP}
+      helpOpen={help}
+      onHelpClose={() => setHelp(false)}
+    >
+      {formOpen && (
+        <Panel title={editing ? "editar link" : "novo link"} sub="esc cancela" color="accent" focus>
+          <form onSubmit={form.handleSubmit(onSubmit)} noValidate aria-label={editing ? "Editar link" : "Novo link de internet"}>
+            <div className="form">
+              <LnkField id="name" label="Nome" error={errors.name?.message} full>
+                <input id="name" placeholder="Link principal, Fibra VIVO..." aria-invalid={!!errors.name} aria-describedby={errors.name ? "name-e" : undefined} {...form.register("name")} />
+              </LnkField>
+              <LnkField id="location" label="Local (opcional)">
+                <input id="location" placeholder="Itaguaí, Recreio..." {...form.register("location")} />
+              </LnkField>
+              <LnkField id="site" label="Unidade">
+                <select id="site" {...form.register("site")}>
+                  <option value="">Não definida</option>
+                  {SITE_KEYS.map((k) => (
+                    <option key={k} value={k}>
+                      {SITE_NAMES[k]}
+                    </option>
+                  ))}
+                </select>
+              </LnkField>
+              <LnkField id="description" label="Descrição (opcional)" full>
+                <input id="description" placeholder="Provedor, contrato..." {...form.register("description")} />
+              </LnkField>
+            </div>
 
-      <div className="p-7 space-y-4">
-        {/* Filter chips + summary */}
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex flex-wrap gap-2">
-            <FilterChip
-              active={statusFilter === "ALL"}
-              onClick={() => setStatusFilter("ALL")}
-            >
-              Todos ({links.length})
-            </FilterChip>
-            <FilterChip
-              active={statusFilter === "ONLINE"}
-              onClick={() => setStatusFilter("ONLINE")}
-              color="success"
-            >
-              <Wifi className="h-3 w-3" />
-              Online ({online})
-            </FilterChip>
-            <FilterChip
-              active={statusFilter === "OFFLINE"}
-              onClick={() => setStatusFilter("OFFLINE")}
-              color="destructive"
-            >
-              <WifiOff className="h-3 w-3" />
-              Offline ({links.length - online})
-            </FilterChip>
-          </div>
+            <div style={{ height: 18 }} />
+            <Panel title="banda contratada" sub="opcional" color="info">
+              <div className="form">
+                <LnkField id="contractedDownloadMbps" label="↓ Download (Mbps)" error={errors.contractedDownloadMbps?.message}>
+                  <input id="contractedDownloadMbps" type="number" step="any" placeholder="ex: 100" aria-invalid={!!errors.contractedDownloadMbps} aria-describedby={errors.contractedDownloadMbps ? "contractedDownloadMbps-e" : undefined} {...form.register("contractedDownloadMbps", { valueAsNumber: true })} />
+                </LnkField>
+                <LnkField id="contractedUploadMbps" label="↑ Upload (Mbps)" error={errors.contractedUploadMbps?.message}>
+                  <input id="contractedUploadMbps" type="number" step="any" placeholder="ex: 50" aria-invalid={!!errors.contractedUploadMbps} aria-describedby={errors.contractedUploadMbps ? "contractedUploadMbps-e" : undefined} {...form.register("contractedUploadMbps", { valueAsNumber: true })} />
+                </LnkField>
+              </div>
+            </Panel>
+
+            <div style={{ height: 18 }} />
+            <Panel title="tráfego RouterOS" sub="opcional" color="info">
+              <div className="form">
+                <LnkField id="mikrotikDeviceId" label="Mikrotik">
+                  <select
+                    id="mikrotikDeviceId"
+                    {...form.register("mikrotikDeviceId")}
+                    onChange={(e) => {
+                      form.setValue("mikrotikDeviceId", e.target.value);
+                      setTrafficTest({ state: "idle" });
+                    }}
+                  >
+                    <option value="">Não configurado</option>
+                    {mikrotiks.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} ({d.ip})
+                      </option>
+                    ))}
+                  </select>
+                </LnkField>
+                <LnkField id="mikrotikInterface" label="Interface">
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <input
+                      id="mikrotikInterface"
+                      placeholder="ether1, sfp1..."
+                      aria-invalid={trafficTest.state === "error"}
+                      {...form.register("mikrotikInterface")}
+                      onChange={(e) => {
+                        form.setValue("mikrotikInterface", e.target.value);
+                        setTrafficTest({ state: "idle" });
+                      }}
+                    />
+                    <button type="button" className="btn" disabled={testing} onClick={() => testTraffic()}>
+                      {testing ? "…" : "testar"}
+                    </button>
+                  </div>
+                </LnkField>
+              </div>
+              <div role="status" aria-live="polite">
+                {trafficTest.state === "ok" && (
+                  <p className="note">
+                    <span className="ok">● conexão OK, interface respondendo</span> · ↓ {formatBps(trafficTest.downloadBps)} · ↑ {formatBps(trafficTest.uploadBps)}
+                  </p>
+                )}
+                {trafficTest.state === "error" && <p className="note crit-n">✖ {trafficTest.message}</p>}
+                {trafficTest.state === "idle" && (
+                  <p className="note">
+                    Informe o Mikrotik e a interface e use <b>testar</b> para validar antes de salvar.
+                  </p>
+                )}
+                {testing && <p className="note">◌ conectando ao RouterOS…</p>}
+              </div>
+            </Panel>
+
+            <div className="btns" style={{ marginTop: 12 }}>
+              <button type="submit" className="btn primary" disabled={form.formState.isSubmitting || testing}>
+                {form.formState.isSubmitting || testing ? (testing ? "validando…" : "salvando…") : editing ? "salvar" : "criar"}
+              </button>
+              <button type="button" className="btn" onClick={() => setFormOpen(false)}>
+                cancelar
+              </button>
+            </div>
+          </form>
+        </Panel>
+      )}
+
+      <Panel title="links de internet" sub={loading ? undefined : `${filtered.length} de ${links.length}`} color="info" id="links-list">
+        <div className="toolbar" style={{ marginBottom: 8 }}>
+          <LnkChips<StatusFilter>
+            label="Filtro de estado"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            chips={[
+              { value: "ALL", label: "todos", key: "1", count: links.length },
+              { value: "ONLINE", label: "online", key: "2", count: online },
+              { value: "OFFLINE", label: "offline", key: "3", count: links.length - online },
+            ]}
+          />
+          <span className="spacer" />
+          <input id="lnk-q" className="search" type="search" placeholder="/ buscar link, local, unidade" aria-label="Buscar link" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
 
-        {/* Table */}
         {loading ? (
-          <SkeletonList count={3} />
+          <LnkLoading what="links" />
+        ) : error && links.length === 0 ? (
+          <LnkError message={error} onRetry={fetchLinks} />
         ) : filtered.length === 0 ? (
           links.length === 0 ? (
-            <EmptyState
-              icon={Network}
+            <LnkEmpty
               title="Nenhum link cadastrado."
-              action={<Button variant="outline" onClick={openCreate}>Cadastrar primeiro link</Button>}
+              hint="Cadastre o primeiro link para acompanhar disponibilidade e banda."
+              action={
+                <button type="button" className="btn primary" onClick={openCreate}>
+                  cadastrar primeiro link
+                </button>
+              }
             />
           ) : (
-            <EmptyState title="Nenhum link encontrado para o filtro selecionado." />
+            <LnkEmpty title="Nenhum link encontrado para o filtro ou busca." />
           )
         ) : (
-          <div className="rounded-xl border bg-card overflow-x-auto">
-            <table className="w-full text-sm" aria-label="Lista de links de internet">
-              <thead className="border-b bg-muted/40">
+          <div className="tblwrap">
+            <table className="tbl" aria-label="Lista de links de internet">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Link
+                  <th scope="col">
+                    <span className="sr-only">Estado</span>
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Status
-                  </th>
-                  <th className="hidden md:table-cell text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <th scope="col">Link</th>
+                  <th scope="col" className="hide-md">
                     Local
                   </th>
-                  <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <th scope="col" className="r">
                     ↓ Download
                   </th>
-                  <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <th scope="col" className="r hide-md">
                     ↑ Upload
                   </th>
-                  <th className="hidden lg:table-cell text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <th scope="col" className="hide-md">
                     Webhooks
                   </th>
-                  <th className="text-right px-4 py-3" />
+                  <th scope="col" className="r">
+                    <span className="sr-only">Ações</span>
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
-                {filtered.map((link) => (
+              <tbody>
+                {filtered.map((link, i) => (
                   <tr
                     key={link.id}
-                    onClick={() => setDrawerLinkId(link.id)}
-                    className="hover:bg-muted/30 transition-colors cursor-pointer group"
+                    data-sel={i === nav.sel ? "true" : undefined}
+                    aria-current={i === nav.sel ? "true" : undefined}
+                    className={i === nav.sel ? "sel" : undefined}
+                    onClick={() => {
+                      nav.setSel(i);
+                      setDrawerLinkId(link.id);
+                    }}
                   >
-                    {/* Link */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-primary shrink-0">
-                          <Activity className="h-3.5 w-3.5" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium truncate group-hover:text-primary transition-colors">
-                            {link.name}
-                          </p>
-                          {link.description && (
-                            <p className="text-[10px] text-muted-foreground truncate">
-                              {link.description}
-                            </p>
-                          )}
-                        </div>
+                    <td className="keep" style={{ width: "3ch" }}>
+                      <StateGlyph state={link.isOnline ? "ok" : "crit"} label={link.isOnline ? "online" : "offline"} />
+                    </td>
+                    <td>
+                      <span className="nm">{link.name}</span>
+                      {link.description && <span className="sm">{link.description}</span>}
+                      {!link.isOnline && link.lastEventAt && <span className="sm crit">offline desde {timeAgo(link.lastEventAt)}</span>}
+                    </td>
+                    <td className="hide-md">
+                      {link.site ? <span title={SITE_NAMES[link.site as keyof typeof SITE_NAMES] ?? link.site}>{link.site}</span> : null}
+                      {link.location ? <span className="sm">{link.location}</span> : !link.site ? <span className="dim">—</span> : null}
+                    </td>
+                    <td className="r">
+                      <BandwidthCell current={link.downloadBps} contracted={link.contractedDownloadBps} color="success" label="uso do download contratado" />
+                    </td>
+                    <td className="r hide-md">
+                      <BandwidthCell current={link.uploadBps} contracted={link.contractedUploadBps} color="primary" label="uso do upload contratado" />
+                    </td>
+                    <td className="hide-md" onClick={(e) => e.stopPropagation()}>
+                      <div className="btns">
+                        <CopyButton text={`${origin}/api/links/${link.id}/down?token=${link.webhookToken}`} label="DOWN" />
+                        <CopyButton text={`${origin}/api/links/${link.id}/up?token=${link.webhookToken}`} label="UP" />
                       </div>
                     </td>
-
-                    {/* Status */}
-                    <td className="px-4 py-3">
-                      <StatusBadge isOnline={link.isOnline} />
-                    </td>
-
-                    {/* Local */}
-                    <td className="hidden md:table-cell px-4 py-3 text-xs text-muted-foreground">
-                      {link.location ? (
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 shrink-0" />{link.location}
-                        </span>
-                      ) : <span className="opacity-40">—</span>}
-                    </td>
-
-                    {/* Download */}
-                    <td className="hidden sm:table-cell px-4 py-3 text-right">
-                      <BandwidthCell current={link.downloadBps} contracted={link.contractedDownloadBps} color="success" />
-                    </td>
-
-                    {/* Upload */}
-                    <td className="hidden sm:table-cell px-4 py-3 text-right">
-                      <BandwidthCell current={link.uploadBps} contracted={link.contractedUploadBps} color="primary" />
-                    </td>
-
-                    {/* Webhooks */}
-                    <td
-                      className="hidden lg:table-cell px-4 py-3"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center gap-1">
-                        <CopyIconButton
-                          text={`${origin}/api/links/${link.id}/down?token=${link.webhookToken}`}
-                          label="DOWN"
-                        />
-                        <CopyIconButton
-                          text={`${origin}/api/links/${link.id}/up?token=${link.webhookToken}`}
-                          label="UP"
-                        />
-                      </div>
-                    </td>
-
-                    {/* Ações */}
-                    <td
-                      className="px-4 py-3 text-right"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        <Link
-                          href={`/links/${link.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label="Ver detalhes do link"
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
-                        <button
-                          onClick={(e) => openEdit(e, link)}
-                          aria-label="Editar link"
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
+                    <td className="acts" onClick={(e) => e.stopPropagation()}>
+                      <span className="btns" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                        <button type="button" className="btn" onClick={() => router.push(`/links/${link.id}`)} aria-label={`Ver histórico de ${link.name}`}>
+                          histórico
                         </button>
-                        <button
-                          onClick={(e) => handleDelete(e, link.id)}
-                          aria-label="Excluir link"
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-destructive transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <button type="button" className="btn" onClick={() => openEdit(link)} aria-label={`Editar ${link.name}`}>
+                          editar
                         </button>
-                      </div>
+                        <button type="button" className="btn danger" onClick={() => setConfirmDeleteId(link.id)} aria-label={`Excluir ${link.name}`}>
+                          excluir
+                        </button>
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -473,195 +544,19 @@ export default function LinksPage() {
             </table>
           </div>
         )}
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Editar link" : "Novo link de internet"}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 space-y-1.5">
-                <Label htmlFor="name">Nome</Label>
-                <Input id="name" {...form.register("name")} placeholder="Link principal, Fibra VIVO..." />
-                {form.formState.errors.name && (
-                  <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="location">
-                  <MapPin className="inline h-3 w-3 mr-1 opacity-60" />Local (opcional)
-                </Label>
-                <Input id="location" {...form.register("location")} placeholder="Itaguaí, Recreio..." />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="site">Unidade</Label>
-                <select
-                  id="site"
-                  {...form.register("site")}
-                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-                >
-                  <option value="">Não definida</option>
-                  {SITE_KEYS.map((k) => (
-                    <option key={k} value={k}>{SITE_NAMES[k]}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="description">Descrição (opcional)</Label>
-                <Input id="description" {...form.register("description")} placeholder="Provedor, contrato..." />
-              </div>
-            </div>
-
-            {/* Banda contratada */}
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-3.5 space-y-3">
-              <p className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground">
-                <Activity className="h-3.5 w-3.5" />Banda contratada (opcional)
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="contractedDownloadMbps">
-                    <ArrowDown className="inline h-3 w-3 mr-0.5 text-success" />Download (Mbps)
-                  </Label>
-                  <Input
-                    id="contractedDownloadMbps"
-                    type="number"
-                    step="any"
-                    placeholder="ex: 100"
-                    {...form.register("contractedDownloadMbps", { valueAsNumber: true })}
-                  />
-                  {form.formState.errors.contractedDownloadMbps && (
-                    <p className="text-xs text-destructive">{form.formState.errors.contractedDownloadMbps.message}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="contractedUploadMbps">
-                    <ArrowUp className="inline h-3 w-3 mr-0.5 text-primary" />Upload (Mbps)
-                  </Label>
-                  <Input
-                    id="contractedUploadMbps"
-                    type="number"
-                    step="any"
-                    placeholder="ex: 50"
-                    {...form.register("contractedUploadMbps", { valueAsNumber: true })}
-                  />
-                  {form.formState.errors.contractedUploadMbps && (
-                    <p className="text-xs text-destructive">{form.formState.errors.contractedUploadMbps.message}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* RouterOS traffic monitoring */}
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-3.5 space-y-3">
-              <p className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground">
-                <Router className="h-3.5 w-3.5" />Monitoramento de tráfego (RouterOS)
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="mikrotikDeviceId">Mikrotik</Label>
-                  <select
-                    id="mikrotikDeviceId"
-                    {...form.register("mikrotikDeviceId")}
-                    onChange={(e) => { form.setValue("mikrotikDeviceId", e.target.value); setTrafficTest({ state: "idle" }); }}
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="">Não configurado</option>
-                    {mikrotiks.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name} ({d.ip})</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="mikrotikInterface">Interface</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="mikrotikInterface"
-                      {...form.register("mikrotikInterface")}
-                      onChange={(e) => { form.setValue("mikrotikInterface", e.target.value); setTrafficTest({ state: "idle" }); }}
-                      placeholder="ether1, sfp1..."
-                      className={trafficTest.state === "error" ? "border-destructive focus-visible:ring-destructive" : trafficTest.state === "ok" ? "border-success focus-visible:ring-success" : ""}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 px-3"
-                      disabled={trafficTest.state === "testing"}
-                      onClick={() => testTraffic()}
-                    >
-                      {trafficTest.state === "testing" ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        "Testar"
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Test feedback */}
-              {trafficTest.state === "ok" && (
-                <div className="flex items-center gap-2 rounded-lg bg-success/10 border border-success/20 px-3 py-2.5">
-                  <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-success">Conexão OK — interface respondendo</p>
-                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
-                      ↓ {formatBps(trafficTest.downloadBps)} · ↑ {formatBps(trafficTest.uploadBps)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] text-success font-semibold flex items-center gap-1">
-                      <ArrowDown className="h-3 w-3" />{formatBps(trafficTest.downloadBps)}
-                    </span>
-                    <span className="text-[11px] text-primary font-semibold flex items-center gap-1">
-                      <ArrowUp className="h-3 w-3" />{formatBps(trafficTest.uploadBps)}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {trafficTest.state === "error" && (
-                <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2.5">
-                  <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                  <p className="text-xs text-destructive leading-relaxed">{trafficTest.message}</p>
-                </div>
-              )}
-              {trafficTest.state === "idle" && (
-                <p className="text-[11px] text-muted-foreground">
-                  Configure o Mikrotik e a interface, depois clique em <strong>Testar</strong> para validar antes de salvar.
-                </p>
-              )}
-              {trafficTest.state === "testing" && (
-                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                  <Loader2 className="h-3 w-3 animate-spin" />Conectando ao RouterOS…
-                </p>
-              )}
-            </div>
-
-            <DialogFooter showCloseButton>
-              <Button
-                type="submit"
-                disabled={form.formState.isSubmitting || trafficTest.state === "testing"}
-              >
-                {form.formState.isSubmitting || trafficTest.state === "testing" ? (
-                  <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />{trafficTest.state === "testing" ? "Validando…" : "Salvando…"}</>
-                ) : editing ? "Salvar" : "Criar"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      </Panel>
 
       <LinkDetailDrawer linkId={drawerLinkId} onClose={() => setDrawerLinkId(null)} />
       <ConfirmDialog
         open={confirmDeleteId !== null}
-        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteId(null);
+        }}
         title="Excluir este link?"
         description="Esta ação não pode ser desfeita."
         confirmLabel="Excluir"
         onConfirm={confirmDelete}
       />
-    </>
+    </LnkShell>
   );
 }

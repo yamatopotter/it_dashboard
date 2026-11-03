@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react/no-unescaped-entities -- conteúdo de documentação com literais entre aspas */
 
 import { Topbar } from "@/components/topbar";
 import { useEffect, useRef, useState } from "react";
@@ -58,7 +59,7 @@ function P({ children }: { children: React.ReactNode }) {
 
 function Callout({ type = "info", children }: { type?: "info" | "warn" | "tip"; children: React.ReactNode }) {
   const styles = {
-    info: "bg-primary/5 border-primary/20 text-primary",
+    info: "bg-[var(--info)]/5 border-[var(--info)]/20 text-[var(--info)]",
     warn: "bg-warning/5 border-warning/20 text-warning",
     tip:  "bg-success/5 border-success/20 text-success",
   };
@@ -139,7 +140,7 @@ export default function TestManualClient() {
                 className={cn(
                   "block px-2 py-1.5 rounded-lg text-[12.5px] font-medium transition-colors",
                   activeId === s.id
-                    ? "bg-accent text-accent-foreground"
+                    ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
               >
