@@ -41,7 +41,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 
 // A RouterOS "!trap" (e.g. permission denied) reaches us as a plain Error without
 // code/errno: the TCP session is still healthy. Socket errors carry a Node `code`
-// or a RosException `errno`, and our own timeouts say "Timeout" — those (and a
+// or a RosException `errno`, and our own timeouts say "Timeout" - those (and a
 // session the library reports as disconnected) mean the connection must be discarded.
 function isConnectionError(err: unknown, api: RouterOSAPI | null): boolean {
   if (api && (api as { connected?: boolean }).connected === false) return true;
