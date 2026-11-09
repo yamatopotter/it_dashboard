@@ -3265,6 +3265,50 @@ paths:
         "502":
           description: Falha no envio (corpo traz `error`).
 
+  /api/settings/ticket:
+    get:
+      tags: [Configurações]
+      summary: Configuração do chamado automático de link
+      description: Requer ADMIN.
+      responses:
+        "200":
+          description: Configuração atual.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticketEmailTo: { type: [string, "null"] }
+                  ticketAfterMinutes: { type: integer, example: 30 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Requer ADMIN.
+    put:
+      tags: [Configurações]
+      summary: Atualizar o chamado automático de link
+      description: |
+        Requer ADMIN. Quando um link fica offline por `ticketAfterMinutes`, o worker envia um e-mail (SMTP do
+        sistema) aos destinatários de `ticketEmailTo`, uma vez por queda. Vazio desliga o recurso.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ticketEmailTo: { type: [string, "null"], maxLength: 500, description: "E-mails separados por vírgula" }
+                ticketAfterMinutes: { type: integer, minimum: 5, maximum: 1440 }
+      responses:
+        "200":
+          description: Atualizado.
+        "400":
+          description: Destinatário inválido ou corpo inválido.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Requer ADMIN.
+
   /api/version:
     get:
       tags: [Sistema]

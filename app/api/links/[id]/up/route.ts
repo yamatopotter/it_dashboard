@@ -21,7 +21,7 @@ async function handleUp(req: Request, id: string) {
   if (!link.isOnline) {
     await db.$transaction([
       db.linkEvent.create({ data: { linkId: id, type: "UP", timestamp: now } }),
-      db.link.update({ where: { id }, data: { isOnline: true, lastEventAt: now, offlineAcknowledgedAt: null, offlineAcknowledgedBy: null, offlineAcknowledgedNote: null } }),
+      db.link.update({ where: { id }, data: { isOnline: true, lastEventAt: now, offlineAcknowledgedAt: null, offlineAcknowledgedBy: null, offlineAcknowledgedNote: null, ticketOpenedAt: null } }),
     ]);
   }
 
