@@ -1,6 +1,6 @@
 # Relatório de Segurança — WatchIT Tower
 
-**Última atualização:** 2026-11-03 (v0.7.0 — redesign: SEC-038/039 resolvidos, SEC-040 aberto; Zoho Cliq com URL cifrada e validada contra SSRF, ack/silêncio com RBAC)  
+**Última atualização:** 2026-11-09 (SEC-041 resolvido: liveness público em /api/health; v0.7.0 — redesign: SEC-038/039 resolvidos, SEC-040 aberto; Zoho Cliq com URL cifrada e validada contra SSRF, ack/silêncio com RBAC)  
 **Versão do sistema:** 0.7.0  
 **Analista:** Análise automatizada via Claude Code  
 **Escopo:** Código-fonte completo — Next.js 14 (frontend/API), worker de monitoramento, banco PostgreSQL
@@ -17,8 +17,8 @@ O WatchIT Tower é uma aplicação interna para monitoramento de equipamentos de
 | 🟠 Alto     | 4     | 4         | 0      |
 | 🟡 Médio    | 7     | 5 + 1⚠️   | 1      |
 | 🔵 Baixo    | 7     | 4         | 3      |
-| ℹ️ Info     | 19    | 15 + 4⚠️  | 0      |
-| **Total**  | **37**| **34**    | **4**  |
+| ℹ️ Info     | 20    | 16 + 4⚠️  | 0      |
+| **Total**  | **38**| **35**    | **4**  |
 
 > ⚠️ = Aceito / won't-fix por design intencional ou limitação de framework
 
@@ -378,6 +378,15 @@ Novas rotas nasceram com autorização explícita: `POST/DELETE /api/links/:id/a
 `notify()` guarda a configuração do Cliq em cache de 30 s por processo (web e worker têm caches separados), e o intervalo de oscilação (30 min) e o do aviso de worker parado (1 h) ficam em memória. Consequências: desativar o Cliq ou trocar a URL pode levar até 30 s para valer; um restart zera os intervalos e pode repetir um aviso de oscilação ou de worker parado. Risco baixo (instância única, avisos duplicados e não vazamento). Os avisos de abertura/reaviso/recuperação não dependem desse estado: são deduplicados por episódio no banco (`cliqNotifiedAt`). Observação relacionada: `up`/`down` seguem protegidos apenas por token HMAC compartilhado (SEC-016/SEC-028); com o Cliq ativo, um token vazado também permite gerar avisos falsos.
 
 **Mitigação sugerida:** persistir os intervalos no banco ou reduzir o TTL do cache; rotacionar `WEBHOOK_SECRET` se houver suspeita de vazamento.
+
+---
+
+### SEC-041 — /api/health: liveness público sem expor métricas
+**Severidade:** ℹ️ INFO — ✅ RESOLVIDO
+**Categoria:** Controle de acesso / disponibilidade (OWASP A01)
+**Resolvido em:** branch `fix/health-public`
+
+A rota exigia sessão e o healthcheck do Docker (`wget` sem cookie) era redirecionado ao login, deixando o container `unhealthy`. Agora `api/health` está fora do matcher do `middleware.ts` e a própria rota decide: sem sessão responde apenas `{ "status": "ok" }` (sem consultar o banco); com sessão devolve as métricas operacionais (uptime, worker, contagens). Cobertura em `__tests__/api/health.test.ts` e `__tests__/security/api-auth-full.test.ts`.
 
 ---
 
