@@ -12,6 +12,7 @@ export interface ComputerPaginatedResponse {
   total: number;
   page: number;
   limit: number;
+  activeSiteFilter: string | null;
 }
 
 export async function GET(req: NextRequest) {
@@ -30,7 +31,11 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Math.max(parseInt(rawLimit ?? "50", 10) || 50, 1), 200);
   const page = Math.max(parseInt(rawPage ?? "1", 10) || 1, 1);
 
+  const config = await db.systemConfig.findUnique({ where: { id: 1 }, select: { dattoSiteFilter: true } });
+  const activeSiteFilter = config?.dattoSiteFilter ?? null;
+
   const where: any = { deletedInDatto: false };
+  if (activeSiteFilter) where.siteName = activeSiteFilter;
   if (onlineFilter === "true") where.online = true;
   if (onlineFilter === "false") where.online = false;
   if (hasAlerts === "true") where.openAlertsCount = { gt: 0 };
@@ -52,7 +57,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   return NextResponse.json(
-    { data: computers, total, page, limit } as ComputerPaginatedResponse,
+    { data: computers, total, page, limit, activeSiteFilter } as ComputerPaginatedResponse,
     { headers: { "X-Total-Count": String(total) } }
   );
 }

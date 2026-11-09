@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# migração mikrotik (snapshots/relatórios com dados de rede)
+/.mikrotik-migration/
+
 # vercel
 .vercel
 
