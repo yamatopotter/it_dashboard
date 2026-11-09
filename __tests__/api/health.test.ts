@@ -31,6 +31,17 @@ afterEach(() => {
 });
 
 describe("GET /api/health", () => {
+  it("sem sessão responde só liveness e não consulta o banco (SEC-024)", async () => {
+    const { auth } = jest.requireMock("@/lib/auth");
+    (auth as jest.Mock).mockResolvedValueOnce(null);
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok" });
+    expect(mockDb.statusHistory.count).not.toHaveBeenCalled();
+  });
+
   it("returns uptimePct=100 when no history exists", async () => {
     (mockDb.statusHistory.count as jest.Mock).mockResolvedValue(0);
     (mockDb.workerHeartbeat.findUnique as jest.Mock).mockResolvedValue(null);

@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/with-auth";
+import { auth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 
 export interface HealthData {
@@ -28,9 +28,10 @@ async function maybeFireStaleAlert(workerLastSeen: string | null): Promise<void>
 }
 
 export async function GET() {
-  // SEC-024: rota protegida — expõe métricas operacionais internas
-  const unauth = await requireAuth();
-  if (unauth) return unauth;
+  // SEC-024: as métricas operacionais exigem sessão. Sem sessão a rota responde só
+  // liveness ({ status: "ok" }) para o healthcheck do Docker, sem expor nada interno.
+  const session = await auth();
+  if (!session) return NextResponse.json({ status: "ok" });
 
   const since = new Date(Date.now() - 24 * 3_600_000);
 
