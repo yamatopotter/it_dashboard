@@ -16,6 +16,7 @@ import { syncDattoDevices } from "./datto-sync";
 import { resolveRouterosCredentials, resolveSnmpCommunity, resolveUnifiApiKey, resolveUnifiCredentials, resolveOmadaCredentials, resolveNvrCredentials } from "../lib/crypto";
 import { log } from "../lib/logger";
 import { notify } from "../lib/notify";
+import { checkLinkTickets } from "./link-ticket";
 import { resolveSnmpOids } from "../lib/snmp-defaults";
 import type { Device, Link } from "@prisma/client";
 
@@ -554,6 +555,9 @@ export async function startScheduler() {
 
   // Zoho Cliq: reaviso único para CRIT sem ack após cliqRenotifyMinutes
   makeInterval(() => void trackAsync(checkRenotify()), 60_000);
+
+  // Chamado por e-mail para link fora há mais de ticketAfterMinutes (Sistema → Chamado automático)
+  makeInterval(() => void trackAsync(checkLinkTickets()), 60_000);
 
   // Reconcile device list every 30s: add new, remove deleted, reschedule updated
   // Uses a lean select for change detection; fetches full device only when needed.

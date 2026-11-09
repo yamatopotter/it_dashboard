@@ -232,6 +232,9 @@ model Link {
   cliqNotifiedAt   DateTime?
   cliqRenotifiedAt DateTime?
 
+  // Chamado aberto por e-mail após ticketAfterMinutes offline (limpo quando o link volta)
+  ticketOpenedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -344,6 +347,10 @@ model SystemConfig {
   cliqLastTestAt      DateTime?
   cliqLastError       String?
   dattoSiteFilter          String? // null = exibir todos os sites; caso contrário, restringe a exibição a este siteName
+
+  // Chamado automático por e-mail quando um link fica fora por muito tempo
+  ticketEmailTo      String?
+  ticketAfterMinutes Int     @default(30)
 }
 
 model NvrChannelIssue {

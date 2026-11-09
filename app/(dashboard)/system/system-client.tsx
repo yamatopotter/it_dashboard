@@ -10,6 +10,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { cn } from "@/lib/utils";
 import { ModulesCard } from "@/components/settings/modules-card";
 import { CliqCard } from "@/components/settings/cliq-card";
+import { TicketCard } from "@/components/settings/ticket-card";
 import { AppearanceCard } from "@/components/settings/appearance-card";
 import { fmtDateTime, formatBytes } from "@/lib/format";
 import {
@@ -1109,6 +1110,7 @@ export function SystemClient() {
         <AppearanceCard />
         <ModulesCard />
         <CliqCard />
+        <TicketCard />
       </div>
     </div>
   );
