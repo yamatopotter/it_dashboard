@@ -113,7 +113,8 @@ export const config = {
   matcher: [
     // Include credentials callback for rate limiting
     "/api/auth/callback/credentials",
-    // Protect all other routes except public ones
-    "/((?!api/auth|api/links/[^/]+/(?:down|up)|_next/static|_next/image|favicon.ico|login).*)",
+    // Protect all other routes except public ones (api/health: liveness público,
+    // as métricas continuam atrás de sessão dentro da própria rota)
+    "/((?!api/auth|api/health|api/links/[^/]+/(?:down|up)|_next/static|_next/image|favicon.ico|login).*)",
   ],
 };
