@@ -14,6 +14,7 @@ const updateSchema = z.object({
   dattoSecretKey: z.string().min(1).optional().nullable(),
   dattoSyncEnabled: z.boolean().optional(),
   dattoSyncIntervalMinutes: z.number().int().min(5).max(1440).optional(),
+  dattoSiteFilter: z.string().min(1).max(200).optional().nullable(),
 });
 
 export async function GET(req: Request) {
@@ -32,6 +33,7 @@ export async function GET(req: Request) {
       dattoSyncIntervalMinutes: 30,
       dattoLastSyncAt: null,
       dattoLastSyncError: null,
+      dattoSiteFilter: null,
     });
   }
 
@@ -43,6 +45,7 @@ export async function GET(req: Request) {
     dattoSyncIntervalMinutes: config.dattoSyncIntervalMinutes,
     dattoLastSyncAt: config.dattoLastSyncAt,
     dattoLastSyncError: config.dattoLastSyncError,
+    dattoSiteFilter: config.dattoSiteFilter,
   });
 }
 
@@ -71,6 +74,9 @@ export async function PUT(req: Request) {
   if ("dattoSyncIntervalMinutes" in body.data) {
     data.dattoSyncIntervalMinutes = body.data.dattoSyncIntervalMinutes;
   }
+  if ("dattoSiteFilter" in body.data) {
+    data.dattoSiteFilter = body.data.dattoSiteFilter || null;
+  }
 
   const config = await db.systemConfig.upsert({
     where: { id: 1 },
@@ -86,5 +92,6 @@ export async function PUT(req: Request) {
     dattoSyncIntervalMinutes: config.dattoSyncIntervalMinutes,
     dattoLastSyncAt: config.dattoLastSyncAt,
     dattoLastSyncError: config.dattoLastSyncError,
+    dattoSiteFilter: config.dattoSiteFilter,
   });
 }

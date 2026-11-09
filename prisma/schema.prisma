@@ -343,6 +343,7 @@ model SystemConfig {
   cliqRenotifyMinutes Int       @default(15)
   cliqLastTestAt      DateTime?
   cliqLastError       String?
+  dattoSiteFilter          String? // null = exibir todos os sites; caso contrário, restringe a exibição a este siteName
 }
 
 model NvrChannelIssue {

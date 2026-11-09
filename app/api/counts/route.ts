@@ -15,6 +15,9 @@ export async function GET() {
   const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   const modules = await getModules();
+  const config = await db.systemConfig.findUnique({ where: { id: 1 }, select: { dattoSiteFilter: true } });
+  const computerWhere: { deletedInDatto: boolean; siteName?: string } = { deletedInDatto: false };
+  if (config?.dattoSiteFilter) computerWhere.siteName = config.dattoSiteFilter;
   const nvrHidden = modules.nvr ? {} : { type: { notIn: ["DVR", "CAMERA"] as ("DVR" | "CAMERA")[] } };
 
   const [devicesTotal, devicesOnline, linksTotal, linksOnline, phonesTotal, phonesLoyaltyExpiring, computersTotal, computersOffline] = await Promise.all([
@@ -31,8 +34,8 @@ export async function GET() {
           },
         })
       : Promise.resolve(undefined),
-    modules.computers ? db.computer.count({ where: { deletedInDatto: false } }) : Promise.resolve(undefined),
-    modules.computers ? db.computer.count({ where: { deletedInDatto: false, online: false } }) : Promise.resolve(undefined),
+    modules.computers ? db.computer.count({ where: computerWhere }) : Promise.resolve(undefined),
+    modules.computers ? db.computer.count({ where: { ...computerWhere, online: false } }) : Promise.resolve(undefined),
   ]);
 
   // A device with no status row yet counts as offline (matches the dashboard layout).

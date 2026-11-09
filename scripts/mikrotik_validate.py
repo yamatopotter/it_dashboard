@@ -169,7 +169,11 @@ class RouterOSAPI:
         length = self._read_length()
         if length == 0:
             return None
-        return self._recv_exact(length).decode("utf-8", errors="replace")
+        raw = self._recv_exact(length)
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw.decode("cp1252", errors="replace")  # RouterOS antigo guarda comentários em latin-1
 
     def _read_sentence(self) -> list[str]:
         words: list[str] = []
@@ -183,6 +187,7 @@ class RouterOSAPI:
         """Envia uma sentença e coleta todas as respostas até !done."""
         self._write_sentence(words)
         results: list[dict[str, str]] = []
+        trap: str | None = None
         while True:
             sentence = self._read_sentence()
             if not sentence:
@@ -196,9 +201,13 @@ class RouterOSAPI:
             if reply == "!re":
                 results.append(attrs)
             elif reply == "!done":
+                if trap is not None:
+                    raise RouterOSError(trap)
                 return results
             elif reply == "!trap":
-                raise RouterOSError(attrs.get("message", " ".join(rest)))
+                # não levanta já: o !done final ainda está a caminho e precisa ser consumido,
+                # senão a próxima chamada lê a resposta deslocada
+                trap = attrs.get("message", " ".join(rest))
             elif reply == "!fatal":
                 raise RouterOSError("Fatal: " + " ".join(rest))
 

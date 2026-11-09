@@ -49,6 +49,7 @@ export default function ComputersPage() {
   const [q, setQ] = useState("");
   const [help, setHelp] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [activeSiteFilter, setActiveSiteFilter] = useState<string | null>(null);
 
   const fetchPage = async (p: number, replace: boolean) => {
     try {
@@ -70,6 +71,7 @@ export default function ComputersPage() {
       setPage(p);
       setError(null);
       setUpdatedAt(new Date());
+      setActiveSiteFilter(data.activeSiteFilter ?? null);
     } catch (err) {
       console.error("[computers] erro ao carregar página:", err);
       if (replace) setError("Não foi possível carregar os computadores.");
@@ -128,7 +130,7 @@ export default function ComputersPage() {
   return (
     <LnkShell
       title="COMPUTADORES"
-      sub={loading ? "inventário sincronizado do Datto RMM" : `${total} no inventário · Datto RMM`}
+      sub={loading ? "inventário sincronizado do Datto RMM" : `${total} no inventário · Datto RMM${activeSiteFilter ? ` · somente ${activeSiteFilter}` : ""}`}
       updatedAt={updatedAt}
       hints={hints}
       help={HELP}
