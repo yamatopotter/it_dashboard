@@ -160,6 +160,8 @@ export function SystemClient() {
   const [dattoSaving, setDattoSaving] = useState(false);
   const [dattoSyncing, setDattoSyncing] = useState(false);
   const [dattoMsg, setDattoMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [dattoSiteFilter, setDattoSiteFilter] = useState<string>(""); // "" = todos os sites
+  const [dattoSites, setDattoSites] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -232,9 +234,18 @@ export function SystemClient() {
     setDattoSyncIntervalMinutes(cfg.dattoSyncIntervalMinutes ?? 30);
     setDattoLastSyncAt(cfg.dattoLastSyncAt ?? null);
     setDattoLastSyncError(cfg.dattoLastSyncError ?? null);
+    setDattoSiteFilter(cfg.dattoSiteFilter ?? "");
   }, []);
 
   useEffect(() => { void Promise.resolve().then(() => { loadSmtp(); loadZoho(); loadMiradore(); loadDatto(); }); }, [loadSmtp, loadZoho, loadMiradore, loadDatto]);
+  const loadDattoSites = useCallback(async () => {
+    const res = await fetch("/api/computers/sites");
+    if (!res.ok) return;
+    const data = await res.json();
+    setDattoSites(data.sites ?? []);
+  }, []);
+
+  useEffect(() => { void Promise.resolve().then(() => { loadSmtp(); loadZoho(); loadMiradore(); loadDatto(); loadDattoSites(); }); }, [loadSmtp, loadZoho, loadMiradore, loadDatto, loadDattoSites]);
 
   async function saveSmtp() {
     setSmtpSaving(true);
@@ -337,6 +348,7 @@ export function SystemClient() {
         dattoPlatform: dattoPlatform || null,
         dattoSyncEnabled,
         dattoSyncIntervalMinutes,
+        dattoSiteFilter: dattoSiteFilter || null,
         ...(dattoApiKey ? { dattoApiKey } : {}),
         ...(dattoSecretKey ? { dattoSecretKey } : {}),
       }),
@@ -361,6 +373,7 @@ export function SystemClient() {
     const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
     setDattoMsg({ ok: res.ok, text: data.message ?? (res.ok ? "Sincronização concluída." : "Erro ao sincronizar.") });
     loadDatto();
+    loadDattoSites();
     setDattoSyncing(false);
     setTimeout(() => setDattoMsg(null), 6000);
   }
@@ -894,6 +907,24 @@ export function SystemClient() {
                   onChange={(e) => setDattoSecretKey(e.target.value)}
                   className="text-[13px]"
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="datto-site-filter" className="text-[13px]">Site a exibir</Label>
+                <select
+                  id="datto-site-filter"
+                  value={dattoSiteFilter}
+                  onChange={(e) => setDattoSiteFilter(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground text-[13px]"
+                >
+                  <option value="">Todos os sites</option>
+                  {dattoSites.map((site) => (
+                    <option key={site} value={site}>{site}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted-foreground">
+                  Restringe o que aparece em Computadores e na barra lateral para todos os
+                  usuários. A lista de sites é populada após a primeira sincronização.
+                </p>
               </div>
             </div>
 

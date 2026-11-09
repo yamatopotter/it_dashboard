@@ -24,6 +24,8 @@ const RELEASES: Release[] = [
     label: "Redesign: tela de operação, avisos no Zoho Cliq e relatório mensal",
     latest: true,
     changes: [
+      { type: "fix", text: "Verificação de saúde do container (Docker) volta a funcionar: /api/health responde \"ok\" sem login, e as métricas detalhadas continuam exigindo sessão" },
+      { type: "feat", text: "Computadores: filtro por site do Datto RMM em Configurações › Sistema (ADMIN) — a lista e as contagens do menu passam a mostrar só o site escolhido" },
       { type: "perf", text: "Monitoramento mais leve e rápido: Mikrotik, Omada e UniFi reaproveitam a conexão em vez de reconectar a cada checagem, e os APs do mesmo controlador compartilham uma única consulta; o tráfego dos links deixou de esperar 1 s por leitura" },
       { type: "refactor", text: "Interface inteira padronizada no estilo TOWER: menu lateral, cabeçalhos, painéis, tabelas densas, formulários, botões e cores de estado iguais em todas as telas, em tema claro e escuro, com menu recolhível no celular" },
       { type: "feat", text: "Nova tela TOWER/1 em /tower — fila de problemas no topo (gravidade e idade), links com tráfego, unidades com o estado de cada equipamento e eventos recentes, tudo com atalhos de teclado e aviso quando os dados congelam" },

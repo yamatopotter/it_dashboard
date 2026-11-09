@@ -99,10 +99,11 @@ describe("Aggregation routes — 401 without session", () => {
   });
 });
 
-describe("Health route — 401 without session (SEC-024)", () => {
-  it("GET /api/health → 401 (requires auth)", async () => {
-    // Health exposes operational metrics — must be protected
+describe("Health route — sem sessão só responde liveness (SEC-024)", () => {
+  it("GET /api/health sem sessão → 200 {status:ok}, sem métricas", async () => {
+    // Healthcheck do Docker não tem sessão; métricas operacionais não podem vazar
     const res = await healthGET();
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok" });
   });
 });
